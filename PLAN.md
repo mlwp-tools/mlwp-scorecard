@@ -198,33 +198,14 @@ it is a sibling variable rather than a coordinate or a scalar.
 the stated `confidence`. What matters is that the resampling is over *cases*, and that for the
 difference it is a **paired** resample.
 
-### Worked example — how `n` and `stat` are produced
+### What `n` and `stat` mean here
 
-Upstream of this package, but the schema only makes sense alongside it. Verified by running
-it: single truth source, no `spatial_region` dimension, 200 twice-daily cases, 60 stations.
+`n` counts the forecast cases that survive into the mean, so it falls by **2 per 24-hour
+step** with twice-daily runs — cases near the end of the study have no truth to verify
+against. That reproduces the reference's 417→389 pattern exactly.
 
-```python
-# ── collapse 1: over space, within each case -> one number per case ──────────
-rmse_per_case = np.sqrt(((fcst - obs) ** 2).mean("station", skipna=True))  # (case, lead_time)
-
-# a case initialised at t verifies at t + lead_time; near the end of the study
-# there is no truth to verify against, so it drops out
-obs = obs.where(init[:, None] + leads[None, :] <= END)
-
-# ── collapse 2: over cases -> the mean and its sampling uncertainty ──────────
-n = rmse_per_case.notnull().sum("case")            # -> [198, 196, 194, 192]
-
-idx  = rng.integers(0, n_cases, size=(2000, n_cases))    # 2000 resamples of the case set
-boot = rmse_per_case.isel(case=xr.DataArray(idx, dims=("boot", "case"))).mean("case")
-
-mean  = rmse_per_case.mean("case")
-lower = boot.quantile(0.025, "boot")
-upper = boot.quantile(0.975, "boot")
-```
-
-`n` falls by **2 per 24-hour step** — 2 cases per day losing their verification time — exactly
-reproducing the reference's 417→389 pattern. `lower`/`upper` are percentiles of the *bootstrap
-distribution of the mean*, not of the data.
+`lower`/`upper` are percentiles of the **bootstrap distribution of the mean**, not of the
+data. Full code with array shapes is in *Computing significance* below.
 
 2 m temperature against observations at T+48, in kelvin:
 
@@ -250,16 +231,10 @@ mean CI width: paired 0.1235, independent 0.5650  ->  4.6x wider
 paired excludes zero at every lead: True      independent: False
 ```
 
-The only difference is that **one** resample index array is applied to both systems, so each
-bootstrap sample compares them on the same weather:
-
-```python
-idx = rng.integers(0, n_cases, size=(2000, n_cases))          # one draw, reused
-b_d = (s_exp - s_ctl).isel(case=xr.DataArray(idx, dims=("boot", "case"))).mean("case")
-```
-
-That line must live in the scoring step: by the time the summary dataset exists, the per-case
-values are gone. Hence the *Open assumption* below.
+The only difference is that **one** resample index array is applied to the already-differenced
+per-case values, so every replicate compares the two sources on the same weather. That has to
+happen in the scoring step: by the time the summary dataset exists, the per-case values are
+gone. Hence the *Open assumption* below.
 
 **Caveat to document, not enforce:** for RMSE the two collapses do not commute —
 `mean_over_cases(sqrt(mean_over_space(e²)))` ≠ `sqrt(mean_over_cases_and_space(e²))`. The
@@ -364,10 +339,18 @@ separate a large-but-noisy regression from a small-but-certain one. So they get 
 channels**: fill encodes magnitude, border encodes significance. That part of the reference
 design is right and is kept.
 
-### How significance is computed
+---
 
-Upstream of this package, but it defines what the numbers mean. From the paired per-case
-differences `d_i = score_exp(case i) - score_ctl(case i)`:
+## Computing significance
+
+All of this happens **upstream** of this package — it consumes `stat="lower"`/`"upper"` and
+only asks that `lower <= mean <= upper` at the stated `confidence`. It is documented here
+because the numbers are meaningless without knowing how they were produced, and because
+getting them wrong is easy (see *Two ways this goes wrong*).
+
+### The definition
+
+From the paired per-case differences `d_i = score_exp(case i) - score_ctl(case i)`:
 
 - **Null hypothesis:** `E[d] = 0` — the two prediction sources have the same expected score.
 - **Bootstrap:** resample the case set with replacement B times; take the mean of `d` in each
@@ -386,26 +369,165 @@ by direction:
 | 0 | interval includes zero even at 68% |
 
 A paired t-test on `d_i`, or a Wilcoxon signed-rank test, are alternatives. The bootstrap is
-assumption-light and is what the reference uses. **The package computes none of these** — it
-consumes `stat="lower"`/`"upper"`, or a supplied `siglev`, and only asks that
-`lower <= mean <= upper` at the stated `confidence`.
+assumption-light and is what the reference uses.
+
+### Worked example, with array shapes
+
+Runnable, and the output below is what it actually produces. Every array is annotated with
+what its axes mean.
+
+```python
+import numpy as np
+
+rng = np.random.default_rng(0)
+N_CASE, N_LEAD, N_POINT = 400, 4, 500      # 400 twice-daily runs, 4 lead times, 500 stations
+leads = np.array([24, 48, 72, 96])         # hours
+
+# ── what you start with ────────────────────────────────────────────────────────
+lat   # (point,)                     latitude of each verification point
+obs   # (case, lead_time, point)     truth, NaN where unavailable
+fcst  # (source, case, lead_time, point)   source axis is [control, experiment]
+
+# A case initialised at t verifies at t + lead_time. Near the end of the study there
+# is no truth to verify against, so those entries are NaN and drop out of `n`.
+valid = np.arange(N_CASE)[:, None] * 12 + leads[None, :]     # (case, lead_time), hours
+obs   = np.where(valid[:, :, None] <= (N_CASE - 1) * 12, obs, np.nan)
+
+# ── collapse 1: over space, within each case ───────────────────────────────────
+# Area weights. For a lat/lon grid this is cos(latitude); for stations, equal or
+# by representativity. Weighted so that a dense region does not dominate.
+w = np.cos(np.deg2rad(lat)); w /= w.sum()                    # (point,) sums to 1
+
+se = np.nansum(w * (fcst - obs) ** 2, axis=-1)               # (source, case, lead_time)
+allnan = np.isnan(obs).all(-1)                               # (case, lead_time)
+se = np.where(allnan[None, :, :], np.nan, se)                # a case with no truth is NaN,
+                                                             #   not a spuriously perfect 0
+score_per_case = np.sqrt(se)                                 # (source, case, lead_time)
+# ^ ONE NUMBER PER CASE. This is the unit that gets resampled below.
+
+# ── collapse 2: over cases ─────────────────────────────────────────────────────
+# The PAIRED difference: same case, both sources. Pairing is what makes the interval
+# tight enough to be useful — see "Why the difference interval cannot be reconstructed".
+d = score_per_case[1] - score_per_case[0]                    # (case, lead_time)
+n = np.sum(~np.isnan(d), axis=0)                             # (lead_time,) -> [398 396 394 392]
+
+mean = np.nanmean(d, axis=0)                                 # (lead_time,) the point estimate
+
+# ── the bootstrap ──────────────────────────────────────────────────────────────
+# Moving-block, NOT iid: consecutive cases share a weather system. L is in cases,
+# so L = 24 twice-daily cases = 12 days. See "Two ways this goes wrong".
+N_BOOT, L = 2000, 24
+n_block = int(np.ceil(N_CASE / L))
+starts  = rng.integers(0, N_CASE - L + 1, (N_BOOT, n_block))         # (boot, block)
+idx     = (starts[:, :, None] + np.arange(L)).reshape(N_BOOT, -1)[:, :N_CASE]
+                                                                      # (boot, case)
+# ONE index array, applied to the already-differenced d -> the pairing is preserved
+# inside every replicate. Resampling the two sources independently would not do this.
+boot = np.nanmean(d[idx], axis=1)                            # (boot, lead_time)
+#      ^ the sampling distribution of the mean difference
+
+# ── stat = mean / lower / upper ────────────────────────────────────────────────
+lower = np.percentile(boot,  2.5, axis=0)                    # (lead_time,)
+upper = np.percentile(boot, 97.5, axis=0)                    # (lead_time,)
+
+# ── siglev: tightest level whose interval excludes zero, signed by direction ───
+siglev = np.zeros(N_LEAD, dtype=np.int8)                     # (lead_time,)
+for k, conf in enumerate((0.68, 0.95, 0.997), start=1):      # 1σ, 2σ, 3σ
+    a = (1 - conf) / 2 * 100
+    lo = np.percentile(boot, a,       axis=0)                # (lead_time,)
+    hi = np.percentile(boot, 100 - a, axis=0)                # (lead_time,)
+    siglev = np.where((lo > 0) | (hi < 0), k, siglev)        # later levels overwrite earlier
+
+# Polarity turns "which direction" into "better or worse". For an error-like metric
+# a NEGATIVE difference means the experiment scored lower, i.e. better -> positive siglev.
+siglev = np.where(mean < 0, siglev, -siglev)                 # NEGATIVE_IS_BETTER
+```
+
+Output:
+
+```
+ lead      ctl      exp      diff                 95% CI  siglev     n
+   24   1.0710   1.0087   -0.0623   [-0.0691, -0.0564]       3   398
+   48   2.1782   2.0542   -0.1240   [-0.1331, -0.1138]       3   396
+   72   3.1656   2.9786   -0.1870   [-0.2030, -0.1707]       3   394
+   96   4.3290   4.0581   -0.2709   [-0.2979, -0.2451]       3   392
+```
+
+`n` falls by 2 per 24-hour step, reproducing the reference's signature. `siglev = 3` with a
+negative difference means the experiment is better, significant at 99.7%.
+
+Two shape facts worth internalising:
+
+- `score_per_case` is `(source, case, lead_time)` — space is **gone**. Everything after this
+  point resamples along `case` only.
+- `boot` is `(boot, lead_time)` — one sampling distribution per lead time, but built from a
+  **single** `idx` of shape `(boot, case)`. Reusing that one index array across lead times is
+  what keeps a row of boxes coherent rather than independently noisy.
+
+### What counts as one sample
+
+**One forecast case — one initialisation time.** By the time significance is computed, space
+has already been collapsed (collapse 1), so a case contributes a *single scalar* per
+(variable, level, spatial_region, metric, lead_time). The resampling population is the set of
+initialisation times, of size `n`. That is exactly what the reference's `popul` counts, and
+why it falls by 2 per 24 hours with twice-daily runs.
+
+What is **not** a sample:
+
+- **Gridpoints.** Already collapsed, and heavily spatially correlated — a 500 hPa geopotential
+  error field has a correlation length of order 1000 km, so 10^5 gridpoints carry perhaps 10^2
+  independent pieces of information. Resampling them yields absurdly tight intervals.
+- **(initialisation, lead time) pairs.** The same run at T+24 and T+48 shares its initial
+  condition. Resample *initialisations* and carry all their lead times along — which is also
+  what preserves the visual coherence along a row of boxes.
+- **Valid times.** A different slicing with the same dependence problem.
+
+If the metric is a non-linear function of the per-case values — pooled RMSE rather than the
+mean of per-case RMSEs — the resampling unit is still the case; the statistic is simply
+recomputed from the resampled set within each replicate.
 
 ### Two ways this goes wrong
 
 Both apply to the reference card as much as to this one, and both are worth stating in the
 rendered legend rather than leaving implicit:
 
-1. **Forecast cases are autocorrelated.** Runs 12 hours apart share the same weather system,
-   so they are not independent draws. A naive bootstrap over individual cases overstates the
-   effective sample size, making intervals too tight and marking noise as significant. A
-   moving-block bootstrap, or thinning to independent cases, is the fix — and it belongs in
-   the scoring step.
+1. **Forecast cases are autocorrelated**, and this is severe. Runs 12 hours apart share the
+   same weather system, so they are not independent draws. Measured on synthetic data with
+   AR(1) dependence (phi = 0.75, ~2-day decorrelation), 400 cases, and a true difference of
+   exactly zero — so every "significant" result is a false positive:
+
+   ```
+    block length L   = days   false positives   CI width
+                 1        0             43.8%     0.0192   <- naive iid bootstrap
+                 2        1             33.0%     0.0255
+                 4        2             22.5%     0.0330
+                 8        4             15.5%     0.0396
+                16        8             12.5%     0.0443
+                24       12              8.2%     0.0459   <- best
+                32       16              9.8%     0.0463
+                48       24             12.8%     0.0439
+                64       32             14.5%     0.0436
+
+    nominal false-positive rate: 5.0%
+   ```
+
+   A naive per-case bootstrap declares significance **44% of the time when there is no effect
+   at all**. A moving-block bootstrap reduces that to 8%, and *no* block length reaches
+   nominal: too short and blocks do not span the decorrelation time, too long and there are
+   too few blocks to resample. Effective sample size here is about 57 of 400.
+
+   The fix — a moving-block bootstrap with the block sized to the synoptic timescale, or
+   thinning to independent cases — belongs in the scoring step. This package cannot detect
+   the problem, because by the time it sees the data the per-case values are gone. The
+   practical consequence is that borderline significance on a scorecard should be treated as
+   suggestive rather than decisive.
+
 2. **A card is thousands of simultaneous tests.** At 45 x 30 x 15 it is 20,250 of them; at 95%
    confidence roughly 1,000 cells will read as significant by chance alone. So an isolated
    significant cell carries little weight, while a coherent block of them across neighbouring
    levels or lead times carries a lot. Neither the reference nor this package corrects for
    multiplicity; the honest response is to say so on the page, and to let the eye use spatial
-   coherence — which is precisely what the grid layout is good for.
+   coherence — which is precisely what a dense tabular layout is good for.
 
 ---
 

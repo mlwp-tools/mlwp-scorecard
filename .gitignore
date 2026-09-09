@@ -1,0 +1,23 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Test / render artefacts
+.pytest_cache/
+tests/**/*.actual.html
+tests/baseline/**/*.diff.png
+*.html.orig
+
+# Local agent/editor settings
+.claude/settings.local.json
+
+# Design reference: the ECMWF-generated card this package was reverse-engineered
+# from. Kept locally, deliberately not committed (7.4 MB). See PLAN.md appendix.
+scorecards-*.html

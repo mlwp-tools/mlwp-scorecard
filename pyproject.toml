@@ -1,0 +1,71 @@
+[build-system]
+requires = ["setuptools>=69", "setuptools-scm>=8", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mlwp-scorecards"
+dynamic = ["version"]
+description = "Weather forecasting scorecards from pre-computed verification statistics"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "xarray>=2024.1",
+  "pandas>=2.2",
+  "numpy>=1.26",
+  "jinja2>=3.1",
+  "pyyaml>=6.0",
+  "loguru",
+]
+
+[tool.isort]
+profile = "black"
+
+[project.optional-dependencies]
+static = [
+  "matplotlib>=3.8,<4",
+]
+netcdf = [
+  "netcdf4>=1.6",
+  "h5netcdf>=1.3",
+]
+zarr = [
+  "zarr>2,<3",
+]
+test = [
+  "pytest>=8.0.0",
+  "pytest-mpl>=0.17",
+  "syrupy>=4",
+  "hypothesis>=6.100",
+  "matplotlib~=3.10.0",
+  "netcdf4>=1.6",
+]
+
+[project.scripts]
+"mlwp.make_scorecard" = "mlwp_scorecards.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+mlwp_scorecards = ["render/html/templates/*", "render/html/assets/*"]
+
+[tool.setuptools_scm]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "slow: marks tests that build a full ECMWF-scale card (45x30x15)",
+    "mpl: marks tests that require matplotlib and pytest-mpl baseline images",
+    "golden: marks tests that compare against committed golden artefacts",
+]
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.0.0",
+    "ipython>=9.11.0",
+    "pytest>=9.0.2",
+    "colorspacious>=1.1",
+]

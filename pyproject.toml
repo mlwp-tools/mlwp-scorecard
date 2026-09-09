@@ -49,9 +49,6 @@ package-dir = {"" = "src"}
 [tool.setuptools.packages.find]
 where = ["src"]
 
-[tool.setuptools.package-data]
-mlwp_scorecards = ["render/html/templates/*", "render/html/assets/*"]
-
 [tool.setuptools_scm]
 
 [tool.pytest.ini_options]

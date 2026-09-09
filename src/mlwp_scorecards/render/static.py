@@ -1,0 +1,222 @@
+"""Static matplotlib backend: PNG, SVG and PDF.
+
+Everything is drawn into a *single* ``Axes`` in a top-left-origin point space that
+mirrors the CSS box model, so geometry is shared with the HTML backend. All boxes
+become one ``PatchCollection`` rather than one artist each, which keeps a
+full-size card to a single draw pass.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+
+from ..colours import ColourScheme
+from ..model import Layout
+
+__all__ = ["Geometry", "render_figure", "render_static"]
+
+
+@dataclass(frozen=True, slots=True)
+class Geometry:
+    """Point-space dimensions. Fonts are never scaled below ``font_pt``."""
+
+    box_w: float = 6.0
+    box_h: float = 11.0
+    box_gap: float = 1.0
+    cell_pad: float = 3.0
+    row_h: float = 15.0
+    label_w: float = 62.0
+    head_h: float = 17.0
+    font_pt: float = 7.0
+    title_pt: float = 12.0
+
+    def cell_w(self, n_steps: int) -> float:
+        return n_steps * (self.box_w + self.box_gap) - self.box_gap + 2 * self.cell_pad
+
+
+def _label_widths(layout: Layout, geom: Geometry) -> list[float]:
+    """Width for each row-label column, from its longest label."""
+    out = []
+    for depth in range(layout.row_depth):
+        longest = max(
+            (len(h.label) for h in layout.row_headers[depth]), default=1
+        )
+        out.append(max(26.0, longest * geom.font_pt * 0.62 + 10))
+    return out
+
+
+def render_figure(layout: Layout, *, scheme: ColourScheme, geometry: Geometry | None = None):
+    """Draw ``layout`` into a new matplotlib ``Figure``.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+    """
+    import matplotlib
+
+    matplotlib.use("Agg", force=False)
+    import matplotlib.pyplot as plt
+    from matplotlib.collections import PatchCollection
+    from matplotlib.patches import Rectangle
+
+    g = geometry or Geometry()
+    n_step = len(layout.lead_times)
+    lab_w = _label_widths(layout, g)
+    cw = g.cell_w(n_step)
+    head_h = g.head_h * layout.column_depth
+    title_h = 34.0 if layout.title else 8.0
+    legend_h = 46.0
+
+    W = sum(lab_w) + cw * layout.stats.n_cols
+    H = title_h + head_h + g.row_h * layout.stats.n_rows + legend_h
+
+    fig = plt.figure(figsize=(W / 72.0, H / 72.0), dpi=100)
+    ax = fig.add_axes((0, 0, 1, 1))
+    ax.set_xlim(0, W)
+    ax.set_ylim(H, 0)          # inverted: row 0 at the top, as in the HTML
+    ax.set_axis_off()
+
+    x0 = sum(lab_w)
+    y0 = title_h + head_h
+
+    if layout.title:
+        ax.text(4, 14, layout.title, fontsize=g.title_pt, fontweight="bold", va="center")
+        if layout.subtitle:
+            ax.text(4, 27, layout.subtitle, fontsize=g.font_pt, color="#5b6470", va="center")
+
+    # ---- column headers -----------------------------------------------------
+    for depth in range(layout.column_depth):
+        top = title_h + depth * g.head_h
+        for blk in layout.column_headers[depth]:
+            bx = x0 + blk.start * cw
+            bw = blk.span * cw
+            ax.add_patch(
+                Rectangle((bx, top), bw, g.head_h, facecolor="#eef1f4",
+                          edgecolor="#ffffff", linewidth=0.8, zorder=1)
+            )
+            ax.text(bx + bw / 2, top + g.head_h / 2, blk.label, ha="center", va="center",
+                    fontsize=g.font_pt, zorder=2)
+
+    # ---- row headers: one label per block, vertically centred ---------------
+    for depth in range(layout.row_depth):
+        left = sum(lab_w[:depth])
+        for blk in layout.row_headers[depth]:
+            by = y0 + blk.start * g.row_h
+            bh = blk.span * g.row_h
+            ax.add_patch(
+                Rectangle((left, by), lab_w[depth], bh, facecolor="#f7f8fa",
+                          edgecolor="#ffffff", linewidth=0.8, zorder=1)
+            )
+            if blk.label:
+                ax.text(left + 4, by + bh / 2, blk.label, ha="left", va="center",
+                        fontsize=g.font_pt, zorder=2)
+
+    # ---- cells --------------------------------------------------------------
+    rects, fills, edges = [], [], []
+    for r in range(layout.stats.n_rows):
+        for c in range(layout.stats.n_cols):
+            cell = layout.isel(row=r, col=c)
+            cx = x0 + c * cw
+            cy = y0 + r * g.row_h
+            if cell is None:
+                ax.add_patch(
+                    Rectangle((cx, cy), cw, g.row_h, facecolor=scheme.missing,
+                              edgecolor="#ffffff", linewidth=0.8, zorder=1)
+                )
+                continue
+            bx = cx + g.cell_pad
+            by = cy + (g.row_h - g.box_h) / 2
+            for k, st in enumerate(cell.steps):
+                x = bx + k * (g.box_w + g.box_gap)
+                rects.append(Rectangle((x, by), g.box_w, g.box_h))
+                if st.value is None:
+                    fills.append("#ffffff")
+                    edges.append("#e3e6ea")
+                else:
+                    sw = scheme.swatch(st.family, st.level)
+                    fills.append(sw.fill)
+                    edges.append(sw.edge if st.significant else "#ffffff")
+
+    pc = PatchCollection(rects, match_original=False, zorder=3)
+    pc.set_facecolor(fills)
+    pc.set_edgecolor(edges)
+    pc.set_linewidth(0.5)
+    pc.set_snap(True)
+    ax.add_collection(pc)
+
+    # ---- legend: one ramp per family, plus the caveats -----------------------
+    ly = y0 + g.row_h * layout.stats.n_rows + 12.0
+    lx = 4.0
+    sw_w, sw_h = 8.0, 10.0
+    for fam in scheme.families.values():
+        ax.text(lx, ly, f"{fam.negative_word}", fontsize=g.font_pt - 0.5,
+                ha="left", va="center", color="#3b424b")
+        lx += len(fam.negative_word) * (g.font_pt - 0.5) * 0.58 + 5
+        step = max(1, len(fam.negative) // 6)
+        for swatch in list(fam.negative.swatches[::step])[::-1]:
+            ax.add_patch(Rectangle((lx, ly - sw_h / 2), sw_w, sw_h,
+                                   facecolor=swatch.fill, edgecolor=swatch.edge,
+                                   linewidth=0.5, zorder=3))
+            lx += sw_w + 1
+        ax.add_patch(Rectangle((lx, ly - sw_h / 2), sw_w, sw_h,
+                               facecolor=scheme.neutral.fill,
+                               edgecolor=scheme.neutral.edge, linewidth=0.5, zorder=3))
+        lx += sw_w + 1
+        for swatch in list(fam.positive.swatches[::step]):
+            ax.add_patch(Rectangle((lx, ly - sw_h / 2), sw_w, sw_h,
+                                   facecolor=swatch.fill, edgecolor=swatch.edge,
+                                   linewidth=0.5, zorder=3))
+            lx += sw_w + 1
+        lx += 4
+        ax.text(lx, ly, fam.positive_word, fontsize=g.font_pt - 0.5,
+                ha="left", va="center", color="#3b424b")
+        lx += len(fam.positive_word) * (g.font_pt - 0.5) * 0.58 + 22
+
+    foot = (
+        f"{layout.experiment} vs {layout.control}. Each cell is {n_step} lead times, "
+        f"{layout.lead_labels[0]} to {layout.lead_labels[-1]}, earliest on the left; "
+        f"intensity is the difference relative to {layout.control}."
+    )
+    ax.text(4, ly + 15, foot, fontsize=g.font_pt - 1, color="#5b6470", va="center")
+    caveat = (
+        f"{layout.stats.n_boxes} simultaneous comparisons, and forecast cases are "
+        f"autocorrelated: isolated cells mean little, coherent blocks mean a lot."
+    )
+    ax.text(4, ly + 27, caveat, fontsize=g.font_pt - 1, color="#8a6d1f", va="center")
+    return fig
+
+
+def render_static(
+    layout: Layout,
+    path: str | Path,
+    *,
+    scheme: ColourScheme,
+    dpi: int = 200,
+    geometry: Geometry | None = None,
+) -> Path:
+    """Render ``layout`` to PNG, SVG or PDF, inferred from the suffix."""
+    try:
+        import matplotlib  # noqa: F401
+    except ModuleNotFoundError as exc:  # pragma: no cover
+        raise ImportError(
+            "the static backend needs matplotlib: install mlwp-scorecards[static]"
+        ) from exc
+
+    import matplotlib.pyplot as plt
+
+    path = Path(path)
+    rc = {
+        "pdf.fonttype": 42,      # embed TrueType so PDF text stays selectable
+        "ps.fonttype": 42,
+        "svg.fonttype": "none",  # keep SVG text as text, not glyph paths
+        "svg.hashsalt": "mlwp-scorecards",
+        "font.family": "DejaVu Sans",
+        "figure.autolayout": False,
+        "path.simplify": False,
+    }
+    with plt.rc_context(rc):
+        fig = render_figure(layout, scheme=scheme, geometry=geometry)
+        fig.savefig(path, dpi=dpi, facecolor="white")
+        plt.close(fig)
+    return path

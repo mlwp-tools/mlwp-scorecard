@@ -33,23 +33,39 @@ ds = xr.open_dataset("verification_summary.nc")
 
 make_scorecard(
     ds,
-    truth_source=["observations", "analysis"],
+    ["scorecard.html", "scorecard.png"],
     control="IFS-HRES",
     experiment="GraphCast",
-    rows=["truth_source", "variable", "level"],
-    columns=["spatial_region", "metric"],
-    cell="lead_time",
     title="GraphCast vs IFS HRES",
-    output=["scorecard.html", "scorecard.png"],
 )
 ```
 
-The same file yields another card by naming a different pair.
+Rows and columns are inferred from the dataset, or named explicitly:
+
+```python
+make_scorecard(
+    ds, "scorecard.html",
+    control="IFS-HRES", experiment="GraphCast",
+    rows=["truth_source", "variable", "level"],
+    columns=["spatial_region", "metric"],
+    cell="lead_time",
+)
+```
+
+The same file yields another card by naming a different pair, so which source is
+truth, control or experiment is an argument rather than something baked into the data.
+
+There is no configuration object to build: coordinate names, source names and output
+paths are all the API has.
 
 ```bash
 mlwp.make_scorecard verification_summary.nc \
-    --control IFS-HRES --experiment GraphCast -o scorecard.html
+    --control IFS-HRES --experiment GraphCast \
+    -o scorecard.html -o scorecard.png
 ```
+
+Output format follows the suffix: `.html` for the interactive page, `.png`, `.pdf`
+or `.svg` for the static figure.
 
 ## Input
 

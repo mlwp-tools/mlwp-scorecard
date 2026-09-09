@@ -29,12 +29,13 @@ Guidance for agents and contributors working in this repository.
 
 - Design document: `PLAN.md` — read this first; it defines the input schema and the
   layout vocabulary.
-- Input handling: `src/mlwp_scorecards/ingest.py`, `adapters.py`
-- Layout declaration: `src/mlwp_scorecards/spec.py`
+- Public API: `src/mlwp_scorecards/api.py`, `cli.py`
+- Input handling: `src/mlwp_scorecards/ingest.py`
 - Layout types (the renderer contract): `src/mlwp_scorecards/model.py`
 - Layout engine: `src/mlwp_scorecards/layout.py`
-- Colour and symbols: `src/mlwp_scorecards/colours.py`, `symbols.py`
-- Renderers: `src/mlwp_scorecards/render/html/`, `render/static/`
+- Colour, scaling and metric polarity: `src/mlwp_scorecards/colours.py`
+- Renderers: `src/mlwp_scorecards/render/html.py`, `render/static.py`
+- Synthetic test data: `tests/synthetic.py`
 
 ## Development expectations
 
@@ -42,9 +43,15 @@ Guidance for agents and contributors working in this repository.
   `model`, `colours` and `geometry` only — never `xarray`, never the raw spec. If a
   renderer needs something absent from `Layout`, extend `model.py` rather than adding
   a backend-specific code path.
-- **Never infer semantics from a name.** A metric's polarity and colour family are
-  declared in the spec, never derived from its string. The reference implementation's
+- **No user-facing configuration object.** The API takes coordinate names, source
+  names and output paths. Do not reintroduce a spec/config class into the public
+  surface; internal dataclasses are fine.
+- **Never guess a metric's polarity.** `colours.METRIC_POLARITY` is an explicit
+  table and `polarity_of` raises for anything absent, because guessing produces a
+  confidently backwards card. The reference implementation's
   `metric.substr(0,3)=="sda"` is the bug this rule exists to prevent.
+- **Not-applicable coordinates are `None` in a layout key, never NaN** -- `nan != nan`
+  would break every label lookup for surface variables.
 - **Cell identity in HTML is an integer index**, enumerated once. Never build an id by
   concatenating labels.
 - **Rendered output must be byte-reproducible.** No `datetime.now()`, no `set`

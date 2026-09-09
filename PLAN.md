@@ -45,7 +45,7 @@ short row of boxes, one per forecast lead time.
 
 ```
 ┌──────────╥─────────┬─────────┬─────────┐
-│ variable ║   rmse  │   crps  │  spread │   ← columns = ["metric"]
+│ variable ║   rmse  │   crps  │  spread │   ← one column grouping
 ├──────────╫─────────┼─────────┼─────────┤
 │ 2t       ║ ▁▂▃▄▅▆█ │ ▁▂▄▅▆▇█ │ ░░▒▒▓▓▓ │
 │ msl      ║ ▁▂▃▄▅▆▇ │ ▂▃▄▅▆▇█ │ ░▒▒▓▓▓▓ │
@@ -54,7 +54,10 @@ short row of boxes, one per forecast lead time.
 └──────────╨─────────┴─────────┴─────────┘
      ↑          ↑
      │          └─ one cell: 7 lead times, T+24 → T+168, earliest on the left
-     └─ rows = ["variable"]
+  one row grouping
+
+  rows    = ["variable"]
+  columns = ["metric"]
 ```
 
 Reading it:
@@ -72,11 +75,10 @@ outside `metric` on the columns, gives the shape of the ECMWF reference card (tw
 shown; it has ten):
 
 ```
-                        ┌──────── depth 0: "spatial_region"
 ┌─────────┬─────┬──────╥───────┬───────┬───────╥───────┬───────┬───────┐
-│         │     │      ║         n.hem         ║         s.hem         │
-├─────────┼─────┼──────╫───────┬───────┬───────╫───────┬───────┬───────┤
-│  truth  │ var │level ║  rmse │  crps │  sprd ║  rmse │  crps │  sprd │
+│         │     │      ║         n.hem         ║         s.hem         │   ┐ depth 0: "spatial_region"
+├─────────┼─────┼──────╫───────┬───────┬───────╫───────┬───────┬───────┤   ├ two nested column groupings
+│  truth  │ var │level ║  rmse │  crps │  sprd ║  rmse │  crps │  sprd │   ┘ depth 1: "metric"
 ├─────────┼─────┼──────╫───────┼───────┼───────╫───────┼───────┼───────┤
 │ analysis│  z  │   50 ║▁▃▅▆█▇▇│▂▄▅▇███│░░▒▒▓▓▓║▂▃▄▅▆▇█│▁▂▄▅▆▇█│░▒▒▓▓▓▓│
 │         │     │  500 ║▁▂▄▅▇██│▁▃▄▆███│░░▒▓▓▓▓║▁▂▃▄▅▆▇│▂▃▄▅▇██│░░▒▒▓▓▓│
@@ -84,19 +86,18 @@ shown; it has ten):
 │         │ msl │   ── ║▁▂▃▄▅▆▇│▂▃▄▆▇██│░░▒▒▓▓▓║▂▂▃▄▅▆▇│▁▃▄▅▆▇█│░▒▓▓▓▓▓│
 │ obs     │  z  │   50 ║▁▂▃▄▅▆▇│▁▂▄▅▆▇█│░░▒▒▓▓▓║       │       │       │
 └─────────┴─────┴──────╨───────┴───────┴───────╨───────┴───────┴───────┘
-     ↑       ↑     ↑       ↑                                       ↑
-     └───────┴─────┘       └─ depth 1: "metric"                    └─ an empty crossing:
-   three nested                                                       no data at all
-   row groupings
+     ↑       ↑     ↑                                               ↑
+     └───────┴─────┘                                               └─ an empty crossing: no data at all
+  three nested row groupings
+
+  rows    = ["truth_source", "variable", "level"]
+  columns = ["spatial_region", "metric"]
 ```
 
-At full size that is 3 nested row groupings and 2 nested column groupings — 45 rows x 30
-columns x 15 lead times, or 20,250 boxes on one page. Which grouping goes where is declared
-by the caller; nothing in the layout engine privileges any of them, and `lead_time` is on
-the rows or columns just as readily as inside the cell.
-
-Note the empty block bottom-right: a crossing with no data at all. It must stay visibly
-different from a crossing whose difference happens to be zero.
+At full size that is 45 rows x 30 columns x 15 lead times — 20,250 boxes on one page.
+Which grouping goes where is declared by the caller; nothing in the layout engine privileges
+any of them, and `lead_time` can sit on the rows or columns just as readily as inside the
+cell.
 
 ### The three data sources
 

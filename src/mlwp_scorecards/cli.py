@@ -29,23 +29,47 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("dataset", help="verification summary (.nc or .zarr)")
     p.add_argument("--control", required=True, help="baseline prediction source")
     p.add_argument("--experiment", required=True, help="prediction source under test")
-    p.add_argument("-o", "--output", action="append", required=True, metavar="PATH",
-                   help="output file; repeatable. .html, .png, .pdf or .svg")
+    p.add_argument(
+        "-o",
+        "--output",
+        action="append",
+        required=True,
+        metavar="PATH",
+        help="output file; repeatable. .html, .png, .pdf or .svg",
+    )
     p.add_argument("--rows", help="comma-separated coordinates to nest on the rows")
-    p.add_argument("--columns", help="comma-separated coordinates to nest on the columns")
-    p.add_argument("--cell", default="lead_time", help="coordinate drawn inside each cell")
-    p.add_argument("--truth-source", action="append",
-                   help="restrict to this truth source; repeatable")
-    p.add_argument("--metric-polarity", action="append", metavar="NAME=POLARITY",
-                   help="polarity for an unknown metric, e.g. my_score=higher_is_better")
-    p.add_argument("--scheme", default="cvd", choices=("cvd", "ecmwf"),
-                   help="colour scheme (default: cvd, colour-vision-safe)")
+    p.add_argument(
+        "--columns", help="comma-separated coordinates to nest on the columns"
+    )
+    p.add_argument(
+        "--cell", default="lead_time", help="coordinate drawn inside each cell"
+    )
+    p.add_argument(
+        "--truth-source",
+        action="append",
+        help="restrict to this truth source; repeatable",
+    )
+    p.add_argument(
+        "--metric-polarity",
+        action="append",
+        metavar="NAME=POLARITY",
+        help="polarity for an unknown metric, e.g. my_score=higher_is_better",
+    )
+    p.add_argument(
+        "--scheme",
+        default="cvd",
+        choices=("cvd", "ecmwf"),
+        help="colour scheme (default: cvd, colour-vision-safe)",
+    )
     p.add_argument("--title", default="")
     p.add_argument("--subtitle", default="")
     p.add_argument("--dpi", type=int, default=200)
     p.add_argument("--strict", action="store_true", help="treat warnings as errors")
-    p.add_argument("--validate-only", action="store_true",
-                   help="report problems and exit without rendering")
+    p.add_argument(
+        "--validate-only",
+        action="store_true",
+        help="report problems and exit without rendering",
+    )
     return p
 
 
@@ -69,9 +93,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     known = _STATIC_SUFFIXES | {".html", ".htm"}
     bad = [o for o in args.output if Path(o).suffix.lower() not in known]
     if bad:
-        logger.error(
-            f"cannot render {bad}: expected one of {', '.join(sorted(known))}"
-        )
+        logger.error(f"cannot render {bad}: expected one of {', '.join(sorted(known))}")
         return 1
 
     path = Path(args.dataset)

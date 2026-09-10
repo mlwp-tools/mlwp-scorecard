@@ -24,17 +24,24 @@ def test_experiment_is_worse_everywhere(layout):
         for step in cell.steps:
             if step.value is not None and step.level > 0:
                 bad.append((cell.cell_id, step.lead_time, step.level))
-    assert not bad, f"drifting persistence scored better in {len(bad)} places: {bad[:5]}"
+    assert (
+        not bad
+    ), f"drifting persistence scored better in {len(bad)} places: {bad[:5]}"
 
 
 def test_degradation_grows_with_lead_time(layout):
     """The walk accumulates, so the gap widens with lead time."""
     cell = layout.sel(
-        truth_source="analysis", variable="z", level=500.0,
-        spatial_region="n.hem", metric="rmse",
+        truth_source="analysis",
+        variable="z",
+        level=500.0,
+        spatial_region="n.hem",
+        metric="rmse",
     )
     diffs = [s.value for s in cell.steps]
-    assert all(d > 0 for d in diffs), "experiment should have larger error at every lead"
+    assert all(
+        d > 0 for d in diffs
+    ), "experiment should have larger error at every lead"
     assert diffs[-1] > diffs[0] * 1.5, f"gap should widen with lead time, got {diffs}"
 
 
@@ -48,8 +55,11 @@ def test_spread_uses_the_activity_family(layout):
 def test_case_count_falls_with_lead_time(layout):
     """Cases near the end of the record have no truth to verify against."""
     cell = layout.sel(
-        truth_source="analysis", variable="z", level=500.0,
-        spatial_region="n.hem", metric="rmse",
+        truth_source="analysis",
+        variable="z",
+        level=500.0,
+        spatial_region="n.hem",
+        metric="rmse",
     )
     counts = [s.n for s in cell.steps]
     assert counts == sorted(counts, reverse=True), counts
@@ -69,16 +79,24 @@ def test_surface_variables_produce_one_row_not_many(layout):
 
 def test_units_reach_the_cells(layout):
     """CF attributes on the score variable survive to the layout."""
-    cell = layout.sel(truth_source="analysis", variable="t", level=500.0,
-                      spatial_region="n.hem", metric="rmse")
+    cell = layout.sel(
+        truth_source="analysis",
+        variable="t",
+        level=500.0,
+        spatial_region="n.hem",
+        metric="rmse",
+    )
     assert cell.units == "K"
 
 
 def test_renders_html_and_static(verification, tmp_path):
     """Both backends produce a file from the same layout."""
     outs = make_scorecard(
-        verification, [tmp_path / "c.html", tmp_path / "c.png", tmp_path / "c.pdf"],
-        control="persistence", experiment="drifting-persistence", title="t",
+        verification,
+        [tmp_path / "c.html", tmp_path / "c.png", tmp_path / "c.pdf"],
+        control="persistence",
+        experiment="drifting-persistence",
+        title="t",
     )
     assert [p.name for p in outs] == ["c.html", "c.png", "c.pdf"]
     for p in outs:
@@ -87,28 +105,39 @@ def test_renders_html_and_static(verification, tmp_path):
 
 def test_html_has_no_external_requests(verification, tmp_path):
     """No CDN, no analytics, no webfonts: the page must work offline."""
-    p = make_scorecard(verification, tmp_path / "c.html",
-                       control="persistence", experiment="drifting-persistence")[0]
+    p = make_scorecard(
+        verification,
+        tmp_path / "c.html",
+        control="persistence",
+        experiment="drifting-persistence",
+    )[0]
     text = p.read_text()
     assert not re.search(r'(?:src|href)\s*=\s*["\']https?://', text)
     assert "googletagmanager" not in text
 
 
 def test_html_box_count_matches_the_layout(layout, verification, tmp_path):
-    p = make_scorecard(verification, tmp_path / "c.html", rows=layout.row_dims,
-                       columns=layout.column_dims, control="persistence",
-                       experiment="drifting-persistence")[0]
+    p = make_scorecard(
+        verification,
+        tmp_path / "c.html",
+        rows=layout.row_dims,
+        columns=layout.column_dims,
+        control="persistence",
+        experiment="drifting-persistence",
+    )[0]
     assert p.read_text().count('<i class="b') == layout.stats.n_boxes
 
 
 def test_unknown_metric_refuses_to_guess(verification, tmp_path):
     """Guessing polarity would produce a confidently backwards card."""
-    ds = verification.assign_coords(
-        metric=["rmse", "mae", "wibble"]
-    )
+    ds = verification.assign_coords(metric=["rmse", "mae", "wibble"])
     with pytest.raises(KeyError, match="unknown metric"):
         build_layout(ds, control="persistence", experiment="drifting-persistence")
 
-    lay = build_layout(ds, control="persistence", experiment="drifting-persistence",
-                       metric_polarity={"wibble": "lower_is_better"})
+    lay = build_layout(
+        ds,
+        control="persistence",
+        experiment="drifting-persistence",
+        metric_polarity={"wibble": "lower_is_better"},
+    )
     assert lay.stats.n_cells_present > 0

@@ -22,16 +22,20 @@ import xarray as xr
 __all__ = ["make_reanalysis", "make_forecasts", "make_verification_dataset"]
 
 VARIABLES = {
-    "z":   dict(units="m",     long_name="Geopotential height", levels=[500.0, 850.0], scale=60.0),
-    "t":   dict(units="K",     long_name="Temperature",         levels=[500.0, 850.0], scale=3.0),
-    "msl": dict(units="Pa",    long_name="Mean sea level pressure", levels=None,       scale=400.0),
-    "2t":  dict(units="K",     long_name="2 metre temperature",     levels=None,       scale=2.5),
+    "z": dict(
+        units="m", long_name="Geopotential height", levels=[500.0, 850.0], scale=60.0
+    ),
+    "t": dict(units="K", long_name="Temperature", levels=[500.0, 850.0], scale=3.0),
+    "msl": dict(
+        units="Pa", long_name="Mean sea level pressure", levels=None, scale=400.0
+    ),
+    "2t": dict(units="K", long_name="2 metre temperature", levels=None, scale=2.5),
 }
 
 REGIONS = {
-    "n.hem":   (20.0, 90.0),
+    "n.hem": (20.0, 90.0),
     "tropics": (-20.0, 20.0),
-    "s.hem":   (-90.0, -20.0),
+    "s.hem": (-90.0, -20.0),
 }
 
 METRICS = ("rmse", "mae", "spread")
@@ -50,14 +54,14 @@ def make_reanalysis(
     rng = np.random.default_rng(seed)
     lat = np.linspace(-87.5, 87.5, n_lat)
     lon = np.linspace(0.0, 360.0, n_lon, endpoint=False)
-    case = np.arange(n_case)                      # 12-hourly initialisation index
+    case = np.arange(n_case)  # 12-hourly initialisation index
 
-    LON, LAT = np.meshgrid(np.deg2rad(lon), np.deg2rad(lat))   # (lat, lon)
+    LON, LAT = np.meshgrid(np.deg2rad(lon), np.deg2rad(lat))  # (lat, lon)
 
     def field(scale: float, n_wave: int = 3) -> np.ndarray:
         """AR(1)-in-time sum of travelling waves -> (case, lat, lon)."""
         out = np.zeros((n_case, n_lat, n_lon))
-        phi = 0.85                                # ~2-day decorrelation at 12-hourly
+        phi = 0.85  # ~2-day decorrelation at 12-hourly
         for _ in range(n_wave):
             k = rng.integers(2, 7)
             speed = rng.uniform(0.05, 0.25)
@@ -67,7 +71,9 @@ def make_reanalysis(
             for i in range(1, n_case):
                 amp[i] = phi * amp[i - 1] + np.sqrt(1 - phi**2) * e[i]
             phase = rng.uniform(0, 2 * np.pi)
-            wave = np.cos(k * LON - speed * case[:, None, None] + phase) * np.cos(LAT) ** 2
+            wave = (
+                np.cos(k * LON - speed * case[:, None, None] + phase) * np.cos(LAT) ** 2
+            )
             out += amp[:, None, None] * wave
         return out / np.sqrt(n_wave) * scale
 
@@ -76,14 +82,16 @@ def make_reanalysis(
         levels = meta["levels"]
         if levels is None:
             data[name] = xr.DataArray(
-                field(meta["scale"]), dims=("case", "lat", "lon"),
+                field(meta["scale"]),
+                dims=("case", "lat", "lon"),
                 coords=dict(case=case, lat=lat, lon=lon),
                 attrs=dict(units=meta["units"], long_name=meta["long_name"]),
             )
         else:
             stack = np.stack([field(meta["scale"]) for _ in levels], axis=1)
             data[name] = xr.DataArray(
-                stack, dims=("case", "level", "lat", "lon"),
+                stack,
+                dims=("case", "level", "lat", "lon"),
                 coords=dict(case=case, level=levels, lat=lat, lon=lon),
                 attrs=dict(units=meta["units"], long_name=meta["long_name"]),
             )
@@ -112,7 +120,7 @@ def make_forecasts(
         ``(case, lead_time, [level,] lat, lon)`` forecast values.
     """
     rng = np.random.default_rng(seed)
-    a = analysis.values                                    # (case, [level,] lat, lon)
+    a = analysis.values  # (case, [level,] lat, lon)
     sigma = float(np.std(a))
     out = np.empty((a.shape[0], len(leads)) + a.shape[1:])
     for i in range(a.shape[0]):
@@ -120,7 +128,7 @@ def make_forecasts(
         for j in range(len(leads)):
             if drift:
                 walk = walk + rng.normal(0, drift * sigma, a.shape[1:])
-            out[i, j] = a[i] + walk                        # persistence + accumulated walk
+            out[i, j] = a[i] + walk  # persistence + accumulated walk
     return out
 
 
@@ -182,20 +190,24 @@ def make_verification_dataset(
 
         # a case initialised at index i verifies at i + lead/12; beyond the end
         # of the record there is no truth, so it drops out
-        valid = np.arange(n_case)[:, None] + (leads[None, :] // 12)      # (case, lead)
-        ok = valid < n_case                                              # (case, lead)
+        valid = np.arange(n_case)[:, None] + (leads[None, :] // 12)  # (case, lead)
+        ok = valid < n_case  # (case, lead)
 
         shape = (2, len(levels), len(REGIONS), len(METRICS), len(leads), len(stats))
         vals = np.full(shape, np.nan)
-        cnts = np.full((2, len(levels), len(REGIONS), len(METRICS), len(leads)), 0, dtype=np.int64)
+        cnts = np.full(
+            (2, len(levels), len(REGIONS), len(METRICS), len(leads)), 0, dtype=np.int64
+        )
 
         for li, lev in enumerate(levels):
-            t = truth.sel(level=lev).values if has_level else truth.values      # (case, lat, lon)
-            c = ctl[:, :, li] if has_level else ctl                             # (case, lead, lat, lon)
+            t = (
+                truth.sel(level=lev).values if has_level else truth.values
+            )  # (case, lat, lon)
+            c = ctl[:, :, li] if has_level else ctl  # (case, lead, lat, lon)
             e = exp[:, :, li] if has_level else exp
             # verify against the truth valid at case+lead
             vi = np.clip(valid, 0, n_case - 1)
-            tv = t[vi]                                                          # (case, lead, lat, lon)
+            tv = t[vi]  # (case, lead, lat, lon)
             err_c = np.where(ok[..., None, None], c - tv, np.nan)
             err_e = np.where(ok[..., None, None], e - tv, np.nan)
 
@@ -204,19 +216,26 @@ def make_verification_dataset(
                 w = np.broadcast_to(coslat[m][:, None], (m.sum(), len(ana["lon"])))
                 for mi, metric in enumerate(METRICS):
                     if metric == "rmse":
-                        sc, se = (_weighted_rmse(err_c[..., m, :], w),
-                                  _weighted_rmse(err_e[..., m, :], w))
+                        sc, se = (
+                            _weighted_rmse(err_c[..., m, :], w),
+                            _weighted_rmse(err_e[..., m, :], w),
+                        )
                     elif metric == "mae":
-                        sc, se = (_weighted_mae(err_c[..., m, :], w),
-                                  _weighted_mae(err_e[..., m, :], w))
+                        sc, se = (
+                            _weighted_mae(err_c[..., m, :], w),
+                            _weighted_mae(err_e[..., m, :], w),
+                        )
                     else:  # spread: dispersion of the forecast field itself
-                        with np.errstate(invalid="ignore"), \
-                             warnings.catch_warnings():
+                        with np.errstate(invalid="ignore"), warnings.catch_warnings():
                             warnings.simplefilter("ignore", RuntimeWarning)
-                            sc = np.nanstd(np.where(ok[..., None, None], c, np.nan)[..., m, :],
-                                           axis=(-2, -1))
-                            se = np.nanstd(np.where(ok[..., None, None], e, np.nan)[..., m, :],
-                                           axis=(-2, -1))
+                            sc = np.nanstd(
+                                np.where(ok[..., None, None], c, np.nan)[..., m, :],
+                                axis=(-2, -1),
+                            )
+                            se = np.nanstd(
+                                np.where(ok[..., None, None], e, np.nan)[..., m, :],
+                                axis=(-2, -1),
+                            )
                         sc = np.where(ok, sc, np.nan)
                         se = np.where(ok, se, np.nan)
                     # sc, se: (case, lead)
@@ -232,13 +251,23 @@ def make_verification_dataset(
                             nb = int(np.ceil(n_case / block))
                             st = rng.integers(0, n_case - block + 1, (n_boot, nb))
                             idx = (st[:, :, None] + np.arange(block)).reshape(
-                                n_boot, -1)[:, :n_case]                 # (boot, case)
-                            b = np.nanmean(per_case[idx], axis=1)       # (boot, lead_time)
-                            vals[si, li, ri, mi, :, 1] = np.nanpercentile(b, 2.5, axis=0)
-                            vals[si, li, ri, mi, :, 2] = np.nanpercentile(b, 97.5, axis=0)
+                                n_boot, -1
+                            )[
+                                :, :n_case
+                            ]  # (boot, case)
+                            b = np.nanmean(per_case[idx], axis=1)  # (boot, lead_time)
+                            vals[si, li, ri, mi, :, 1] = np.nanpercentile(
+                                b, 2.5, axis=0
+                            )
+                            vals[si, li, ri, mi, :, 2] = np.nanpercentile(
+                                b, 97.5, axis=0
+                            )
 
-        dims = ["prediction_source"] + (["level"] if has_level else []) + \
-               ["spatial_region", "metric", "lead_time", "stat"]
+        dims = (
+            ["prediction_source"]
+            + (["level"] if has_level else [])
+            + ["spatial_region", "metric", "lead_time", "stat"]
+        )
         arr = vals if has_level else vals[:, 0]
         cnt = cnts if has_level else cnts[:, 0]
         coords = dict(
@@ -252,12 +281,18 @@ def make_verification_dataset(
             coords["level"] = np.asarray(levels, dtype=float)
 
         out[name] = xr.DataArray(
-            arr, dims=dims, coords=coords,
-            attrs=dict(units=meta["units"], long_name=meta["long_name"],
-                       ancillary_variables=f"{name}_number_of_cases"),
+            arr,
+            dims=dims,
+            coords=coords,
+            attrs=dict(
+                units=meta["units"],
+                long_name=meta["long_name"],
+                ancillary_variables=f"{name}_number_of_cases",
+            ),
         )
         out[f"{name}_number_of_cases"] = xr.DataArray(
-            cnt, dims=[d for d in dims if d != "stat"],
+            cnt,
+            dims=[d for d in dims if d != "stat"],
             coords={k: v for k, v in coords.items() if k != "stat"},
             attrs=dict(standard_name="number_of_observations"),
         )

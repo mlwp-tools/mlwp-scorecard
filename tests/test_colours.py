@@ -54,8 +54,10 @@ def test_polarity_lookup_and_refusal():
     assert polarity_of("spread") is Polarity.ACTIVITY
     with pytest.raises(KeyError, match="unknown metric"):
         polarity_of("not_a_metric")
-    assert polarity_of("not_a_metric", {"not_a_metric": "higher_is_better"}) \
+    assert (
+        polarity_of("not_a_metric", {"not_a_metric": "higher_is_better"})
         is Polarity.HIGHER_IS_BETTER
+    )
 
 
 def test_diverging_ramp_collapses_in_greyscale():

@@ -16,7 +16,13 @@ from .ingest import ValidationReport, prepare
 from .layout import resolve
 from .model import Layout
 
-__all__ = ["make_scorecard", "build_layout", "render", "DEFAULT_ROWS", "DEFAULT_COLUMNS"]
+__all__ = [
+    "make_scorecard",
+    "build_layout",
+    "render",
+    "DEFAULT_ROWS",
+    "DEFAULT_COLUMNS",
+]
 
 #: Preferred nesting when ``rows`` is not given, filtered to what the data has.
 DEFAULT_ROWS = ("truth_source", "variable", "level")
@@ -42,8 +48,11 @@ def _infer_axes(
         return list(rows), list(columns)
 
     r = [d for d in (rows if rows is not None else DEFAULT_ROWS) if d in available]
-    c = [d for d in (columns if columns is not None else DEFAULT_COLUMNS)
-         if d in available and d not in r]
+    c = [
+        d
+        for d in (columns if columns is not None else DEFAULT_COLUMNS)
+        if d in available and d not in r
+    ]
     leftover = sorted(available - set(r) - set(c))
     if columns is None:
         c += leftover
@@ -112,21 +121,39 @@ def build_layout(
     subset: dict[str, Any] = dict(select or {})
     if truth_source is not None:
         subset["truth_source"] = (
-            list(truth_source) if isinstance(truth_source, (list, tuple)) else [truth_source]
+            list(truth_source)
+            if isinstance(truth_source, (list, tuple))
+            else [truth_source]
         )
 
-    row_dims, col_dims = _infer_axes(data, rows, columns, cell, prediction_dim, stat_dim)
+    row_dims, col_dims = _infer_axes(
+        data, rows, columns, cell, prediction_dim, stat_dim
+    )
 
     cube = prepare(
-        data, row_dims=row_dims, column_dims=col_dims, cell_dim=cell,
-        stat_dim=stat_dim, strict=strict,
+        data,
+        row_dims=row_dims,
+        column_dims=col_dims,
+        cell_dim=cell,
+        stat_dim=stat_dim,
+        strict=strict,
     )
     layout = resolve(
-        cube, control=control, experiment=experiment,
-        row_dims=row_dims, column_dims=col_dims, cell_dim=cell,
-        prediction_dim=prediction_dim, stat_dim=stat_dim, metric_dim=metric_dim,
-        scheme=sch, scaling=FixedScaling(), metric_polarity=metric_polarity,
-        subset=subset or None, title=title, subtitle=subtitle,
+        cube,
+        control=control,
+        experiment=experiment,
+        row_dims=row_dims,
+        column_dims=col_dims,
+        cell_dim=cell,
+        prediction_dim=prediction_dim,
+        stat_dim=stat_dim,
+        metric_dim=metric_dim,
+        scheme=sch,
+        scaling=FixedScaling(),
+        metric_polarity=metric_polarity,
+        subset=subset or None,
+        title=title,
+        subtitle=subtitle,
     )
     if return_validation_report:
         return layout, cube.report
@@ -141,8 +168,10 @@ def render(
     dpi: int = 200,
 ) -> Path:
     """Render a resolved layout to one file, by suffix."""
-    sch = SCHEMES[layout.scheme_name] if scheme is None else (
-        SCHEMES[scheme] if isinstance(scheme, str) else scheme
+    sch = (
+        SCHEMES[layout.scheme_name]
+        if scheme is None
+        else (SCHEMES[scheme] if isinstance(scheme, str) else scheme)
     )
     path = Path(path)
     suffix = path.suffix.lower()

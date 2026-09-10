@@ -40,14 +40,20 @@ def test_line_headers_are_never_ragged(layout):
 
 
 def test_reordering_rows_reorders_the_nesting(verification):
-    a = build_layout(verification, control="persistence",
-                     experiment="drifting-persistence",
-                     rows=["truth_source", "variable", "level"],
-                     columns=["spatial_region", "metric"])
-    b = build_layout(verification, control="persistence",
-                     experiment="drifting-persistence",
-                     rows=["truth_source", "level", "variable"],
-                     columns=["spatial_region", "metric"])
+    a = build_layout(
+        verification,
+        control="persistence",
+        experiment="drifting-persistence",
+        rows=["truth_source", "variable", "level"],
+        columns=["spatial_region", "metric"],
+    )
+    b = build_layout(
+        verification,
+        control="persistence",
+        experiment="drifting-persistence",
+        rows=["truth_source", "level", "variable"],
+        columns=["spatial_region", "metric"],
+    )
     assert a.row_dims != b.row_dims
     assert [r.key for r in a.rows] != [r.key for r in b.rows]
     assert a.stats.n_cells_present == b.stats.n_cells_present
@@ -55,17 +61,25 @@ def test_reordering_rows_reorders_the_nesting(verification):
 
 def test_unknown_dimension_is_rejected_clearly(verification):
     with pytest.raises(KeyError, match="not a dimension"):
-        build_layout(verification, control="persistence",
-                     experiment="drifting-persistence",
-                     rows=["nonsuch"], columns=["metric"])
+        build_layout(
+            verification,
+            control="persistence",
+            experiment="drifting-persistence",
+            rows=["nonsuch"],
+            columns=["metric"],
+        )
 
 
 def test_unassigned_dimension_is_rejected_clearly(verification):
     """Silently dropping a dimension would average over it without saying so."""
     with pytest.raises(KeyError, match="assigned to neither"):
-        build_layout(verification, control="persistence",
-                     experiment="drifting-persistence",
-                     rows=["variable"], columns=["metric"])
+        build_layout(
+            verification,
+            control="persistence",
+            experiment="drifting-persistence",
+            rows=["variable"],
+            columns=["metric"],
+        )
 
 
 def test_unknown_source_is_rejected_clearly(verification):

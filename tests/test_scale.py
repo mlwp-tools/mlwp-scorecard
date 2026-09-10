@@ -35,8 +35,9 @@ def _big_dataset(n_var=9, n_level=5, n_region=10, n_metric=3, n_lead=15) -> xr.D
         base = rng.uniform(1, 5, shape)
         base[:, 1] = base[:, 0] * (1 + rng.uniform(-0.2, 0.2, base[:, 0].shape))
         name = f"v{i}"
-        out[name] = xr.DataArray(base, dims=dims, coords=coords,
-                                 attrs=dict(units="K", long_name=name))
+        out[name] = xr.DataArray(
+            base, dims=dims, coords=coords, attrs=dict(units="K", long_name=name)
+        )
     return xr.Dataset(out)
 
 
@@ -44,9 +45,13 @@ def _big_dataset(n_var=9, n_level=5, n_region=10, n_metric=3, n_lead=15) -> xr.D
 def test_full_size_card_renders_quickly(tmp_path):
     ds = _big_dataset()
     t0 = time.perf_counter()
-    layout = build_layout(ds, control="ctl", experiment="exp",
-                          rows=["truth_source", "variable", "level"],
-                          columns=["spatial_region", "metric"])
+    layout = build_layout(
+        ds,
+        control="ctl",
+        experiment="exp",
+        rows=["truth_source", "variable", "level"],
+        columns=["spatial_region", "metric"],
+    )
     t_layout = time.perf_counter() - t0
 
     assert layout.stats.n_rows == 45
@@ -55,10 +60,14 @@ def test_full_size_card_renders_quickly(tmp_path):
     assert t_layout < 10, f"layout took {t_layout:.1f}s"
 
     t0 = time.perf_counter()
-    html, png = make_scorecard(ds, [tmp_path / "b.html", tmp_path / "b.png"],
-                               control="ctl", experiment="exp",
-                               rows=["truth_source", "variable", "level"],
-                               columns=["spatial_region", "metric"])
+    html, png = make_scorecard(
+        ds,
+        [tmp_path / "b.html", tmp_path / "b.png"],
+        control="ctl",
+        experiment="exp",
+        rows=["truth_source", "variable", "level"],
+        columns=["spatial_region", "metric"],
+    )
     t_render = time.perf_counter() - t0
     assert t_render < 60, f"render took {t_render:.1f}s"
 
@@ -70,10 +79,19 @@ def test_full_size_card_renders_quickly(tmp_path):
 @pytest.mark.slow
 def test_full_size_html_box_count(tmp_path):
     ds = _big_dataset()
-    layout = build_layout(ds, control="ctl", experiment="exp",
-                          rows=["truth_source", "variable", "level"],
-                          columns=["spatial_region", "metric"])
-    p = make_scorecard(ds, tmp_path / "b.html", control="ctl", experiment="exp",
-                       rows=["truth_source", "variable", "level"],
-                       columns=["spatial_region", "metric"])[0]
+    layout = build_layout(
+        ds,
+        control="ctl",
+        experiment="exp",
+        rows=["truth_source", "variable", "level"],
+        columns=["spatial_region", "metric"],
+    )
+    p = make_scorecard(
+        ds,
+        tmp_path / "b.html",
+        control="ctl",
+        experiment="exp",
+        rows=["truth_source", "variable", "level"],
+        columns=["spatial_region", "metric"],
+    )[0]
     assert p.read_text().count('<i class="b') == layout.stats.n_boxes

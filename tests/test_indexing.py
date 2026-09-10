@@ -10,8 +10,10 @@ def test_sel_getitem_and_isel_agree(layout):
         rl, cl = layout.rows[r], layout.columns[c]
         by_pos = layout.isel(row=r, col=c)
         by_key = layout[rl.key, cl.key]
-        by_sel = layout.sel(**dict(zip(layout.row_dims, rl.key)),
-                            **dict(zip(layout.column_dims, cl.key)))
+        by_sel = layout.sel(
+            **dict(zip(layout.row_dims, rl.key)),
+            **dict(zip(layout.column_dims, cl.key)),
+        )
         assert by_pos is cell and by_key is cell and by_sel is cell
 
 

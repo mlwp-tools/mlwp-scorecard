@@ -196,9 +196,7 @@ def _ramp_css(scheme: ColourScheme) -> str:
     A full-size card has ~20,000 boxes but only ~60 distinct colours, so carrying
     the fill inline costs roughly 800 kB for nothing.
     """
-    rules = [
-        f".c i.z {{ --f:{scheme.neutral.fill}; --e:{scheme.neutral.edge}; }}"
-    ]
+    rules = [f".c i.z {{ --f:{scheme.neutral.fill}; --e:{scheme.neutral.edge}; }}"]
     for fam_key, fam in scheme.families.items():
         for sign, ramp in (("p", fam.positive), ("n", fam.negative)):
             for i, sw in enumerate(ramp.swatches, start=1):
@@ -266,7 +264,9 @@ def render_html(layout: Layout, path: str | Path, *, scheme: ColourScheme) -> Pa
                 f'<th class="h1" data-col="{esc(colkey(c))}" scope="col">'
                 f"{esc(c.headers[-1].label)}</th>"
             )
-    thead = f"<tr>{''.join(head1)}</tr>" + (f"<tr>{''.join(head2)}</tr>" if head2 else "")
+    thead = f"<tr>{''.join(head1)}</tr>" + (
+        f"<tr>{''.join(head2)}</tr>" if head2 else ""
+    )
 
     body = []
     for r, rl in enumerate(layout.rows):

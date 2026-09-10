@@ -39,14 +39,14 @@ def _label_widths(layout: Layout, geom: Geometry) -> list[float]:
     """Width for each row-label column, from its longest label."""
     out = []
     for depth in range(layout.row_depth):
-        longest = max(
-            (len(h.label) for h in layout.row_headers[depth]), default=1
-        )
+        longest = max((len(h.label) for h in layout.row_headers[depth]), default=1)
         out.append(max(26.0, longest * geom.font_pt * 0.62 + 10))
     return out
 
 
-def render_figure(layout: Layout, *, scheme: ColourScheme, geometry: Geometry | None = None):
+def render_figure(
+    layout: Layout, *, scheme: ColourScheme, geometry: Geometry | None = None
+):
     """Draw ``layout`` into a new matplotlib ``Figure``.
 
     Returns
@@ -68,22 +68,62 @@ def render_figure(layout: Layout, *, scheme: ColourScheme, geometry: Geometry | 
     title_h = 34.0 if layout.title else 8.0
     legend_h = 46.0
 
-    W = sum(lab_w) + cw * layout.stats.n_cols
+    # Only families actually on the card get a legend entry: a spread ramp on a
+    # card with no spread metric is noise.
+    used = {s.family for _, _, cell in layout.iter_cells() for s in cell.steps}
+    families = [f for k, f in scheme.families.items() if k in used] or list(
+        scheme.families.values()
+    )
+
+    foot = (
+        f"{layout.experiment} vs {layout.control}. Each cell is {n_step} lead times, "
+        f"{layout.lead_labels[0]} to {layout.lead_labels[-1]}, earliest on the left; "
+        f"intensity is the difference relative to {layout.control}."
+    )
+    caveat = (
+        f"{layout.stats.n_boxes} simultaneous comparisons, and forecast cases are "
+        f"autocorrelated: isolated cells mean little, coherent blocks mean a lot."
+    )
+
+    # The table alone does not set the width: a long title or footnote would be
+    # clipped by a figure sized only from the grid.
+    def _text_w(text: str, pt: float) -> float:
+        return len(text) * pt * 0.56 + 8
+
+    legend_w = 8.0 + sum(
+        _text_w(f.negative_word, g.font_pt)
+        + _text_w(f.positive_word, g.font_pt)
+        + (len(f.negative) // max(1, len(f.negative) // 6) + 2) * 9 * 2
+        + 26
+        for f in families
+    )
+    W = max(
+        sum(lab_w) + cw * layout.stats.n_cols,
+        _text_w(layout.title, g.title_pt),
+        _text_w(layout.subtitle, g.font_pt),
+        _text_w(foot, g.font_pt - 1),
+        _text_w(caveat, g.font_pt - 1),
+        legend_w,
+    )
     H = title_h + head_h + g.row_h * layout.stats.n_rows + legend_h
 
     fig = plt.figure(figsize=(W / 72.0, H / 72.0), dpi=100)
     ax = fig.add_axes((0, 0, 1, 1))
     ax.set_xlim(0, W)
-    ax.set_ylim(H, 0)          # inverted: row 0 at the top, as in the HTML
+    ax.set_ylim(H, 0)  # inverted: row 0 at the top, as in the HTML
     ax.set_axis_off()
 
     x0 = sum(lab_w)
     y0 = title_h + head_h
 
     if layout.title:
-        ax.text(4, 14, layout.title, fontsize=g.title_pt, fontweight="bold", va="center")
+        ax.text(
+            4, 14, layout.title, fontsize=g.title_pt, fontweight="bold", va="center"
+        )
         if layout.subtitle:
-            ax.text(4, 27, layout.subtitle, fontsize=g.font_pt, color="#5b6470", va="center")
+            ax.text(
+                4, 27, layout.subtitle, fontsize=g.font_pt, color="#5b6470", va="center"
+            )
 
     # ---- column headers -----------------------------------------------------
     for depth in range(layout.column_depth):
@@ -92,11 +132,25 @@ def render_figure(layout: Layout, *, scheme: ColourScheme, geometry: Geometry | 
             bx = x0 + blk.start * cw
             bw = blk.span * cw
             ax.add_patch(
-                Rectangle((bx, top), bw, g.head_h, facecolor="#eef1f4",
-                          edgecolor="#ffffff", linewidth=0.8, zorder=1)
+                Rectangle(
+                    (bx, top),
+                    bw,
+                    g.head_h,
+                    facecolor="#eef1f4",
+                    edgecolor="#ffffff",
+                    linewidth=0.8,
+                    zorder=1,
+                )
             )
-            ax.text(bx + bw / 2, top + g.head_h / 2, blk.label, ha="center", va="center",
-                    fontsize=g.font_pt, zorder=2)
+            ax.text(
+                bx + bw / 2,
+                top + g.head_h / 2,
+                blk.label,
+                ha="center",
+                va="center",
+                fontsize=g.font_pt,
+                zorder=2,
+            )
 
     # ---- row headers: one label per block, vertically centred ---------------
     for depth in range(layout.row_depth):
@@ -105,12 +159,26 @@ def render_figure(layout: Layout, *, scheme: ColourScheme, geometry: Geometry | 
             by = y0 + blk.start * g.row_h
             bh = blk.span * g.row_h
             ax.add_patch(
-                Rectangle((left, by), lab_w[depth], bh, facecolor="#f7f8fa",
-                          edgecolor="#ffffff", linewidth=0.8, zorder=1)
+                Rectangle(
+                    (left, by),
+                    lab_w[depth],
+                    bh,
+                    facecolor="#f7f8fa",
+                    edgecolor="#ffffff",
+                    linewidth=0.8,
+                    zorder=1,
+                )
             )
             if blk.label:
-                ax.text(left + 4, by + bh / 2, blk.label, ha="left", va="center",
-                        fontsize=g.font_pt, zorder=2)
+                ax.text(
+                    left + 4,
+                    by + bh / 2,
+                    blk.label,
+                    ha="left",
+                    va="center",
+                    fontsize=g.font_pt,
+                    zorder=2,
+                )
 
     # ---- cells --------------------------------------------------------------
     rects, fills, edges = [], [], []
@@ -121,8 +189,15 @@ def render_figure(layout: Layout, *, scheme: ColourScheme, geometry: Geometry | 
             cy = y0 + r * g.row_h
             if cell is None:
                 ax.add_patch(
-                    Rectangle((cx, cy), cw, g.row_h, facecolor=scheme.missing,
-                              edgecolor="#ffffff", linewidth=0.8, zorder=1)
+                    Rectangle(
+                        (cx, cy),
+                        cw,
+                        g.row_h,
+                        facecolor=scheme.missing,
+                        edgecolor="#ffffff",
+                        linewidth=0.8,
+                        zorder=1,
+                    )
                 )
                 continue
             bx = cx + g.cell_pad
@@ -149,40 +224,69 @@ def render_figure(layout: Layout, *, scheme: ColourScheme, geometry: Geometry | 
     ly = y0 + g.row_h * layout.stats.n_rows + 12.0
     lx = 4.0
     sw_w, sw_h = 8.0, 10.0
-    for fam in scheme.families.values():
-        ax.text(lx, ly, f"{fam.negative_word}", fontsize=g.font_pt - 0.5,
-                ha="left", va="center", color="#3b424b")
+    for fam in families:
+        ax.text(
+            lx,
+            ly,
+            f"{fam.negative_word}",
+            fontsize=g.font_pt - 0.5,
+            ha="left",
+            va="center",
+            color="#3b424b",
+        )
         lx += len(fam.negative_word) * (g.font_pt - 0.5) * 0.58 + 5
         step = max(1, len(fam.negative) // 6)
         for swatch in list(fam.negative.swatches[::step])[::-1]:
-            ax.add_patch(Rectangle((lx, ly - sw_h / 2), sw_w, sw_h,
-                                   facecolor=swatch.fill, edgecolor=swatch.edge,
-                                   linewidth=0.5, zorder=3))
+            ax.add_patch(
+                Rectangle(
+                    (lx, ly - sw_h / 2),
+                    sw_w,
+                    sw_h,
+                    facecolor=swatch.fill,
+                    edgecolor=swatch.edge,
+                    linewidth=0.5,
+                    zorder=3,
+                )
+            )
             lx += sw_w + 1
-        ax.add_patch(Rectangle((lx, ly - sw_h / 2), sw_w, sw_h,
-                               facecolor=scheme.neutral.fill,
-                               edgecolor=scheme.neutral.edge, linewidth=0.5, zorder=3))
+        ax.add_patch(
+            Rectangle(
+                (lx, ly - sw_h / 2),
+                sw_w,
+                sw_h,
+                facecolor=scheme.neutral.fill,
+                edgecolor=scheme.neutral.edge,
+                linewidth=0.5,
+                zorder=3,
+            )
+        )
         lx += sw_w + 1
         for swatch in list(fam.positive.swatches[::step]):
-            ax.add_patch(Rectangle((lx, ly - sw_h / 2), sw_w, sw_h,
-                                   facecolor=swatch.fill, edgecolor=swatch.edge,
-                                   linewidth=0.5, zorder=3))
+            ax.add_patch(
+                Rectangle(
+                    (lx, ly - sw_h / 2),
+                    sw_w,
+                    sw_h,
+                    facecolor=swatch.fill,
+                    edgecolor=swatch.edge,
+                    linewidth=0.5,
+                    zorder=3,
+                )
+            )
             lx += sw_w + 1
         lx += 4
-        ax.text(lx, ly, fam.positive_word, fontsize=g.font_pt - 0.5,
-                ha="left", va="center", color="#3b424b")
+        ax.text(
+            lx,
+            ly,
+            fam.positive_word,
+            fontsize=g.font_pt - 0.5,
+            ha="left",
+            va="center",
+            color="#3b424b",
+        )
         lx += len(fam.positive_word) * (g.font_pt - 0.5) * 0.58 + 22
 
-    foot = (
-        f"{layout.experiment} vs {layout.control}. Each cell is {n_step} lead times, "
-        f"{layout.lead_labels[0]} to {layout.lead_labels[-1]}, earliest on the left; "
-        f"intensity is the difference relative to {layout.control}."
-    )
     ax.text(4, ly + 15, foot, fontsize=g.font_pt - 1, color="#5b6470", va="center")
-    caveat = (
-        f"{layout.stats.n_boxes} simultaneous comparisons, and forecast cases are "
-        f"autocorrelated: isolated cells mean little, coherent blocks mean a lot."
-    )
     ax.text(4, ly + 27, caveat, fontsize=g.font_pt - 1, color="#8a6d1f", va="center")
     return fig
 
@@ -207,7 +311,7 @@ def render_static(
 
     path = Path(path)
     rc = {
-        "pdf.fonttype": 42,      # embed TrueType so PDF text stays selectable
+        "pdf.fonttype": 42,  # embed TrueType so PDF text stays selectable
         "ps.fonttype": 42,
         "svg.fonttype": "none",  # keep SVG text as text, not glyph paths
         "svg.hashsalt": "mlwp-scorecards",

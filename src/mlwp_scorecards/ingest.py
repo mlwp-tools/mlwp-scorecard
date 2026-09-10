@@ -10,7 +10,7 @@ new ``variable`` dimension, so downstream code sees one array.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Iterable, Sequence
+from typing import Iterable, Sequence
 
 import numpy as np
 import xarray as xr
@@ -171,9 +171,7 @@ def prepare(
     # single NaN element on the variables that lack them -- computed over ALL such
     # dimensions, not just the ones on the layout, so the concat below always aligns.
     all_var_dims = {str(d) for s in scores for d in ds[s].dims}
-    optional = [
-        d for d in all_var_dims if any(d not in ds[s].dims for s in scores)
-    ]
+    optional = [d for d in all_var_dims if any(d not in ds[s].dims for s in scores)]
 
     units, long_names = {}, {}
     padded = []
@@ -184,7 +182,9 @@ def prepare(
         padded.append(da.rename(None))
 
     score = xr.concat(
-        padded, dim=xr.DataArray(scores, dims=variable_dim, name=variable_dim), join="outer"
+        padded,
+        dim=xr.DataArray(scores, dims=variable_dim, name=variable_dim),
+        join="outer",
     )
 
     counts = None
@@ -193,12 +193,18 @@ def prepare(
         for s in scores:
             cname = count_of.get(s)
             if cname is None:
-                base = ds[scores[0]].isel({stat_dim: 0}, drop=True) if stat_dim in ds[scores[0]].dims else ds[scores[0]]
+                base = (
+                    ds[scores[0]].isel({stat_dim: 0}, drop=True)
+                    if stat_dim in ds[scores[0]].dims
+                    else ds[scores[0]]
+                )
                 cpad.append(xr.full_like(_pad_optional(base, optional), np.nan))
             else:
                 cpad.append(_pad_optional(ds[cname], optional).rename(None))
         counts = xr.concat(
-            cpad, dim=xr.DataArray(scores, dims=variable_dim, name=variable_dim), join="outer"
+            cpad,
+            dim=xr.DataArray(scores, dims=variable_dim, name=variable_dim),
+            join="outer",
         )
     else:
         report.warn("no case-count variable found; tooltips will omit sample sizes")

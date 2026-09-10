@@ -24,9 +24,19 @@ def netcdf(tmp_path_factory, request):
 
 def test_renders_both_formats(netcdf, tmp_path):
     out_html, out_png = tmp_path / "c.html", tmp_path / "c.png"
-    rc = main([str(netcdf), "--control", "persistence",
-               "--experiment", "drifting-persistence",
-               "-o", str(out_html), "-o", str(out_png)])
+    rc = main(
+        [
+            str(netcdf),
+            "--control",
+            "persistence",
+            "--experiment",
+            "drifting-persistence",
+            "-o",
+            str(out_html),
+            "-o",
+            str(out_png),
+        ]
+    )
     assert rc == 0
     assert out_html.stat().st_size > 2000
     assert out_png.stat().st_size > 2000
@@ -34,27 +44,55 @@ def test_renders_both_formats(netcdf, tmp_path):
 
 def test_validate_only_writes_nothing(netcdf, tmp_path):
     out = tmp_path / "c.html"
-    rc = main([str(netcdf), "--control", "persistence",
-               "--experiment", "drifting-persistence",
-               "-o", str(out), "--validate-only"])
+    rc = main(
+        [
+            str(netcdf),
+            "--control",
+            "persistence",
+            "--experiment",
+            "drifting-persistence",
+            "-o",
+            str(out),
+            "--validate-only",
+        ]
+    )
     assert rc == 0
     assert not out.exists()
 
 
 def test_explicit_axes_are_honoured(netcdf, tmp_path):
     out = tmp_path / "c.html"
-    rc = main([str(netcdf), "--control", "persistence",
-               "--experiment", "drifting-persistence",
-               "--rows", "truth_source,variable,level",
-               "--columns", "metric,spatial_region",
-               "-o", str(out)])
+    rc = main(
+        [
+            str(netcdf),
+            "--control",
+            "persistence",
+            "--experiment",
+            "drifting-persistence",
+            "--rows",
+            "truth_source,variable,level",
+            "--columns",
+            "metric,spatial_region",
+            "-o",
+            str(out),
+        ]
+    )
     assert rc == 0
     assert out.exists()
 
 
 def test_unknown_output_format_exits_nonzero(netcdf, tmp_path):
     """A usage error should be a clear message and an exit code, not a traceback."""
-    rc = main([str(netcdf), "--control", "persistence",
-               "--experiment", "drifting-persistence", "-o", str(tmp_path / "c.txt")])
+    rc = main(
+        [
+            str(netcdf),
+            "--control",
+            "persistence",
+            "--experiment",
+            "drifting-persistence",
+            "-o",
+            str(tmp_path / "c.txt"),
+        ]
+    )
     assert rc == 1
     assert not (tmp_path / "c.txt").exists()

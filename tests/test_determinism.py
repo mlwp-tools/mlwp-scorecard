@@ -39,7 +39,8 @@ def test_html_is_identical_in_a_fresh_process(tmp_path):
         out = tmp_path / f"p{i}.html"
         subprocess.run(
             [sys.executable, "-c", script, str(out)],
-            check=True, env={"PYTHONHASHSEED": str(seed), "PATH": "/usr/bin:/bin"},
+            check=True,
+            env={"PYTHONHASHSEED": str(seed), "PATH": "/usr/bin:/bin"},
         )
         outs.append(out.read_bytes())
     assert outs[0] == outs[1]

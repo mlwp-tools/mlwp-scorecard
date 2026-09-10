@@ -59,7 +59,9 @@ _FAMILY_OF = {
 }
 
 
-def polarity_of(metric: str, overrides: Mapping[str, str | Polarity] | None = None) -> Polarity:
+def polarity_of(
+    metric: str, overrides: Mapping[str, str | Polarity] | None = None
+) -> Polarity:
     """Resolve a metric's polarity.
 
     Parameters
@@ -261,8 +263,20 @@ class FixedScaling:
     """
 
     breaks: tuple[float, ...] = (
-        0.005, 0.01, 0.02, 0.03, 0.05, 0.075,
-        0.10, 0.15, 0.20, 0.30, 0.40, 0.55, 0.75, 1.00,
+        0.005,
+        0.01,
+        0.02,
+        0.03,
+        0.05,
+        0.075,
+        0.10,
+        0.15,
+        0.20,
+        0.30,
+        0.40,
+        0.55,
+        0.75,
+        1.00,
     )
 
     def level(self, relative: float | None) -> int:

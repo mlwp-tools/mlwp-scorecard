@@ -150,7 +150,9 @@ def _resolve_axis(
     return leaves, headers
 
 
-def _headers_for(leaf: Key, headers: list[list[HeaderCell]], index: int) -> tuple[HeaderCell, ...]:
+def _headers_for(
+    leaf: Key, headers: list[list[HeaderCell]], index: int
+) -> tuple[HeaderCell, ...]:
     out = []
     for depth in range(len(headers)):
         for blk in headers[depth]:
@@ -199,7 +201,9 @@ def resolve(
     sources = [str(s) for s in da.coords[prediction_dim].values]
     for role, name in (("control", control), ("experiment", experiment)):
         if name not in sources:
-            raise KeyError(f"{role}={name!r} is not in {prediction_dim} (have: {sources})")
+            raise KeyError(
+                f"{role}={name!r} is not in {prediction_dim} (have: {sources})"
+            )
 
     has_stat = stat_dim in da.dims
     take = (lambda a, s: a.sel({stat_dim: s})) if has_stat else (lambda a, s: a)
@@ -221,7 +225,9 @@ def resolve(
     dims = list(row_dims) + list(column_dims)
     for d in dims + [cell_dim]:
         if d not in diff.dims:
-            raise KeyError(f"{d!r} is not a dimension of the prepared cube {tuple(diff.dims)}")
+            raise KeyError(
+                f"{d!r} is not a dimension of the prepared cube {tuple(diff.dims)}"
+            )
     unassigned = set(diff.dims) - set(dims) - {cell_dim}
     if unassigned:
         raise KeyError(
@@ -242,21 +248,25 @@ def resolve(
     coords = {d: _coord_values(diff, d) for d in dims}
     orders: dict[str, Sequence[Any]] = {}
 
-    finite = np.isfinite(diff.values)                       # (…dims…, cell)
-    any_data = finite.any(axis=-1)                          # (…dims…)
+    finite = np.isfinite(diff.values)  # (…dims…, cell)
+    any_data = finite.any(axis=-1)  # (…dims…)
 
     n_row = len(row_dims)
     row_present = any_data.any(axis=tuple(range(n_row, len(dims))))
     col_present = any_data.any(axis=tuple(range(n_row)))
 
     row_keys, row_headers = _resolve_axis(row_present, list(row_dims), coords, orders)
-    col_keys, col_headers = _resolve_axis(col_present, list(column_dims), coords, orders)
+    col_keys, col_headers = _resolve_axis(
+        col_present, list(column_dims), coords, orders
+    )
 
     rows = tuple(
-        Line(i, k, _headers_for(k, row_headers, i), _slug(k)) for i, k in enumerate(row_keys)
+        Line(i, k, _headers_for(k, row_headers, i), _slug(k))
+        for i, k in enumerate(row_keys)
     )
     columns = tuple(
-        Line(i, k, _headers_for(k, col_headers, i), _slug(k)) for i, k in enumerate(col_keys)
+        Line(i, k, _headers_for(k, col_headers, i), _slug(k))
+        for i, k in enumerate(col_keys)
     )
 
     leads_raw = _coord_values(diff, cell_dim)
@@ -302,8 +312,20 @@ def resolve(
                 r_ = rel_v[idx + (k,)]
                 if not np.isfinite(d_):
                     steps.append(
-                        Step(lead_times[k], None, None, None, None, None, None, None,
-                             0, fam, False, f"{lead_labels[k]} no data")
+                        Step(
+                            lead_times[k],
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            0,
+                            fam,
+                            False,
+                            f"{lead_labels[k]} no data",
+                        )
                     )
                     continue
                 signed = -float(r_) if pol is Polarity.LOWER_IS_BETTER else float(r_)
@@ -317,9 +339,13 @@ def resolve(
                     n_sig += 1
                 nn = None
                 if cnt_v is not None:
-                    cidx = tuple(coords[d].index(v)
-                                 for d, v in zip(list(row_dims) + list(column_dims), rl.key + cl.key)
-                                 if d in cnt_dims)
+                    cidx = tuple(
+                        coords[d].index(v)
+                        for d, v in zip(
+                            list(row_dims) + list(column_dims), rl.key + cl.key
+                        )
+                        if d in cnt_dims
+                    )
                     val = cnt_v[cidx + (k,)]
                     nn = int(val) if np.isfinite(val) else None
                 word = scheme.word(fam, lvl)
@@ -328,21 +354,41 @@ def resolve(
                 if nn is not None:
                     tip += f" ({nn} cases)"
                 steps.append(
-                    Step(lead_times[k], float(d_), signed, float(ctl_v[idx + (k,)]),
-                         float(exp_v[idx + (k,)]), lo, up, nn, lvl, fam, sig, tip)
+                    Step(
+                        lead_times[k],
+                        float(d_),
+                        signed,
+                        float(ctl_v[idx + (k,)]),
+                        float(exp_v[idx + (k,)]),
+                        lo,
+                        up,
+                        nn,
+                        lvl,
+                        fam,
+                        sig,
+                        tip,
+                    )
                 )
 
             cells[(rl.key, cl.key)] = Cell(
-                row=rl.index, col=cl.index, row_key=rl.key, col_key=cl.key,
-                cell_id=f"{rl.slug}__{cl.slug}", metric=metric,
+                row=rl.index,
+                col=cl.index,
+                row_key=rl.key,
+                col_key=cl.key,
+                cell_id=f"{rl.slug}__{cl.slug}",
+                metric=metric,
                 units=cube.units.get(variable) if variable else None,
                 steps=tuple(steps),
             )
 
     stats = LayoutStats(
-        n_rows=len(rows), n_cols=len(columns),
-        n_cells_possible=len(rows) * len(columns), n_cells_present=len(cells),
-        n_boxes=len(cells) * len(lead_times), n_saturated=n_sat, n_significant=n_sig,
+        n_rows=len(rows),
+        n_cols=len(columns),
+        n_cells_possible=len(rows) * len(columns),
+        n_cells_present=len(cells),
+        n_boxes=len(cells) * len(lead_times),
+        n_saturated=n_sat,
+        n_significant=n_sig,
     )
 
     notes = [
@@ -353,11 +399,22 @@ def resolve(
     ]
 
     return Layout(
-        rows=rows, columns=columns, row_headers=tuple(tuple(b) for b in row_headers),
+        rows=rows,
+        columns=columns,
+        row_headers=tuple(tuple(b) for b in row_headers),
         column_headers=tuple(tuple(b) for b in col_headers),
-        lead_times=lead_times, lead_labels=lead_labels, cells=cells,
-        row_dims=tuple(row_dims), column_dims=tuple(column_dims), cell_dim=cell_dim,
-        stats=stats, title=title, subtitle=subtitle,
-        control=control, experiment=experiment, confidence=cube.confidence,
-        scheme_name=scheme.name, notes=tuple(notes),
+        lead_times=lead_times,
+        lead_labels=lead_labels,
+        cells=cells,
+        row_dims=tuple(row_dims),
+        column_dims=tuple(column_dims),
+        cell_dim=cell_dim,
+        stats=stats,
+        title=title,
+        subtitle=subtitle,
+        control=control,
+        experiment=experiment,
+        confidence=cube.confidence,
+        scheme_name=scheme.name,
+        notes=tuple(notes),
     )

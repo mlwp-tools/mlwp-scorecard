@@ -14,8 +14,10 @@ from mlwp_scorecards.colours import SCHEMES, _relative_luminance, contrast_ratio
 def main() -> None:
     for name, scheme in sorted(SCHEMES.items()):
         print(f"\n{name}")
-        print(f"  {'family':<10} {'level':>5} {'fill':>9} {'border':>9} "
-              f"{'vs white':>9} {'vs fill':>8}")
+        print(
+            f"  {'family':<10} {'level':>5} {'fill':>9} {'border':>9} "
+            f"{'vs white':>9} {'vs fill':>8}"
+        )
         worst_white = (99.0, None)
         for family in scheme.families:
             for level in (1, 4, 7, 10, 14):
@@ -24,8 +26,10 @@ def main() -> None:
                 vs_fill = contrast_ratio(sw.edge, sw.fill)
                 if vs_white < worst_white[0]:
                     worst_white = (vs_white, (family, level))
-                print(f"  {family:<10} {level:>5} {sw.fill:>9} {sw.edge:>9} "
-                      f"{vs_white:>8.2f} {vs_fill:>8.2f}")
+                print(
+                    f"  {family:<10} {level:>5} {sw.fill:>9} {sw.edge:>9} "
+                    f"{vs_white:>8.2f} {vs_fill:>8.2f}"
+                )
 
         print(f"  worst vs white: {worst_white[0]:.2f} at {worst_white[1]}")
         darker = all(

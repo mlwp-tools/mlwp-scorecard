@@ -1116,6 +1116,81 @@ through one `%.{p}g` helper; no `set` iteration in output paths; respect `SOURCE
 
 ---
 
+## Proposed schema changes (not yet implemented)
+
+Two changes to the input schema, recorded before acting on them.
+
+### 1. Fold the metric into the variable name: `{variable}.{metric}`
+
+Today `metric` is a coordinate and `units` is an attribute on the score variable,
+which forces **one unit per variable across all metrics**. That is already wrong:
+RMSE, MAE and spread inherit the field's units, but ACC, CRPSS and FSS are
+dimensionless, and a threshold-based score may carry different units again. The
+current escape hatch — `units` as a coordinate indexed by `metric` — is noted
+elsewhere in this document as "supported, not the default", which is a sign the
+shape is wrong rather than a solution.
+
+Naming variables `z.rmse`, `z.fss`, `2t.acc` puts `units`, `standard_name` and
+`long_name` back where CF expects them, one set per (variable, metric).
+
+It also fixes something the current shape handles badly: **metric coverage is
+ragged**. CRPS needs an ensemble, FSS needs a threshold and really only suits
+precipitation, ACC needs a climatology. A `metric` coordinate forces a full cross
+product and fills the gaps with NaN; separate variables simply omit what does not
+apply — the same argument that made one-variable-per-field right in the first
+place.
+
+`ingest.prepare` already builds the `variable` dimension by stacking data-variable
+names, so this extends that to split each name into two dimensions rather than one.
+`METRIC_POLARITY` is unaffected: it is keyed on the metric name either way.
+
+Three things to settle first:
+
+- **The separator.** `.` is clean but breaks xarray's attribute access —
+  `ds["z.rmse"]` works, `ds.z.rmse` does not, and the latter reads as nested
+  attribute access which it is not. `__` avoids that at some cost in looks. Worth
+  checking against real variable names: the ECMWF reference card carries `10ff@sea`
+  and `2t`, neither containing a dot, so `.` looks safe for our data — but the
+  splitter must fail loudly on a name it cannot split, not guess.
+- **Round-tripping.** A dataset that has been through `prepare` and back out should
+  reproduce the same names.
+- **Backwards compatibility.** Accept both forms, or migrate? The existing
+  HARMONIE/AIFS pipeline writes the coordinate form.
+
+### 2. Rename `stat`, and say what a "case" is
+
+`stat` is vague and its members are not all the same kind of thing, which is the
+real problem: `mean` is a reduction over cases, but `lower` and `upper` are
+percentiles of the *bootstrap distribution of that mean*. They are not reduction
+operations at all.
+
+So `cases_reduction_op` would be accurate for one member out of three and
+misleading for the other two. What the dimension actually answers is "which number
+about the aggregate", which suggests **`estimate`** — `ds["z.rmse"].sel(estimate="lower")`
+reads correctly for all three members.
+
+If the central reduction ever needs to vary (median rather than mean, or a
+trimmed mean), that is a *different* axis and should be a different coordinate, not
+extra members of this one.
+
+**On "cases".** For the current design a case is always one forecast
+initialisation — that is established in *What counts as one sample*, and being
+explicit guards against the mistake of resampling gridpoints or station points
+instead. So `number_of_forecasts` is more informative than the present
+`number_of_cases`, and much more so than `number_of_samples`, which invites the
+question "samples of what?" — exactly the question this package should not leave
+open.
+
+The cost is that the name becomes a lie if the resampling unit ever changes: a
+moving-block bootstrap resamples *blocks* of forecasts, not forecasts, and that is
+already the recommended fix for autocorrelation. Suggested resolution: name it
+`number_of_forecasts` and carry a `resampling_unit` attribute alongside, so the
+statistics can say what they actually resampled without the variable name having to
+carry it.
+
+Also worth correcting while there: the count currently declares
+`standard_name = "number_of_observations"`. These are forecasts, not observations.
+
 ## Appendix: the ECMWF reference card, structurally
 
 Reference material. `scorecards-47r1ENS.html` in the repo root is the ECMWF-generated

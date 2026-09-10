@@ -39,13 +39,17 @@ def main() -> None:
             print(f"  {family:<10} {level:>5} {sw.fill:>9} {sw.edge:>9} {r:>6.2f}")
     print(f"\n  worst: {worst[0]:.2f} at {worst[1]}")
     if worst[0] < 1.6:
-        print("  -> too low: a significant cell will not look different from an "
-              "insignificant one at that end of the ramp")
+        print(
+            "  -> too low: a significant cell will not look different from an "
+            "insignificant one at that end of the ramp"
+        )
 
     # does the marking survive into the page?
     ds = make_verification_dataset(n_case=60, n_boot=200, drift=0.25)
     layout = build_layout(
-        ds, control="persistence", experiment="drifting-persistence",
+        ds,
+        control="persistence",
+        experiment="drifting-persistence",
         rows=["truth_source", "variable", "level"],
         columns=["spatial_region", "metric"],
     )

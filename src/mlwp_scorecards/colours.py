@@ -152,19 +152,25 @@ class Ramp:
 def _build_ramp(light: str, dark: str, n: int = 14) -> Ramp:
     """Interpolate ``n`` swatches from ``light`` to ``dark``.
 
-    Fill carries direction and magnitude; the border carries significance, and the
-    two must stay independently readable. A border made by darkening the fill fails
-    that at the saturated end -- dark-on-dark drops to about 1.3:1 contrast, so the
-    significance channel goes silently blank exactly where the differences are
-    largest. The border therefore flips: dark on light fills, light on dark ones.
+    Fill carries direction and magnitude; the border carries significance.
+
+    **The border is always dark**, and the contrast that matters is against
+    *white*, not against the fill. An insignificant box is drawn with a white
+    border, so "significant" reads as "framed" and "not significant" as "not
+    framed". Flipping the border to light on dark fills -- which looks right if you
+    only compare it with the fill it sits on -- makes a significant dark box
+    indistinguishable from an insignificant one, since both then show a pale ring,
+    and it leaves the legend swatches looking borderless on a white page.
+
+    ``fg`` is a separate question: that is for a glyph drawn *on* the fill, so it
+    does flip.
     """
     out = []
     for i in range(n):
         t = i / (n - 1)
         fill = _mix(light, dark, t)
-        dark_ok = contrast_ratio(fill, "#000000") >= 4.5
-        edge = _mix(fill, "#000000", 0.62) if dark_ok else _mix(fill, "#ffffff", 0.72)
-        fg = "#000000" if dark_ok else "#ffffff"
+        edge = _mix(fill, "#000000", 0.55)
+        fg = "#000000" if contrast_ratio(fill, "#000000") >= 4.5 else "#ffffff"
         out.append(Swatch(fill, edge, fg))
     return Ramp(tuple(out))
 

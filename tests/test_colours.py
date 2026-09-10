@@ -25,31 +25,42 @@ def test_every_swatch_has_legible_foreground(name):
 
 
 @pytest.mark.parametrize("name", sorted(SCHEMES))
-def test_borders_are_visible_against_white(name):
-    """The border is the significance channel, so it must read on a white page."""
-    scheme = SCHEMES[name]
-    for family in scheme.families:
-        sw = scheme.swatch(family, 1)
-        assert contrast_ratio(sw.edge, "#ffffff") >= 1.9, (name, family)
+def test_significant_is_distinguishable_from_not_at_every_ramp_step(name):
+    """The border must contrast with *white*, which is the insignificant state.
 
-
-@pytest.mark.parametrize("name", sorted(SCHEMES))
-def test_borders_stay_visible_against_their_own_fill(name):
-    """Significance must be readable at every point on the ramp.
-
-    Fill carries magnitude, border carries significance, and they have to be
-    independently legible. A border made by darkening the fill fails this at the
-    saturated end -- dark-on-dark falls to about 1.3:1 -- so the significance
-    channel goes blank exactly where the differences are largest, which is the
-    worst place to lose it.
+    Contrast against the fill is the wrong thing to check, and checking it leads
+    directly to a broken card: a light border on a dark fill scores well against
+    the fill, but an insignificant box already has a white border, so both then
+    show a pale ring and significance becomes invisible on exactly the darkest,
+    most interesting cells. It also leaves the legend swatches looking borderless
+    on a white page.
     """
     scheme = SCHEMES[name]
     for family in scheme.families:
         for level in range(1, scheme.depth + 1):
             for signed in (level, -level):
                 sw = scheme.swatch(family, signed)
-                r = contrast_ratio(sw.fill, sw.edge)
-                assert r >= 2.5, f"{name}/{family}/{signed}: only {r:.2f}:1"
+                r = contrast_ratio(sw.edge, scheme.insignificant_edge)
+                assert r >= 3.0, (
+                    f"{name}/{family}/{signed}: border is only {r:.2f}:1 against "
+                    f"the insignificant border, so the two look alike"
+                )
+
+
+@pytest.mark.parametrize("name", sorted(SCHEMES))
+def test_borders_are_darker_than_their_fill(name):
+    """A frame should read as a frame, not as a lighter inset."""
+    from mlwp_scorecards.colours import _relative_luminance
+
+    scheme = SCHEMES[name]
+    for family in scheme.families:
+        for level in range(1, scheme.depth + 1):
+            sw = scheme.swatch(family, level)
+            assert _relative_luminance(sw.edge) < _relative_luminance(sw.fill), (
+                name,
+                family,
+                level,
+            )
 
 
 def test_scaling_is_symmetric_and_monotone():

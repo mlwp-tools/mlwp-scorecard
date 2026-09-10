@@ -97,6 +97,8 @@ def render_figure(
         + 26
         for f in families
     )
+    if layout.stats.n_significant:
+        legend_w += _text_w("significant", g.font_pt) + _text_w("not", g.font_pt) + 40
     W = max(
         sum(lab_w) + cw * layout.stats.n_cols,
         _text_w(layout.title, g.title_pt),
@@ -285,6 +287,34 @@ def render_figure(
             color="#3b424b",
         )
         lx += len(fam.positive_word) * (g.font_pt - 0.5) * 0.58 + 22
+
+    # The border is the significance channel, so say so: without this the frames
+    # are decoration as far as the reader can tell.
+    if layout.stats.n_significant:
+        example = scheme.swatch("error", 8)
+        for label, edge in (("significant", example.edge), ("not", "#ffffff")):
+            ax.add_patch(
+                Rectangle(
+                    (lx, ly - sw_h / 2),
+                    sw_w,
+                    sw_h,
+                    facecolor=example.fill,
+                    edgecolor=edge,
+                    linewidth=0.9,
+                    zorder=3,
+                )
+            )
+            lx += sw_w + 4
+            ax.text(
+                lx,
+                ly,
+                label,
+                fontsize=g.font_pt - 0.5,
+                ha="left",
+                va="center",
+                color="#3b424b",
+            )
+            lx += len(label) * (g.font_pt - 0.5) * 0.58 + 10
 
     ax.text(4, ly + 15, foot, fontsize=g.font_pt - 1, color="#5b6470", va="center")
     ax.text(4, ly + 27, caveat, fontsize=g.font_pt - 1, color="#8a6d1f", va="center")

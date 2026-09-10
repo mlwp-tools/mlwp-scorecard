@@ -441,6 +441,14 @@ _PAGE = Template(
      <span class="ramp">{% for s in fam.pos %}<i style="background:{{ s.fill }};border-color:{{ s.edge }}"></i>{% endfor %}</span>
      {{ fam.positive_word }}</p>
   {%- endfor %}
+  {%- if n_significant %}
+  <p><b>A framed box is significant</b>
+     <span class="ramp"><i style="background:{{ sig_fill }};border-color:{{ sig_edge }}"></i></span>
+     — its {{ confidence_pct }} interval on the difference excludes zero. An unframed
+     box
+     <span class="ramp"><i style="background:{{ sig_fill }};border-color:#ffffff"></i></span>
+     is not. {{ n_significant }} of {{ n_boxes }} boxes are framed.</p>
+  {%- endif %}
   <p>A blank grey cell has no data at all, which is deliberately distinct from a cell
      whose difference happens to be zero. A hatched box is a lead time with no value
      inside a cell that otherwise has data.</p>
@@ -655,6 +663,13 @@ def render_html(
         last_lead=layout.lead_labels[-1],
         control=layout.control,
         experiment=layout.experiment,
+        n_significant=s.n_significant,
+        n_boxes=s.n_boxes,
+        confidence_pct=(
+            f"{layout.confidence:.0%}" if layout.confidence else "confidence"
+        ),
+        sig_fill=scheme.swatch("error", 8).fill,
+        sig_edge=scheme.swatch("error", 8).edge,
         has_detail=bool(payload_b64),
         payload_b64=payload_b64,
         colours_json=json.dumps(DETAIL_COLOURS),

@@ -1,12 +1,7 @@
 """Build the local zarr datasets for the HARMONIE-AROME DINI side of the comparison.
 
-    truth.zarr        (time, y, x)                    the analysis at every analysis time
-    forecast.zarr     (init_time, lead_time, y, x)    the HARMONIE-AROME forecast
-    persistence.zarr  (init_time, lead_time, y, x)    the analysis at init, held constant
-
-Persistence needs no download -- it is the truth at initialisation time, broadcast
-across lead times -- but it is written out explicitly so all three are the same
-shape and the scoring step has nothing hidden inside it.
+    truth.zarr     (time, y, x)                    the analysis at every analysis time
+    forecast.zarr  (init_time, lead_time, y, x)    the HARMONIE-AROME forecast
 
 Initialisations are chosen to be shared with AIFS (6-hourly) and fully verifiable,
 i.e. a DINI analysis exists at every valid time out to the longest lead.
@@ -21,7 +16,6 @@ from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import xarray as xr
-
 from common import (
     DINI_VARIABLES,
     GRID_STRIDE,
@@ -49,10 +43,10 @@ def choose_initialisations(analysis_times: list[str]) -> list[str]:
     chosen = []
     for name, t in sorted(stamps.items(), key=lambda kv: kv[1]):
         hour = t.astype("datetime64[h]").astype(int) % 24
-        if hour % INIT_STEP_H:                     # AIFS only initialises 6-hourly
+        if hour % INIT_STEP_H:  # AIFS only initialises 6-hourly
             continue
         if not np.isin(t + leads, list(available)).all():
-            continue                                # no truth at some valid time
+            continue  # no truth at some valid time
         chosen.append(name)
         if len(chosen) == N_INIT:
             break
@@ -76,13 +70,16 @@ def _run(jobs: list[tuple[str, str, int]], workers: int, label: str) -> dict:
         for i, (key, arr) in enumerate(pool.map(_read_field, jobs), start=1):
             out[key] = arr
             if i % 40 == 0 or i == len(jobs):
-                print(f"  {label}: {i}/{len(jobs)} fields "
-                      f"({i / (time.perf_counter() - t0):.1f}/s)", flush=True)
+                print(
+                    f"  {label}: {i}/{len(jobs)} fields "
+                    f"({i / (time.perf_counter() - t0):.1f}/s)",
+                    flush=True,
+                )
     return out
 
 
 def build(force: bool = False, workers: int = 8) -> None:
-    """Extract and write the DINI truth, forecast and persistence datasets."""
+    """Extract and write the DINI truth and forecast datasets."""
     OUT.mkdir(parents=True, exist_ok=True)
     times = list_analysis_times()
     inits = choose_initialisations(times)
@@ -104,7 +101,8 @@ def build(force: bool = False, workers: int = 8) -> None:
     print(f"grid {len(y)}x{len(x)} (stride {GRID_STRIDE})")
 
     coords_xy = dict(
-        y=y, x=x,
+        y=y,
+        x=x,
         lat=(("y", "x"), lat, {"units": "degrees_north", "standard_name": "latitude"}),
         lon=(("y", "x"), lon, {"units": "degrees_east", "standard_name": "longitude"}),
     )
@@ -116,9 +114,17 @@ def build(force: bool = False, workers: int = 8) -> None:
         jobs = [(t, v, 0) for t in times for v in DINI_VARIABLES]
         got = _run(jobs, workers, "truth")
         truth = xr.Dataset(
-            {v: (("time", "y", "x"), np.stack([got[(t, v, 0)] for t in times]), attrs[v])
-             for v in DINI_VARIABLES},
-            coords=dict(time=np.array([np.datetime64(iso(t)) for t in times]), **coords_xy),
+            {
+                v: (
+                    ("time", "y", "x"),
+                    np.stack([got[(t, v, 0)] for t in times]),
+                    attrs[v],
+                )
+                for v in DINI_VARIABLES
+            },
+            coords=dict(
+                time=np.array([np.datetime64(iso(t)) for t in times]), **coords_xy
+            ),
             attrs=dict(
                 title="HARMONIE-AROME DINI analysis (truth)",
                 source="s3://harmonie-zarr/dini/control",
@@ -138,13 +144,20 @@ def build(force: bool = False, workers: int = 8) -> None:
         jobs = [(t, v, int(h)) for t in inits for v in DINI_VARIABLES for h in lead_h]
         got = _run(jobs, workers, "forecast")
         fcst = xr.Dataset(
-            {v: (("init_time", "lead_time", "y", "x"),
-                 np.stack([np.stack([got[(t, v, int(h))] for h in lead_h]) for t in inits]),
-                 attrs[v])
-             for v in DINI_VARIABLES},
+            {
+                v: (
+                    ("init_time", "lead_time", "y", "x"),
+                    np.stack(
+                        [np.stack([got[(t, v, int(h))] for h in lead_h]) for t in inits]
+                    ),
+                    attrs[v],
+                )
+                for v in DINI_VARIABLES
+            },
             coords=dict(
                 init_time=np.array([np.datetime64(iso(t)) for t in inits]),
-                lead_time=leads, **coords_xy,
+                lead_time=leads,
+                **coords_xy,
             ),
             attrs=dict(
                 title="HARMONIE-AROME DINI control forecast",
@@ -157,25 +170,8 @@ def build(force: bool = False, workers: int = 8) -> None:
         print(f"\n{fcst_path} exists, skipping")
     fcst = xr.open_zarr(fcst_path)
 
-    # ---- persistence: no download needed -----------------------------------
-    print("\nbuilding persistence baseline (the analysis at init, held constant)")
-    init_times = fcst["init_time"].values
-    pers = xr.Dataset(
-        {v: (("init_time", "lead_time", "y", "x"),
-             np.repeat(truth[v].sel(time=init_times).values[:, None], len(leads), axis=1),
-             attrs[v])
-         for v in DINI_VARIABLES},
-        coords=dict(init_time=init_times, lead_time=leads, **coords_xy),
-        attrs=dict(
-            title="Persistence baseline",
-            note="the analysis valid at initialisation time, held constant over lead time",
-            grid_stride=GRID_STRIDE,
-        ),
-    )
-    _write(pers, OUT / "persistence.zarr")
-
     print("\nsummary")
-    for name, d in (("truth", truth), ("forecast", fcst), ("persistence", pers)):
+    for name, d in (("truth", truth), ("forecast", fcst)):
         print(f"  {name:12s} {dict(d.sizes)}")
 
 

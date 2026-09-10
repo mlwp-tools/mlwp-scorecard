@@ -1,12 +1,10 @@
 """Shared configuration for the HARMONIE-AROME DINI vs AIFS experiment.
 
-Real-data counterpart to the synthetic tests. Three prediction sources are scored
+Real-data counterpart to the synthetic tests. Two prediction sources are scored
 against a common truth, the DINI analysis:
 
 * **harmonie-arome** -- DMI's operational limited-area physics model, ~2 km.
 * **aifs** -- ECMWF's global data-driven model, 0.25 deg.
-* **persistence** -- the analysis at initialisation, held constant. Not a serious
-  competitor, but a floor: anything that fails to beat it is broken.
 
 Sources:
 
@@ -58,8 +56,8 @@ AIFS_VARIABLES = {
 #: AIFS initialises 6-hourly, DINI 3-hourly, so only 6-hourly inits are shared.
 INIT_STEP_H = 6
 
-#: AIFS carries 6-hourly lead times; DINI hourly. Lead 0 is excluded because
-#: persistence is the analysis there, making a relative difference undefined.
+#: AIFS carries 6-hourly lead times; DINI hourly. Lead 0 is excluded: it is the
+#: analysis both models were initialised from, so it compares nothing.
 LEAD_STEP_H = 6
 MAX_LEAD_H = 36
 

@@ -7,8 +7,6 @@ data-driven model against a limited-area physics-based one.
 
 from __future__ import annotations
 
-import numpy as np
-
 
 def open_aifs():
     """Open the AIFS forecast subscription read-only."""
@@ -38,13 +36,17 @@ def main() -> None:
 
     print("\n--- data variables ---")
     for name, v in ds.data_vars.items():
-        print(f"  {name:24s} {tuple(v.dims)} {v.shape} "
-              f"units={v.attrs.get('units', '?')}")
+        print(
+            f"  {name:24s} {tuple(v.dims)} {v.shape} "
+            f"units={v.attrs.get('units', '?')}"
+        )
 
     if "latitude" in ds.coords and "longitude" in ds.coords:
         lat, lon = ds["latitude"].values, ds["longitude"].values
-        print(f"\ngrid: lat {lat.min():.2f}..{lat.max():.2f} ({lat.size}), "
-              f"lon {lon.min():.2f}..{lon.max():.2f} ({lon.size})")
+        print(
+            f"\ngrid: lat {lat.min():.2f}..{lat.max():.2f} ({lat.size}), "
+            f"lon {lon.min():.2f}..{lon.max():.2f} ({lon.size})"
+        )
         if lat.size > 1:
             print(f"      resolution ~{abs(lat[1] - lat[0]):.3f} deg")
 

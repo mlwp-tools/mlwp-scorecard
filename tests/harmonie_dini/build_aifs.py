@@ -24,7 +24,6 @@ import shutil
 
 import numpy as np
 import xarray as xr
-
 from common import AIFS_REPO, AIFS_VARIABLES, OUT, to_180
 from inspect_aifs import open_aifs
 
@@ -44,9 +43,11 @@ def build(force: bool = False) -> None:
 
     print(f"initialisations : {[str(t)[:16] for t in init_times]}")
     print(f"lead times      : {(leads / np.timedelta64(1, 'h')).astype(int)} h")
-    print(f"target grid     : {lat2d.shape}, "
-          f"lat {lat2d.min():.2f}..{lat2d.max():.2f}, "
-          f"lon {lon2d.min():.2f}..{lon2d.max():.2f} (folded to -180..180)")
+    print(
+        f"target grid     : {lat2d.shape}, "
+        f"lat {lat2d.min():.2f}..{lat2d.max():.2f}, "
+        f"lon {lon2d.min():.2f}..{lon2d.max():.2f} (folded to -180..180)"
+    )
 
     aifs = open_aifs()
     missing = [t for t in init_times if t not in set(aifs["init_time"].values)]
@@ -70,7 +71,9 @@ def build(force: bool = False) -> None:
         latitude=slice(lat2d.min() - pad, lat2d.max() + pad),
         longitude=slice(lon2d.min() - pad, lon2d.max() + pad),
     )
-    print(f"source subset   : lat {sub.sizes['latitude']}, lon {sub.sizes['longitude']}")
+    print(
+        f"source subset   : lat {sub.sizes['latitude']}, lon {sub.sizes['longitude']}"
+    )
 
     print("loading and interpolating ...", flush=True)
     sub = sub.load()
@@ -80,7 +83,7 @@ def build(force: bool = False) -> None:
     for src, (dini_name, offset) in AIFS_VARIABLES.items():
         arr = regridded[src].transpose("init_time", "lead_time", "y", "x").values
         if offset:
-            arr = arr + offset          # degC -> K
+            arr = arr + offset  # degC -> K
         units = "K" if offset else aifs[src].attrs.get("units")
         data[dini_name] = (
             ("init_time", "lead_time", "y", "x"),
@@ -91,9 +94,12 @@ def build(force: bool = False) -> None:
     ds = xr.Dataset(
         data,
         coords=dict(
-            init_time=init_times, lead_time=leads,
-            y=fcst["y"].values, x=fcst["x"].values,
-            lat=(("y", "x"), lat2d), lon=(("y", "x"), fcst["lon"].values),
+            init_time=init_times,
+            lead_time=leads,
+            y=fcst["y"].values,
+            x=fcst["x"].values,
+            lat=(("y", "x"), lat2d),
+            lon=(("y", "x"), fcst["lon"].values),
         ),
         attrs=dict(
             title="ECMWF AIFS single forecast, interpolated to the DINI grid",
@@ -113,11 +119,14 @@ def build(force: bool = False) -> None:
     print(f"wrote {out_path}  {mb:.0f} MB  {dict(ds.sizes)}")
 
     finite = {v: float(np.isfinite(ds[v].values).mean()) for v in ds.data_vars}
-    print("finite fraction after regridding:",
-          {k: f"{v:.1%}" for k, v in finite.items()})
+    print(
+        "finite fraction after regridding:", {k: f"{v:.1%}" for k, v in finite.items()}
+    )
     if min(finite.values()) < 0.99:
-        print("  WARNING: NaNs after interpolation usually mean a longitude "
-              "convention mismatch")
+        print(
+            "  WARNING: NaNs after interpolation usually mean a longitude "
+            "convention mismatch"
+        )
 
 
 def main() -> None:

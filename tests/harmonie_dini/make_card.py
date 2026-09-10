@@ -1,9 +1,8 @@
-"""Render scorecards from the HARMONIE-AROME / AIFS / persistence verification.
+"""Render the HARMONIE-AROME vs AIFS scorecard.
 
-One verification dataset, several cards: which source is control and which is
-experiment is an argument, not something baked into the data. The default pair is
-the interesting one -- the limited-area physics model against the global
-data-driven one -- with persistence available as a floor.
+A limited-area physics model against a global data-driven one, both scored against
+the same analysis. Which source is control and which is experiment is an argument,
+not something baked into the data.
 
 With no spatial regions and no pressure levels this is the simplest card shape:
 one grouping on each axis, variable by metric, lead time inside the cell.
@@ -15,14 +14,13 @@ import argparse
 
 import numpy as np
 import xarray as xr
-
 from common import OUT
+
 from mlwp_scorecards import build_layout, make_scorecard
 
 PAIRS = {
     "harmonie-vs-aifs": ("aifs", "harmonie-arome"),
-    "harmonie-vs-persistence": ("persistence", "harmonie-arome"),
-    "aifs-vs-persistence": ("persistence", "aifs"),
+    "aifs-vs-harmonie": ("harmonie-arome", "aifs"),
 }
 
 
@@ -31,10 +29,15 @@ def render(ds: xr.Dataset, name: str, control: str, experiment: str, scheme: str
     leads = ds["lead_time"].values / np.timedelta64(1, "h")
     n_init = ds.attrs.get("n_initialisations", "?")
     axes = dict(
-        rows=["truth_source", "variable"], columns=["metric"], cell="lead_time",
+        rows=["truth_source", "variable"],
+        columns=["metric"],
+        cell="lead_time",
     )
     kwargs = dict(
-        control=control, experiment=experiment, scheme=scheme, **axes,
+        control=control,
+        experiment=experiment,
+        scheme=scheme,
+        **axes,
         title=f"{experiment} vs {control}",
         subtitle=(
             f"{n_init} initialisations, 2026-09-04 to 09-05, verified against the "
@@ -63,8 +66,12 @@ def render(ds: xr.Dataset, name: str, control: str, experiment: str, scheme: str
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--pair", default="harmonie-vs-aifs",
-                    choices=[*PAIRS, "all"], help="which comparison to render")
+    ap.add_argument(
+        "--pair",
+        default="harmonie-vs-aifs",
+        choices=[*PAIRS, "all"],
+        help="which comparison to render",
+    )
     ap.add_argument("--scheme", default="cvd", choices=("cvd", "ecmwf"))
     args = ap.parse_args()
 

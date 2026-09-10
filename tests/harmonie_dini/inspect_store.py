@@ -12,8 +12,15 @@ import subprocess
 import numpy as np
 import s3fs
 import xarray as xr
-
-from common import AWS_PROFILE, AWS_REGION, BUCKET, PREFIX, iso, storage_options, store_path
+from common import (
+    AWS_PROFILE,
+    AWS_REGION,
+    BUCKET,
+    PREFIX,
+    iso,
+    storage_options,
+    store_path,
+)
 
 
 def list_analysis_times() -> list[str]:
@@ -21,9 +28,14 @@ def list_analysis_times() -> list[str]:
     env = dict(os.environ, AWS_REGION=AWS_REGION)
     out = subprocess.run(
         ["s5cmd", "--profile", AWS_PROFILE, "ls", f"s3://{BUCKET}/{PREFIX}/"],
-        capture_output=True, text=True, check=True, env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+        env=env,
     )
-    return sorted(ln.split()[-1].rstrip("/") for ln in out.stdout.splitlines() if "DIR" in ln)
+    return sorted(
+        ln.split()[-1].rstrip("/") for ln in out.stdout.splitlines() if "DIR" in ln
+    )
 
 
 def open_store(analysis_time: str) -> xr.Dataset:
@@ -45,8 +57,10 @@ def main() -> None:
     lead = (ds.time.values - ds.time.values[0]) / np.timedelta64(1, "h")
     print(f"  lead hours  : {lead[0]:g} .. {lead[-1]:g}, step {lead[1] - lead[0]:g}")
     print(f"  3-D vars    : {sorted(v for v in ds.data_vars if ds[v].ndim == 3)}")
-    print(f"  one field   : {ds.t2m.isel(time=0).nbytes / 1e6:.1f} MB uncompressed"
-          f" ({ds.t2m.dtype})")
+    print(
+        f"  one field   : {ds.t2m.isel(time=0).nbytes / 1e6:.1f} MB uncompressed"
+        f" ({ds.t2m.dtype})"
+    )
     print(f"  chunks      : {ds.t2m.encoding.get('chunks')}")
 
 

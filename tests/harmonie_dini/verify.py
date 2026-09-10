@@ -1,4 +1,4 @@
-"""Score HARMONIE-AROME, AIFS and persistence against the DINI analysis.
+"""Score HARMONIE-AROME and AIFS against the DINI analysis.
 
 Reads the local zarr datasets and produces the verification summary the scorecard
 package consumes, in the schema documented in ``PLAN.md``:
@@ -6,7 +6,7 @@ package consumes, in the schema documented in ``PLAN.md``:
     <var>(truth_source, prediction_source, metric, lead_time, stat)
     <var>_number_of_cases(truth_source, prediction_source, metric, lead_time)
 
-All three sources are scored, so one file yields any pairwise card.
+Both sources are scored into one file, from which the card is rendered.
 
 No spatial region grouping and no pressure levels, as requested: one implicit
 global domain (the DINI area) and single-level variables only.
@@ -32,7 +32,6 @@ from pathlib import Path
 
 import numpy as np
 import xarray as xr
-
 from common import CONFIDENCE, METRICS, N_BOOT, OUT
 
 #: Scored fields. Wind speed is derived from u/v, which both models carry.
@@ -64,16 +63,16 @@ def per_case_scores(
         Metric name -> ``(init_time, lead_time)``.
     """
     valid = pred["init_time"].values[:, None] + pred["lead_time"].values[None, :]
-    have = np.isin(valid, truth["time"].values)          # (init, lead)
+    have = np.isin(valid, truth["time"].values)  # (init, lead)
 
-    t_all = field(truth, var)                            # (time, y, x)
+    t_all = field(truth, var)  # (time, y, x)
     index = {t: i for i, t in enumerate(truth["time"].values)}
     t_full = np.full(valid.shape + t_all.shape[1:], np.nan)
     for i, j in zip(*np.where(have)):
         t_full[i, j] = t_all[index[valid[i, j]]]
 
-    err = field(pred, var) - t_full                      # (init, lead, y, x)
-    allnan = np.isnan(err).all(axis=(-2, -1))            # (init, lead)
+    err = field(pred, var) - t_full  # (init, lead, y, x)
+    allnan = np.isnan(err).all(axis=(-2, -1))  # (init, lead)
     w = weights / weights.sum()
 
     with np.errstate(invalid="ignore"):
@@ -94,10 +93,10 @@ def summarise(per_case: np.ndarray, rng: np.random.Generator) -> dict[str, np.nd
         ``(case, lead_time)`` -- one score per forecast case.
     """
     n_case = per_case.shape[0]
-    idx = rng.integers(0, n_case, (N_BOOT, n_case))      # (boot, case)
+    idx = rng.integers(0, n_case, (N_BOOT, n_case))  # (boot, case)
     with np.errstate(invalid="ignore"):
-        boot = np.nanmean(per_case[idx], axis=1)         # (boot, lead_time)
-        mean = np.nanmean(per_case, axis=0)              # (lead_time,)
+        boot = np.nanmean(per_case[idx], axis=1)  # (boot, lead_time)
+        mean = np.nanmean(per_case, axis=0)  # (lead_time,)
     a = (1 - CONFIDENCE) / 2 * 100
     return dict(
         mean=mean,
@@ -108,10 +107,9 @@ def summarise(per_case: np.ndarray, rng: np.random.Generator) -> dict[str, np.nd
 
 
 def build_summary() -> xr.Dataset:
-    """Produce the verification-summary dataset for all three sources."""
+    """Produce the verification-summary dataset for both sources."""
     truth = xr.open_zarr(OUT / "truth.zarr")
     sources = {
-        "persistence": xr.open_zarr(OUT / "persistence.zarr"),
         "aifs": xr.open_zarr(OUT / "aifs.zarr"),
         "harmonie-arome": xr.open_zarr(OUT / "forecast.zarr"),
     }
@@ -140,12 +138,18 @@ def build_summary() -> xr.Dataset:
             stat=stats,
         )
         out[var] = xr.DataArray(
-            vals[None], dims=list(coords), coords=coords,
-            attrs=dict(units=UNITS[var], long_name=LONG_NAMES[var],
-                       ancillary_variables=f"{var}_number_of_cases"),
+            vals[None],
+            dims=list(coords),
+            coords=coords,
+            attrs=dict(
+                units=UNITS[var],
+                long_name=LONG_NAMES[var],
+                ancillary_variables=f"{var}_number_of_cases",
+            ),
         )
         out[f"{var}_number_of_cases"] = xr.DataArray(
-            cnts[None], dims=[d for d in coords if d != "stat"],
+            cnts[None],
+            dims=[d for d in coords if d != "stat"],
             coords={k: v for k, v in coords.items() if k != "stat"},
             attrs=dict(standard_name="number_of_observations"),
         )
@@ -189,8 +193,10 @@ def main() -> None:
         head = "  " + "".join(f"{s:>16s}" for s in ds["prediction_source"].values)
         print(f"  {'lead':>5}" + head[2:])
         for i, h in enumerate(leads):
-            row = "".join(f"{float(v[si, i]):>16.4g}"
-                          for si in range(ds.sizes["prediction_source"]))
+            row = "".join(
+                f"{float(v[si, i]):>16.4g}"
+                for si in range(ds.sizes["prediction_source"])
+            )
             print(f"  {h:>4d}h" + row)
 
     n = ds[f"{SCORED[0]}_number_of_cases"].values

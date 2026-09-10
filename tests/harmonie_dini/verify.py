@@ -1,27 +1,30 @@
-"""Score HARMONIE-AROME and AIFS against the DINI analysis.
+"""Score HARMONIE-AROME and AIFS against two independent truths.
 
-Reads the local zarr datasets and produces the verification summary the scorecard
-package consumes, in the schema documented in ``PLAN.md``:
+Produces the verification summary the scorecard package consumes:
 
     <var>(truth_source, prediction_source, metric, lead_time, stat)
     <var>_number_of_cases(truth_source, prediction_source, metric, lead_time)
 
-Both sources are scored into one file, from which the card is rendered.
+Two truth sources, which is the point of the exercise:
 
-No spatial region grouping and no pressure levels, as requested: one implicit
-global domain (the DINI area) and single-level variables only.
+* **dini-analysis** -- gridded, over the whole DINI domain. It is HARMONIE's own
+  state, so it structurally favours HARMONIE: the model is being checked against
+  the field it was initialised from, sharing its physics and orography.
+* **observations** -- DMI station reports. Neutral between the two models, since
+  neither produced them, but only ~60 points, only over Denmark, and a 2 m
+  thermometer measures something a grid mean does not.
 
-The two collapses:
+Neither is "the" truth. Putting both on one card is the honest presentation, and
+is what the ``truth_source`` dimension is for -- the ECMWF reference card stacks
+its ``an`` and ``ob`` blocks the same way.
 
-1. **Over space, within each forecast case.** The grid reduces to one number per
-   case, area-weighted by cos(latitude). Deterministic; no sampling uncertainty.
+The two collapses, in both cases:
+
+1. **Over space** -- grid points (area-weighted by cos(latitude)) or stations
+   (equal weight) -- giving one number per forecast case. Deterministic; no
+   sampling uncertainty attaches here.
 2. **Over forecast cases.** The five initialisations reduce to a mean, and *that*
    is the sample whose uncertainty ``lower``/``upper`` describe.
-
-The truth is HARMONIE's own analysis, which is a real home advantage for DINI: it
-is the state DINI was initialised from and is consistent with DINI's own physics
-and orography. AIFS is being judged against a competitor's analysis. That is
-recorded in the dataset attributes and repeated on the card.
 """
 
 from __future__ import annotations
@@ -52,36 +55,97 @@ def field(ds: xr.Dataset, var: str) -> np.ndarray:
     return ds[var].values
 
 
-def per_case_scores(
-    pred: xr.Dataset, truth: xr.Dataset, var: str, weights: np.ndarray
-) -> dict[str, np.ndarray]:
-    """Collapse space, giving one number per (case, lead time) per metric.
+def _align_truth(
+    pred: xr.Dataset, truth_times: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """Map each (init, lead) cell onto the truth time axis.
 
     Returns
     -------
-    dict of str to np.ndarray
-        Metric name -> ``(init_time, lead_time)``.
+    have : np.ndarray
+        ``(init, lead)`` boolean, True where a truth field exists.
+    where : np.ndarray
+        ``(init, lead)`` index into ``truth_times``; meaningless where not ``have``.
     """
     valid = pred["init_time"].values[:, None] + pred["lead_time"].values[None, :]
-    have = np.isin(valid, truth["time"].values)  # (init, lead)
-
-    t_all = field(truth, var)  # (time, y, x)
-    index = {t: i for i, t in enumerate(truth["time"].values)}
-    t_full = np.full(valid.shape + t_all.shape[1:], np.nan)
+    index = {t: i for i, t in enumerate(truth_times)}
+    have = np.isin(valid, truth_times)
+    where = np.zeros(valid.shape, dtype=int)
     for i, j in zip(*np.where(have)):
-        t_full[i, j] = t_all[index[valid[i, j]]]
+        where[i, j] = index[valid[i, j]]
+    return have, where
 
-    err = field(pred, var) - t_full  # (init, lead, y, x)
-    allnan = np.isnan(err).all(axis=(-2, -1))  # (init, lead)
+
+def _reduce(err: np.ndarray, weights: np.ndarray) -> dict[str, np.ndarray]:
+    """Collapse the trailing spatial axis into one number per (case, lead)."""
+    allnan = np.isnan(err).all(axis=-1)
     w = weights / weights.sum()
-
     with np.errstate(invalid="ignore"):
-        mse = np.nansum(w * err**2, axis=(-2, -1))
-        mae = np.nansum(w * np.abs(err), axis=(-2, -1))
+        mse = np.nansum(w * err**2, axis=-1)
+        mae = np.nansum(w * np.abs(err), axis=-1)
     return {
         "rmse": np.where(allnan, np.nan, np.sqrt(mse)),
         "mae": np.where(allnan, np.nan, mae),
     }
+
+
+def score_against_grid(
+    pred: xr.Dataset, truth: xr.Dataset, var: str
+) -> dict[str, np.ndarray]:
+    """Score on the model grid, area-weighted by cos(latitude)."""
+    have, where = _align_truth(pred, truth["time"].values)
+    t_all = field(truth, var)  # (time, y, x)
+    t_full = np.where(have[..., None, None], t_all[where], np.nan)
+    err = field(pred, var) - t_full  # (init, lead, y, x)
+    weights = np.broadcast_to(
+        np.cos(np.deg2rad(truth["lat"].values)), err.shape[-2:]
+    ).ravel()
+    return _reduce(err.reshape(err.shape[:2] + (-1,)), weights)
+
+
+def station_indices(
+    model: xr.Dataset, obs: xr.Dataset
+) -> tuple[np.ndarray, np.ndarray]:
+    """Nearest model grid point to each station, and the distance to it.
+
+    Nearest neighbour rather than bilinear: on the strided ~16 km grid the
+    interpolation weights would smooth more than the comparison warrants. The
+    displacement is returned so it can be judged rather than assumed negligible.
+
+    Returns
+    -------
+    flat_index : np.ndarray
+        ``(station,)`` index into the flattened ``(y, x)`` grid.
+    distance_km : np.ndarray
+        ``(station,)`` great-circle distance to that grid point.
+    """
+    from scipy.spatial import cKDTree
+
+    def xyz(lat, lon):
+        la, lo = np.deg2rad(lat), np.deg2rad(lon)
+        return np.stack(
+            [np.cos(la) * np.cos(lo), np.cos(la) * np.sin(lo), np.sin(la)], axis=-1
+        )
+
+    grid = xyz(model["lat"].values.ravel(), model["lon"].values.ravel())
+    pts = xyz(obs["lat"].values, obs["lon"].values)
+    chord, idx = cKDTree(grid).query(pts)
+    # chord length on the unit sphere -> great-circle distance
+    return idx, 2 * np.arcsin(np.clip(chord / 2, 0, 1)) * 6371.0
+
+
+def score_against_stations(
+    pred: xr.Dataset, obs: xr.Dataset, var: str, flat_index: np.ndarray
+) -> dict[str, np.ndarray]:
+    """Score at station points, sampling the model at the nearest grid point."""
+    have, where = _align_truth(pred, obs["time"].values)
+    o_all = obs[var].values  # (time, station)
+    o_full = np.where(have[..., None], o_all[where], np.nan)  # (init, lead, station)
+
+    p = field(pred, var)  # (init, lead, y, x)
+    p_at = p.reshape(p.shape[:2] + (-1,))[..., flat_index]  # (init, lead, station)
+
+    return _reduce(p_at - o_full, np.ones(o_full.shape[-1]))
 
 
 def summarise(per_case: np.ndarray, rng: np.random.Generator) -> dict[str, np.ndarray]:
@@ -107,38 +171,51 @@ def summarise(per_case: np.ndarray, rng: np.random.Generator) -> dict[str, np.nd
 
 
 def build_summary() -> xr.Dataset:
-    """Produce the verification-summary dataset for both sources."""
-    truth = xr.open_zarr(OUT / "truth.zarr")
+    """Score both prediction sources against both truths."""
+    analysis = xr.open_zarr(OUT / "truth.zarr")
+    obs = xr.open_zarr(OUT / "observations.zarr")
     sources = {
         "aifs": xr.open_zarr(OUT / "aifs.zarr"),
         "harmonie-arome": xr.open_zarr(OUT / "forecast.zarr"),
     }
-    weights = np.cos(np.deg2rad(truth["lat"].values))
     leads = sources["harmonie-arome"]["lead_time"].values
+    truths = ["dini-analysis", "observations"]
     stats = ["mean", "lower", "upper"]
     rng = np.random.default_rng(0)
 
+    flat_index, distance_km = station_indices(sources["harmonie-arome"], obs)
+    print(
+        f"{len(flat_index)} stations matched to grid points; displacement "
+        f"median {np.median(distance_km):.1f} km, max {distance_km.max():.1f} km"
+    )
+
     out: dict[str, xr.DataArray] = {}
     for var in SCORED:
-        vals = np.full((len(sources), len(METRICS), len(leads), len(stats)), np.nan)
-        cnts = np.zeros((len(sources), len(METRICS), len(leads)), dtype=np.int64)
-        for si, (name, pred) in enumerate(sources.items()):
-            scores = per_case_scores(pred, truth, var, weights)
-            for mi, metric in enumerate(METRICS):
-                s = summarise(scores[metric], rng)
-                for ti, key in enumerate(stats):
-                    vals[si, mi, :, ti] = s[key]
-                cnts[si, mi] = s["n"]
+        shape = (len(truths), len(sources), len(METRICS), len(leads))
+        vals = np.full(shape + (len(stats),), np.nan)
+        cnts = np.zeros(shape, dtype=np.int64)
+
+        for si, pred in enumerate(sources.values()):
+            scored = {
+                "dini-analysis": score_against_grid(pred, analysis, var),
+                "observations": score_against_stations(pred, obs, var, flat_index),
+            }
+            for ti, truth_name in enumerate(truths):
+                for mi, metric in enumerate(METRICS):
+                    s = summarise(scored[truth_name][metric], rng)
+                    for ki, key in enumerate(stats):
+                        vals[ti, si, mi, :, ki] = s[key]
+                    cnts[ti, si, mi] = s["n"]
 
         coords = dict(
-            truth_source=["dini-analysis"],
+            truth_source=truths,
             prediction_source=list(sources),
             metric=list(METRICS),
             lead_time=leads,
             stat=stats,
         )
         out[var] = xr.DataArray(
-            vals[None],
+            vals,
             dims=list(coords),
             coords=coords,
             attrs=dict(
@@ -148,7 +225,7 @@ def build_summary() -> xr.Dataset:
             ),
         )
         out[f"{var}_number_of_cases"] = xr.DataArray(
-            cnts[None],
+            cnts,
             dims=[d for d in coords if d != "stat"],
             coords={k: v for k, v in coords.items() if k != "stat"},
             attrs=dict(standard_name="number_of_observations"),
@@ -157,20 +234,24 @@ def build_summary() -> xr.Dataset:
     ds = xr.Dataset(out)
     ds.coords["confidence"] = CONFIDENCE
     ds.attrs.update(
-        title="HARMONIE-AROME DINI vs ECMWF AIFS, against the DINI analysis",
-        truth="HARMONIE-AROME DINI analysis",
-        caveat_truth=(
-            "the truth is HARMONIE's own analysis, which favours DINI: it is the "
-            "state DINI was initialised from and shares its physics and orography"
+        title="HARMONIE-AROME DINI vs ECMWF AIFS",
+        caveat_analysis=(
+            "the DINI analysis is HARMONIE's own state and favours it: same physics, "
+            "same orography, and the field HARMONIE was initialised from"
         ),
-        caveat_regridding=(
-            "AIFS is interpolated from 0.25 deg onto the ~2 km DINI grid"
+        caveat_observations=(
+            f"station observations are neutral between the models but cover only "
+            f"{obs.sizes['station']} points over Denmark, and a point measurement is "
+            f"not a grid mean; models are sampled at the nearest grid point, median "
+            f"{np.median(distance_km):.1f} km away"
         ),
+        caveat_regridding="AIFS is interpolated from 0.25 deg onto the ~2 km DINI grid",
         caveat_sample=(
-            "5 initialisations spanning 24 h; the bootstrap is iid over them and "
-            "is therefore optimistic, since consecutive runs share weather"
+            "5 initialisations spanning 24 h; the bootstrap is iid over them and is "
+            "therefore optimistic, since consecutive runs share weather"
         ),
         n_initialisations=int(sources["harmonie-arome"].sizes["init_time"]),
+        n_stations=int(obs.sizes["station"]),
     )
     return ds
 
@@ -188,20 +269,21 @@ def main() -> None:
 
     leads = (ds["lead_time"].values / np.timedelta64(1, "h")).astype(int)
     for var in SCORED:
-        v = ds[var].sel(truth_source="dini-analysis", metric="rmse", stat="mean")
-        print(f"\n{var} RMSE ({UNITS[var]}) against the DINI analysis")
-        head = "  " + "".join(f"{s:>16s}" for s in ds["prediction_source"].values)
-        print(f"  {'lead':>5}" + head[2:])
-        for i, h in enumerate(leads):
-            row = "".join(
-                f"{float(v[si, i]):>16.4g}"
-                for si in range(ds.sizes["prediction_source"])
+        print(f"\n{var} RMSE ({UNITS[var]})")
+        for truth in ds["truth_source"].values:
+            v = ds[var].sel(truth_source=truth, metric="rmse", stat="mean")
+            print(f"  vs {truth}")
+            print(
+                "      " + "".join(f"{s:>17s}" for s in ds["prediction_source"].values)
             )
-            print(f"  {h:>4d}h" + row)
+            for i, h in enumerate(leads):
+                row = "".join(
+                    f"{float(v[si, i]):>17.4g}"
+                    for si in range(ds.sizes["prediction_source"])
+                )
+                print(f"    {h:>3d}h" + row)
 
-    n = ds[f"{SCORED[0]}_number_of_cases"].values
-    print(f"\ncases per lead time: {np.unique(n)}")
-    print(f"wrote {p}")
+    print(f"\nwrote {p}")
 
 
 if __name__ == "__main__":

@@ -51,6 +51,27 @@ AIFS_VARIABLES = {
 }
 
 # --------------------------------------------------------------------------- #
+# DMI station observations -- the second, neutral truth source
+# --------------------------------------------------------------------------- #
+#: Open, no API key. The old dmigw.govcloud.dk endpoint was retired 2026-06-30.
+METOBS_BASE = "https://opendataapi.dmi.dk/v2/metObs"
+
+#: Scored field -> (metObs parameterId, scale, offset) taking it to DINI units.
+#: metObs reports Celsius and hectopascals.
+METOBS_PARAMETERS = {
+    "t2m": ("temp_dry", 1.0, 273.15),
+    "pres_seasurface": ("pressure_at_sea", 100.0, 0.0),
+    "wind_speed_10m": ("wind_speed", 1.0, 0.0),
+}
+
+#: Denmark and immediate surroundings, within the DINI domain: lon/lat min/max.
+OBS_BBOX = (7.0, 54.0, 16.0, 58.0)
+
+#: Stations report every 10 minutes; take the report closest to the valid time
+#: from within this window either side.
+OBS_WINDOW_MIN = 10
+
+# --------------------------------------------------------------------------- #
 # What can actually be compared
 # --------------------------------------------------------------------------- #
 #: AIFS initialises 6-hourly, DINI 3-hourly, so only 6-hourly inits are shared.

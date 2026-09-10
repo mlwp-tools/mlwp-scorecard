@@ -24,6 +24,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 SOURCES = ("aifs", "harmonie-arome")
+TRUTHS = ("dini-analysis", "observations")
 
 
 @pytest.fixture(scope="module")
@@ -44,8 +45,36 @@ def card(summary, control: str, experiment: str):
     )
 
 
-def test_both_sources_are_present(summary):
+def test_both_sources_and_both_truths_are_present(summary):
     assert list(summary["prediction_source"].values) == list(SOURCES)
+    assert list(summary["truth_source"].values) == list(TRUTHS)
+
+
+def test_observations_are_physically_plausible():
+    """A unit slip in the metObs conversion would be obvious here.
+
+    metObs reports Celsius and hectopascals; the extraction converts to K and Pa.
+    """
+    obs = xr.open_zarr(OUT / "observations.zarr")
+    assert 240 < float(obs["t2m"].mean()) < 320, "not kelvin?"
+    assert 9.5e4 < float(obs["pres_seasurface"].mean()) < 1.06e5, "not pascals?"
+    assert 0 <= float(obs["wind_speed_10m"].min())
+    assert float(obs["wind_speed_10m"].max()) < 60
+    for var in ("t2m", "pres_seasurface", "wind_speed_10m"):
+        filled = np.isfinite(obs[var].values).mean()
+        assert filled > 0.7, f"{var} only {filled:.0%} reported"
+
+
+def test_stations_lie_inside_the_model_domain():
+    """Every station must match a grid point that is actually near it."""
+    from verify import station_indices
+
+    obs = xr.open_zarr(OUT / "observations.zarr")
+    dini = xr.open_zarr(OUT / "forecast.zarr")
+    _, distance_km = station_indices(dini, obs)
+    assert (
+        distance_km.max() < 25
+    ), f"furthest station is {distance_km.max():.0f} km away"
 
 
 def test_scoring_aligns_forecast_and_truth_valid_times():
@@ -55,11 +84,10 @@ def test_scoring_aligns_forecast_and_truth_valid_times():
     Feeding the truth back in as a perfect forecast isolates that lookup from any
     question about either model.
     """
-    from verify import per_case_scores
+    from verify import score_against_grid
 
     truth = xr.open_zarr(OUT / "truth.zarr")
     dini = xr.open_zarr(OUT / "forecast.zarr")
-    weights = np.cos(np.deg2rad(truth["lat"].values))
 
     valid = dini["init_time"].values[:, None] + dini["lead_time"].values[None, :]
     index = {t: i for i, t in enumerate(truth["time"].values)}
@@ -69,7 +97,7 @@ def test_scoring_aligns_forecast_and_truth_valid_times():
     oracle = dini.copy()
     oracle["t2m"] = (("init_time", "lead_time", "y", "x"), perfect)
 
-    scores = per_case_scores(oracle, truth, "t2m", weights)
+    scores = score_against_grid(oracle, truth, "t2m")
     assert np.allclose(scores["rmse"], 0.0), "truth scored against itself is not zero"
     assert np.allclose(scores["mae"], 0.0)
 
@@ -77,7 +105,7 @@ def test_scoring_aligns_forecast_and_truth_valid_times():
     # would pass even if every lead were reading the same field
     shifted = oracle.copy()
     shifted["t2m"] = (("init_time", "lead_time", "y", "x"), np.roll(perfect, 1, axis=1))
-    assert not np.allclose(per_case_scores(shifted, truth, "t2m", weights)["rmse"], 0.0)
+    assert not np.allclose(score_against_grid(shifted, truth, "t2m")["rmse"], 0.0)
 
 
 def test_aifs_regridding_left_no_holes():
@@ -115,8 +143,11 @@ def test_errors_are_physically_plausible(summary):
         "wind_speed_10m": (0.1, 5.0),
     }
     for var, (lo, hi) in bounds.items():
-        v = summary[var].sel(truth_source="dini-analysis", metric="rmse", stat="mean")
-        assert np.all((v.values > lo) & (v.values < hi)), f"{var}: {v.values}"
+        for truth in TRUTHS:
+            v = summary[var].sel(truth_source=truth, metric="rmse", stat="mean")
+            assert np.all(
+                (v.values > lo) & (v.values < hi)
+            ), f"{var} vs {truth}: {v.values}"
 
 
 def test_errors_grow_with_lead_time(summary):
@@ -138,7 +169,7 @@ def test_errors_grow_with_lead_time(summary):
 def test_confidence_intervals_bracket_the_mean(summary):
     """`lower <= mean <= upper` is the one thing the package asks of the input."""
     for var in ("t2m", "pres_seasurface", "wind_speed_10m"):
-        v = summary[var].sel(truth_source="dini-analysis")
+        v = summary[var]
         lo = v.sel(stat="lower").values
         mid = v.sel(stat="mean").values
         hi = v.sel(stat="upper").values
@@ -179,6 +210,56 @@ def test_swapping_control_and_experiment_flips_the_card(summary):
         assert ca.row_key == cb.row_key and ca.col_key == cb.col_key
         for sa, sb in zip(ca.steps, cb.steps):
             assert np.sign(sa.relative) == -np.sign(sb.relative)
+
+
+def test_the_choice_of_truth_changes_the_verdict(summary):
+    """The headline finding, and the reason both truths are on the card.
+
+    Against the DINI analysis -- HARMONIE's own state -- HARMONIE wins on 2 m
+    temperature. Against neutral station observations the sign reverses. A
+    comparison that used only the analysis would have reported the opposite
+    conclusion with no hint that it was an artefact of the choice of truth.
+    """
+    lay = card(summary, "aifs", "harmonie-arome")
+    by_truth = {}
+    for truth in TRUTHS:
+        cell = lay.sel(truth_source=truth, variable="t2m", metric="rmse")
+        by_truth[truth] = np.mean([s.relative for s in cell.steps])
+
+    assert (
+        by_truth["dini-analysis"] > 0
+    ), "HARMONIE should lead against its own analysis"
+    assert by_truth["observations"] < 0, "AIFS should lead against neutral observations"
+
+
+def test_analysis_flatters_harmonie_on_every_variable(summary):
+    """HARMONIE always scores relatively better against its own analysis.
+
+    Not a claim about which model is better -- a claim about the truth being
+    non-neutral, which is why the caveat is on the card rather than in a footnote.
+    """
+    lay = card(summary, "aifs", "harmonie-arome")
+    for var in ("t2m", "pres_seasurface", "wind_speed_10m"):
+        vs_analysis = np.mean(
+            [
+                s.relative
+                for s in lay.sel(
+                    truth_source="dini-analysis", variable=var, metric="rmse"
+                ).steps
+            ]
+        )
+        vs_obs = np.mean(
+            [
+                s.relative
+                for s in lay.sel(
+                    truth_source="observations", variable=var, metric="rmse"
+                ).steps
+            ]
+        )
+        assert vs_analysis > vs_obs, (
+            f"{var}: HARMONIE scored {vs_analysis:.3f} against its own analysis but "
+            f"{vs_obs:.3f} against observations"
+        )
 
 
 def test_case_counts_are_the_number_of_initialisations(summary):

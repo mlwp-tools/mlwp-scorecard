@@ -40,9 +40,10 @@ def render(ds: xr.Dataset, name: str, control: str, experiment: str, scheme: str
         **axes,
         title=f"{experiment} vs {control}",
         subtitle=(
-            f"{n_init} initialisations, 2026-09-04 to 09-05, verified against the "
-            f"HARMONIE-AROME DINI analysis. Lead times +{leads[0]:.0f} h to "
-            f"+{leads[-1]:.0f} h."
+            f"{n_init} initialisations, 2026-09-04 to 09-05, lead times "
+            f"+{leads[0]:.0f} h to +{leads[-1]:.0f} h. Verified twice: against the "
+            f"DINI analysis, which is HARMONIE's own state, and against "
+            f"{ds.attrs.get('n_stations', '?')} DMI stations, which are neutral."
         ),
     )
     outputs = [OUT / f"{name}.{ext}" for ext in ("html", "png", "pdf")]
@@ -82,8 +83,9 @@ def main() -> None:
         render(ds, name, control, experiment, args.scheme)
 
     print("\ncaveats carried in the dataset attributes:")
-    for k in ("caveat_truth", "caveat_regridding", "caveat_sample"):
-        print(f"  - {ds.attrs[k]}")
+    for k, v in sorted(ds.attrs.items()):
+        if k.startswith("caveat_"):
+            print(f"  - {v}")
 
 
 if __name__ == "__main__":

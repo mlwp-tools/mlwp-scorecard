@@ -4,23 +4,35 @@ The synthetic tests prove the package computes what it claims on data whose answ
 is known in advance. This folder does the same against **real operational output**,
 where the answer is not known and the card has to earn its keep.
 
-Two prediction sources, one common truth (the DINI analysis):
+Two prediction sources:
 
 | source | what it is |
 |---|---|
 | `harmonie-arome` | DMI's operational limited-area physics model, ~2 km |
 | `aifs` | ECMWF's global data-driven model, 0.25 deg |
 
-Both are scored into one `verification.zarr`, from which either direction of the
-card renders without re-scoring. Which source is control and which is experiment
-is an argument.
+scored against **two independent truths**:
+
+| truth | what it is | the catch |
+|---|---|---|
+| `dini-analysis` | gridded, whole DINI domain | it is HARMONIE's own state, so it favours HARMONIE |
+| `observations` | 61 DMI stations | neutral, but only ~60 points over Denmark, and a point is not a grid mean |
+
+Neither is "the" truth, and they do not agree. Showing both on one card is the
+honest presentation, and is what the `truth_source` dimension is for -- the ECMWF
+reference card stacks its `an` and `ob` blocks the same way.
 
 ## Sources
 
 ```
 s3://harmonie-zarr/dini/control/<analysis-time>/single_levels.zarr
 arraylake  danish-meteorological-institute/ecmwf-aifs-single-forecast-subscription
+https://opendataapi.dmi.dk/v2/metObs        (open, no API key)
 ```
+
+The metObs endpoint moved: `dmigw.govcloud.dk` was retired on 2026-06-30 and no
+longer resolves at all. Anything still pointing at it fails at DNS rather than with
+a useful error.
 
 ## Running it
 
@@ -30,7 +42,9 @@ uv run python tests/harmonie_dini/inspect_aifs.py      # what is in the AIFS rep
 uv run python tests/harmonie_dini/check_alignment.py   # where they can be compared
 uv run python tests/harmonie_dini/build_datasets.py    # truth and HARMONIE forecast
 uv run python tests/harmonie_dini/build_aifs.py        # AIFS, regridded to DINI
-uv run python tests/harmonie_dini/verify.py            # score both
+uv run python tests/harmonie_dini/probe_metobs.py      # check the metObs API shape
+uv run python tests/harmonie_dini/build_observations.py  # DMI station observations
+uv run python tests/harmonie_dini/verify.py            # score both, against both truths
 uv run python tests/harmonie_dini/make_card.py
 ```
 
@@ -48,6 +62,7 @@ otherwise, so the suite stays runnable without credentials.
 | `truth.zarr` | `(time, y, x)` | the DINI analysis at every analysis time |
 | `forecast.zarr` | `(init_time, lead_time, y, x)` | HARMONIE-AROME |
 | `aifs.zarr` | `(init_time, lead_time, y, x)` | AIFS, interpolated to the DINI points |
+| `observations.zarr` | `(time, station)` | DMI station reports at the valid times |
 | `verification.zarr` | | the summary the scorecard package consumes |
 
 ## Where the two models can actually be compared
@@ -74,49 +89,67 @@ Two traps, both silent if missed:
 
 ## What the result says
 
-Percent better than AIFS (positive = HARMONIE better):
+**The choice of truth reverses the verdict.** RMSE, percent better than AIFS
+(positive = HARMONIE better):
 
 ```
-                        6h    12h    18h    24h    30h    36h
-pres_seasurface rmse  26.3  -13.2  -23.8  -48.7  -63.7  -41.2
-t2m             rmse  63.6   45.0   35.0   29.6   28.6   31.1
-wind_speed_10m  rmse  46.9   23.8   12.3    5.7    1.9    1.0
+                          6h    12h    18h    24h    30h    36h
+vs the DINI analysis  (HARMONIE's own state)
+  pres_seasurface   26.3  -13.2  -23.8  -48.7  -63.7  -41.2
+  t2m               63.6   45.0   35.0   29.6   28.6   31.1
+  wind_speed_10m    46.9   23.8   12.3    5.7    1.9    1.0
+
+vs 61 DMI stations    (neutral)
+  pres_seasurface  -48.6  -23.6  -44.5    6.9  -62.9  -12.5
+  t2m              -16.0  -33.9  -44.4  -49.0  -44.1  -35.8
+  wind_speed_10m     0.5    2.7    2.4    3.9   -1.1    2.0
 ```
 
-Three different stories, each a coherent block rather than scattered cells:
+On 2 m temperature, HARMONIE leads by 29–64% against the analysis and *loses* by
+16–49% against observations. Same models, same period, same metric; opposite
+conclusion. Mean sea level pressure moves the same way. Only 10 m wind is roughly
+truth-independent, and there the two models are near parity either way.
 
-- **Mean sea level pressure**: HARMONIE wins at +6 h, then AIFS takes over from
-  +12 h and leads by 40–60% thereafter. MSLP is a smooth synoptic field, so the
-  regridding penalty on AIFS is small and this is the closest thing here to a fair
-  fight.
-- **2 m temperature**: HARMONIE wins throughout, but the margin halves from +6 h to
-  +30 h. AIFS's error is nearly flat at ~1.1 K across all lead times, which is the
-  signature of *representativeness* error rather than forecast error — a 0.25 deg
-  field cannot reproduce 2 km detail, and that floor does not grow with lead time.
-- **10 m wind speed**: HARMONIE wins early and converges to parity by +36 h.
+This is the home-advantage effect made quantitative. The analysis is the field
+HARMONIE was initialised from and shares its physics and orography, so scoring
+HARMONIE against it partly measures self-consistency rather than skill. A study
+that used only the analysis would have reported the opposite result with nothing on
+the page to suggest it was an artefact of the choice of truth.
 
-Note that the reverse card is not the numeric negative of this one: a relative
-difference is normalised by whichever source is the control, so +26% better than
-AIFS and −36% worse than HARMONIE describe the same gap from opposite ends. Only
-the signs mirror, which is what `test_swapping_control_and_experiment_flips_the_card`
-asserts.
+It is *not* evidence that AIFS is the better model. The observation comparison has
+its own biases, listed below. What it is evidence for is that a single truth source
+cannot settle the question, which is why the card carries both.
+
+Two further readings worth having:
+
+- **AIFS's `t2m` error against the analysis is nearly flat at ~1.1 K** across all
+  lead times. Forecast error grows; this does not, so most of it is
+  representativeness — a 0.25 deg field cannot reproduce 2 km detail. Against
+  station points that penalty largely disappears, which is part of why the sign
+  flips.
+- The reverse card is not the numeric negative of this one. A relative difference is
+  normalised by whichever source is the control, so "+26% better than AIFS" and
+  "−36% worse than HARMONIE" describe the same gap from opposite ends. Only the
+  signs mirror, which is what `test_swapping_control_and_experiment_flips_the_card`
+  asserts.
 
 ## Read these results with care
 
-Three things make this a pipeline demonstration rather than evidence about either
-model, and all three are recorded in the dataset attributes and repeated on the card:
+Four things make this a pipeline demonstration rather than evidence about either
+model. All are recorded in the dataset attributes and repeated on the card:
 
-1. **The truth is HARMONIE's own analysis.** It is the state DINI was initialised
-   from and is consistent with DINI's physics and orography. AIFS is being judged
-   against a competitor's analysis. A fair comparison would verify both against
-   observations, or against a third-party analysis.
-2. **The coarse model is interpolated onto the fine grid.** This is the conventional
-   direction and leaves the truth untouched, but it is not neutral: it charges AIFS
-   for detail it never claimed to resolve. The flat ~1.1 K `t2m` floor is mostly
-   this.
-3. **Five initialisations spanning 24 hours.** That is a small and heavily
-   autocorrelated sample, and the bootstrap is iid over it, so the intervals are
-   optimistic. See *Two ways this goes wrong* in `PLAN.md`.
+1. **The DINI analysis is not neutral.** It is HARMONIE's own state. Its block on
+   the card should be read as "how self-consistent is HARMONIE", not "how good".
+2. **Neither are the observations.** 61 stations over Denmark only, against models
+   covering the whole DINI domain; and a 2 m thermometer at one spot is not a 2 km
+   grid mean. Models are sampled at the nearest grid point, a median 6.5 km away,
+   which is itself a source of error charged to the model.
+3. **The coarse model is interpolated onto the fine grid.** The conventional
+   direction, and it leaves the truth untouched, but it charges AIFS for detail it
+   never claimed to resolve.
+4. **Five initialisations spanning 24 hours.** A small and heavily autocorrelated
+   sample, bootstrapped iid, so the intervals are optimistic. See *Two ways this
+   goes wrong* in `PLAN.md`.
 
 ## What the tests actually check
 
@@ -131,3 +164,11 @@ if the pipeline were broken rather than any expected answer:
 - **Regridding** left no holes, which is the longitude-convention failure.
 - **The card is mixed.** A uniformly one-colour card would usually mean the
   comparison had collapsed, not that one model won everything.
+- **The two truths disagree**, and in the specific direction expected: HARMONIE
+  scores relatively better against its own analysis than against observations, on
+  every variable. That is asserted rather than left as an observation, because if
+  it ever stopped holding it would mean either the observation pipeline or the
+  analysis pipeline had broken.
+- **metObs units** — the API reports Celsius and hectopascals, and the extraction
+  converts to K and Pa.
+- **Every station falls inside the model domain**, within 25 km of a grid point.

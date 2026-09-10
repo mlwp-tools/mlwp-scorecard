@@ -39,6 +39,10 @@ _SERIES = (
     ("el", "experiment_lower"),
     ("eu", "experiment_upper"),
     ("d", "relative"),
+    # the paired difference in the metric's own units, with its interval
+    ("v", "value"),
+    ("vl", "value_lower"),
+    ("vu", "value_upper"),
     ("n", "n"),
 )
 
@@ -76,9 +80,7 @@ def build_payload(layout: Layout, *, precision: int = 4) -> dict:
             values = [getattr(s, attr) for s in cell.steps]
             if all(v is None for v in values):
                 continue
-            entry[short] = (
-                values if attr == "n" else _round(values, precision)
-            )
+            entry[short] = values if attr == "n" else _round(values, precision)
         cells.append(entry)
 
     return {

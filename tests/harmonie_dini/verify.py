@@ -148,16 +148,27 @@ def score_against_stations(
     return _reduce(p_at - o_full, np.ones(o_full.shape[-1]))
 
 
-def summarise(per_case: np.ndarray, rng: np.random.Generator) -> dict[str, np.ndarray]:
+def resample(n_case: int, rng: np.random.Generator) -> np.ndarray:
+    """One set of bootstrap case indices, ``(boot, case)``.
+
+    Drawn **once** and reused for every source and every metric. That is what makes
+    the difference interval below a *paired* one: within each replicate the two
+    sources are compared on the same weather, so the shared component of their
+    error cancels instead of adding.
+    """
+    return rng.integers(0, n_case, (N_BOOT, n_case))
+
+
+def summarise(per_case: np.ndarray, idx: np.ndarray) -> dict[str, np.ndarray]:
     """Collapse cases: the mean, its bootstrap interval, and the case count.
 
     Parameters
     ----------
     per_case : np.ndarray
         ``(case, lead_time)`` -- one score per forecast case.
+    idx : np.ndarray
+        ``(boot, case)`` from :func:`resample`.
     """
-    n_case = per_case.shape[0]
-    idx = rng.integers(0, n_case, (N_BOOT, n_case))  # (boot, case)
     with np.errstate(invalid="ignore"):
         boot = np.nanmean(per_case[idx], axis=1)  # (boot, lead_time)
         mean = np.nanmean(per_case, axis=0)  # (lead_time,)
@@ -167,6 +178,36 @@ def summarise(per_case: np.ndarray, rng: np.random.Generator) -> dict[str, np.nd
         lower=np.nanpercentile(boot, a, axis=0),
         upper=np.nanpercentile(boot, 100 - a, axis=0),
         n=np.sum(np.isfinite(per_case), axis=0),
+    )
+
+
+def summarise_difference(
+    experiment: np.ndarray, control: np.ndarray, idx: np.ndarray
+) -> dict[str, np.ndarray]:
+    """The paired difference and its interval.
+
+    The difference is taken **per case, before any averaging**, and the same
+    resample is applied to it. Differencing two independently-bootstrapped means
+    would give a far wider and quite wrong interval: the two models are run on the
+    same weather, so most of their error is shared and cancels.
+
+    Parameters
+    ----------
+    experiment, control : np.ndarray
+        ``(case, lead_time)`` per-case scores for the two sources.
+    idx : np.ndarray
+        ``(boot, case)`` from :func:`resample`.
+    """
+    d = experiment - control  # (case, lead_time) -- paired
+    with np.errstate(invalid="ignore"):
+        boot = np.nanmean(d[idx], axis=1)  # (boot, lead_time)
+        mean = np.nanmean(d, axis=0)
+    a = (1 - CONFIDENCE) / 2 * 100
+    return dict(
+        mean=mean,
+        lower=np.nanpercentile(boot, a, axis=0),
+        upper=np.nanpercentile(boot, 100 - a, axis=0),
+        n=np.sum(np.isfinite(d), axis=0),
     )
 
 
@@ -189,27 +230,36 @@ def build_summary() -> xr.Dataset:
         f"median {np.median(distance_km):.1f} km, max {distance_km.max():.1f} km"
     )
 
+    n_case = int(sources["harmonie-arome"].sizes["init_time"])
+    idx = resample(n_case, rng)
+    names = list(sources)
+
     out: dict[str, xr.DataArray] = {}
     for var in SCORED:
         shape = (len(truths), len(sources), len(METRICS), len(leads))
         vals = np.full(shape + (len(stats),), np.nan)
         cnts = np.zeros(shape, dtype=np.int64)
 
-        for si, pred in enumerate(sources.values()):
+        # per-case scores kept, so the difference below can be paired
+        per_case: dict[tuple[str, str, str], np.ndarray] = {}
+
+        for si, (name, pred) in enumerate(sources.items()):
             scored = {
                 "dini-analysis": score_against_grid(pred, analysis, var),
                 "observations": score_against_stations(pred, obs, var, flat_index),
             }
             for ti, truth_name in enumerate(truths):
                 for mi, metric in enumerate(METRICS):
-                    s = summarise(scored[truth_name][metric], rng)
+                    series = scored[truth_name][metric]
+                    per_case[(name, truth_name, metric)] = series
+                    s = summarise(series, idx)
                     for ki, key in enumerate(stats):
                         vals[ti, si, mi, :, ki] = s[key]
                     cnts[ti, si, mi] = s["n"]
 
         coords = dict(
             truth_source=truths,
-            prediction_source=list(sources),
+            prediction_source=names,
             metric=list(METRICS),
             lead_time=leads,
             stat=stats,
@@ -221,7 +271,7 @@ def build_summary() -> xr.Dataset:
             attrs=dict(
                 units=UNITS[var],
                 long_name=LONG_NAMES[var],
-                ancillary_variables=f"{var}_number_of_cases",
+                ancillary_variables=f"{var}_number_of_cases {var}_difference",
             ),
         )
         out[f"{var}_number_of_cases"] = xr.DataArray(
@@ -229,6 +279,47 @@ def build_summary() -> xr.Dataset:
             dims=[d for d in coords if d != "stat"],
             coords={k: v for k, v in coords.items() if k != "stat"},
             attrs=dict(standard_name="number_of_observations"),
+        )
+
+        # ---- the paired difference, for every ordered pair of sources ---------
+        # Sparse by construction: the diagonal is zero and is left NaN.
+        dshape = (len(truths), len(names), len(names), len(METRICS), len(leads))
+        dvals = np.full(dshape + (len(stats),), np.nan)
+        for ci, ctl_name in enumerate(names):
+            for ei, exp_name in enumerate(names):
+                if ci == ei:
+                    continue
+                for ti, truth_name in enumerate(truths):
+                    for mi, metric in enumerate(METRICS):
+                        s = summarise_difference(
+                            per_case[(exp_name, truth_name, metric)],
+                            per_case[(ctl_name, truth_name, metric)],
+                            idx,
+                        )
+                        for ki, key in enumerate(stats):
+                            dvals[ti, ci, ei, mi, :, ki] = s[key]
+
+        dcoords = dict(
+            truth_source=truths,
+            control_source=names,
+            experiment_source=names,
+            metric=list(METRICS),
+            lead_time=leads,
+            stat=stats,
+        )
+        out[f"{var}_difference"] = xr.DataArray(
+            dvals,
+            dims=list(dcoords),
+            coords=dcoords,
+            attrs=dict(
+                units=UNITS[var],
+                long_name=f"{LONG_NAMES[var]}: experiment minus control",
+                note=(
+                    "paired: the difference is taken per forecast case before "
+                    "averaging, and one bootstrap resample is shared by both "
+                    "sources, so their common error cancels"
+                ),
+            ),
         )
 
     ds = xr.Dataset(out)

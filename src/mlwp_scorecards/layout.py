@@ -214,15 +214,28 @@ def resolve(
     with np.errstate(divide="ignore", invalid="ignore"):
         rel = diff / np.abs(ctl)
 
-    # Intervals for both sources, for the drill-down chart. The *difference* has
-    # no interval here: that needs a paired resample over cases, which is not yet
-    # an input. See "Open assumption: significance" in PLAN.md.
+    # Each source's own interval, for the drill-down chart.
     ctl_lo = ctl_hi = exp_lo = exp_hi = None
     if has_stat and "lower" in [str(s) for s in da.coords[stat_dim].values]:
         ctl_lo = da.sel({prediction_dim: control, stat_dim: "lower"})
         ctl_hi = da.sel({prediction_dim: control, stat_dim: "upper"})
         exp_lo = da.sel({prediction_dim: experiment, stat_dim: "lower"})
         exp_hi = da.sel({prediction_dim: experiment, stat_dim: "upper"})
+
+    # The *paired* difference interval, if supplied. It cannot be derived from the
+    # two marginals above: both models are run on the same cases, so their errors
+    # are correlated and the paired interval is far tighter. This is what makes a
+    # cell significant.
+    dif_lo = dif_hi = None
+    if cube.difference is not None:
+        pair = cube.difference
+        try:
+            pair = pair.sel(control_source=control, experiment_source=experiment)
+        except KeyError:
+            pair = None
+        if pair is not None and stat_dim in pair.dims:
+            dif_lo = pair.sel({stat_dim: "lower"})
+            dif_hi = pair.sel({stat_dim: "upper"})
 
     if counts is not None and prediction_dim in counts.dims:
         counts = counts.sel({prediction_dim: experiment})
@@ -249,6 +262,9 @@ def resolve(
         ctl_hi = ctl_hi.transpose(*dims, cell_dim)
         exp_lo = exp_lo.transpose(*dims, cell_dim)
         exp_hi = exp_hi.transpose(*dims, cell_dim)
+    if dif_lo is not None:
+        dif_lo = dif_lo.transpose(*dims, cell_dim)
+        dif_hi = dif_hi.transpose(*dims, cell_dim)
     if counts is not None:
         counts = counts.transpose(*[d for d in dims if d in counts.dims], cell_dim)
 
@@ -289,6 +305,8 @@ def resolve(
     chi_v = ctl_hi.values if has_ci else None
     elo_v = exp_lo.values if has_ci else None
     ehi_v = exp_hi.values if has_ci else None
+    dlo_v = dif_lo.values if dif_lo is not None else None
+    dhi_v = dif_hi.values if dif_hi is not None else None
     cnt_v = counts.values if counts is not None else None
     cnt_dims = [d for d in dims if counts is not None and d in counts.dims]
 
@@ -332,6 +350,8 @@ def resolve(
                             control_upper=None,
                             experiment_lower=None,
                             experiment_upper=None,
+                            value_lower=None,
+                            value_upper=None,
                             n=None,
                             level=0,
                             family=fam,
@@ -351,7 +371,11 @@ def resolve(
                     v = arr[idx + (k,)]
                     return float(v) if np.isfinite(v) else None
 
-                sig = False  # paired difference intervals are not yet an input
+                # Significant when the paired difference interval excludes zero.
+                # Without that input nothing is marked: the two sources' marginal
+                # intervals cannot answer this, being much wider than the paired one.
+                d_lo, d_hi = _at(dlo_v), _at(dhi_v)
+                sig = d_lo is not None and d_hi is not None and (d_lo > 0 or d_hi < 0)
                 if sig:
                     n_sig += 1
                 nn = None
@@ -368,6 +392,8 @@ def resolve(
                 word = scheme.word(fam, lvl)
                 pct = abs(float(r_)) * 100
                 tip = f"{lead_labels[k]} {pct:.3g}% {word}"
+                if sig:
+                    tip += ", significant"
                 if nn is not None:
                     tip += f" ({nn} cases)"
                 steps.append(
@@ -381,6 +407,8 @@ def resolve(
                         control_upper=_at(chi_v),
                         experiment_lower=_at(elo_v),
                         experiment_upper=_at(ehi_v),
+                        value_lower=d_lo,
+                        value_upper=d_hi,
                         n=nn,
                         level=lvl,
                         family=fam,
@@ -410,12 +438,36 @@ def resolve(
         n_significant=n_sig,
     )
 
+    # Sample sizes actually used, for the caveats below. Small or highly
+    # autocorrelated samples are the usual reason a card over-claims.
+    case_counts = {
+        s.n for cell in cells.values() for s in cell.steps if s.n is not None
+    }
+
     notes = [
         "Forecast cases are autocorrelated: consecutive runs share a weather system, "
-        "so nominal confidence overstates certainty.",
+        "so a resample that treats them as independent understates the interval and "
+        "over-marks significance.",
         f"This card shows {stats.n_boxes} simultaneous comparisons. Isolated cells mean "
         "little; coherent blocks mean a lot.",
     ]
+    if case_counts:
+        lo, hi = min(case_counts), max(case_counts)
+        span = f"{lo}" if lo == hi else f"{lo}-{hi}"
+        if hi < 30:
+            notes.append(
+                f"Only {span} forecast cases per cell. A bootstrap over so few is "
+                f"weak, so treat any significance marking here as suggestive rather "
+                f"than settled."
+            )
+    if stats.n_significant and stats.n_boxes:
+        frac = stats.n_significant / stats.n_boxes
+        if frac > 0.75:
+            notes.append(
+                f"{frac:.0%} of boxes are marked significant. That is high enough to "
+                f"be worth double-checking how the interval was resampled, rather "
+                f"than read as {frac:.0%} confidence in the result."
+            )
 
     return Layout(
         rows=rows,

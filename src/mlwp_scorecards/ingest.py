@@ -20,6 +20,9 @@ __all__ = ["ValidationReport", "PreparedCube", "prepare"]
 #: Suffixes identifying a case-count variable when ``ancillary_variables`` is absent.
 COUNT_SUFFIXES = ("_number_of_cases", "_n", "_popul", "_count")
 
+#: Suffix identifying the paired-difference variable, likewise a fallback.
+DIFFERENCE_SUFFIX = "_difference"
+
 
 @dataclass
 class ValidationReport:
@@ -62,38 +65,69 @@ class PreparedCube:
     long_names: dict[str, str | None]
     confidence: float | None
     report: ValidationReport
+    #: Paired experiment-minus-control statistics, indexed by an ordered pair of
+    #: prediction sources. Optional: without it the card shows magnitude only and
+    #: nothing can be marked significant.
+    difference: xr.DataArray | None = None
 
     @property
     def dims(self) -> tuple[str, ...]:
         return tuple(self.score.dims)
 
 
-def _split_variables(ds: xr.Dataset) -> tuple[list[str], dict[str, str]]:
-    """Partition data variables into scores and their case-count ancillaries.
+def _role_of(da: xr.DataArray, control_dim: str, experiment_dim: str) -> str:
+    """Classify an ancillary variable by its dimensions, not by its name.
+
+    A paired-difference variable is the one indexed by an ordered *pair* of
+    prediction sources; anything else attached to a score is a case count.
+    """
+    if control_dim in da.dims and experiment_dim in da.dims:
+        return "difference"
+    return "count"
+
+
+def _split_variables(
+    ds: xr.Dataset,
+    control_dim: str = "control_source",
+    experiment_dim: str = "experiment_source",
+) -> tuple[list[str], dict[str, dict[str, str]]]:
+    """Partition data variables into scores and their ancillaries.
 
     Association follows CF's ``ancillary_variables`` attribute where present, with
     a suffix convention as a fallback.
+
+    Returns
+    -------
+    scores : list of str
+    ancillaries : dict
+        ``{score: {role: variable name}}``, role being ``"count"`` or
+        ``"difference"``.
     """
-    declared: dict[str, str] = {}
+    found: dict[str, dict[str, str]] = {}
     ancillary: set[str] = set()
     for name, da in ds.data_vars.items():
         for anc in str(da.attrs.get("ancillary_variables", "")).split():
             if anc in ds.data_vars:
-                declared[str(name)] = anc
+                role = _role_of(ds[anc], control_dim, experiment_dim)
+                found.setdefault(str(name), {})[role] = anc
                 ancillary.add(anc)
 
     scores = [str(n) for n in ds.data_vars if n not in ancillary]
-    # suffix fallback for anything not already paired
-    remaining = [s for s in scores if s not in declared]
-    for s in list(remaining):
-        for suf in COUNT_SUFFIXES:
-            cand = f"{s}{suf}"
-            if cand in ds.data_vars:
-                declared[s] = cand
-                ancillary.add(cand)
-                break
+    # suffix fallback for anything not already declared
+    for s in list(scores):
+        roles = found.setdefault(s, {})
+        if "count" not in roles:
+            for suf in COUNT_SUFFIXES:
+                if f"{s}{suf}" in ds.data_vars:
+                    roles["count"] = f"{s}{suf}"
+                    ancillary.add(f"{s}{suf}")
+                    break
+        if "difference" not in roles and f"{s}{DIFFERENCE_SUFFIX}" in ds.data_vars:
+            roles["difference"] = f"{s}{DIFFERENCE_SUFFIX}"
+            ancillary.add(f"{s}{DIFFERENCE_SUFFIX}")
+
     scores = [s for s in scores if s not in ancillary]
-    return scores, declared
+    return scores, {s: found.get(s, {}) for s in scores}
 
 
 def _pad_optional(da: xr.DataArray, optional: Iterable[str]) -> xr.DataArray:
@@ -140,7 +174,9 @@ def prepare(
     PreparedCube
     """
     report = ValidationReport()
-    scores, count_of = _split_variables(ds)
+    scores, ancillaries = _split_variables(ds)
+    count_of = {s: r["count"] for s, r in ancillaries.items() if "count" in r}
+    diff_of = {s: r["difference"] for s, r in ancillaries.items() if "difference" in r}
     if not scores:
         report.fail("dataset has no score variables")
         report.raise_if_failed()
@@ -160,7 +196,16 @@ def prepare(
     # Every dimension must be placed somewhere. Silently leaving one out would
     # collapse it without saying so, which is exactly the kind of quiet wrongness
     # a decision artefact must not have.
-    unassigned = present - set(wanted) - {stat_dim, "prediction_source"}
+    unassigned = (
+        present
+        - set(wanted)
+        - {
+            stat_dim,
+            "prediction_source",
+            "control_source",
+            "experiment_source",
+        }
+    )
     if unassigned:
         raise KeyError(
             f"dimension(s) {sorted(unassigned)} are assigned to neither rows, columns "
@@ -209,6 +254,31 @@ def prepare(
     else:
         report.warn("no case-count variable found; tooltips will omit sample sizes")
 
+    difference = None
+    if diff_of:
+        dpad = []
+        for s in scores:
+            dname = diff_of.get(s)
+            if dname is None:
+                dpad.append(None)
+            else:
+                dpad.append(_pad_optional(ds[dname], optional).rename(None))
+        if any(d is not None for d in dpad):
+            template = next(d for d in dpad if d is not None)
+            dpad = [
+                d if d is not None else xr.full_like(template, np.nan) for d in dpad
+            ]
+            difference = xr.concat(
+                dpad,
+                dim=xr.DataArray(scores, dims=variable_dim, name=variable_dim),
+                join="outer",
+            )
+    else:
+        report.warn(
+            "no paired-difference variable found; cells will show magnitude only "
+            "and nothing can be marked significant"
+        )
+
     if stat_dim not in score.dims:
         report.warn(
             f"no {stat_dim!r} dimension: treating values as the mean, with no interval"
@@ -222,4 +292,6 @@ def prepare(
         report.warnings.clear()
     report.raise_if_failed()
 
-    return PreparedCube(score, counts, units, long_names, confidence, report)
+    return PreparedCube(
+        score, counts, units, long_names, confidence, report, difference
+    )

@@ -61,6 +61,11 @@ class Step:
     control_upper: float | None
     experiment_lower: float | None
     experiment_upper: float | None
+    #: The *paired* difference interval. Not derivable from the two marginals
+    #: above: both sources are scored on the same cases, so their errors are
+    #: correlated and this is much tighter. It is what decides ``significant``.
+    value_lower: float | None
+    value_upper: float | None
     n: int | None
     level: int
     family: str
@@ -69,11 +74,7 @@ class Step:
 
     @property
     def has_intervals(self) -> bool:
-        """Whether either source carries a confidence interval.
-
-        The *difference* has no interval: that needs a paired resample, which is
-        not yet an input. See "Open assumption: significance" in PLAN.md.
-        """
+        """Whether either source carries a confidence interval."""
         return self.control_lower is not None or self.experiment_lower is not None
 
 

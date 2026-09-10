@@ -28,8 +28,11 @@ HARNESS = Path(__file__).parent / "drilldown_harness.mjs"
 def page(verification, tmp_path_factory) -> str:
     out = tmp_path_factory.mktemp("drill") / "card.html"
     make_scorecard(
-        verification, out,
-        control="persistence", experiment="drifting-persistence", title="t",
+        verification,
+        out,
+        control="persistence",
+        experiment="drifting-persistence",
+        title="t",
     )
     return out.read_text()
 
@@ -134,12 +137,13 @@ def test_drilldown_actually_draws(verification, tmp_path):
     """
     out = tmp_path / "card.html"
     make_scorecard(
-        verification, out,
-        control="persistence", experiment="drifting-persistence", title="t",
+        verification,
+        out,
+        control="persistence",
+        experiment="drifting-persistence",
+        title="t",
     )
-    r = subprocess.run(
-        ["node", str(HARNESS), str(out)], capture_output=True, text=True
-    )
+    r = subprocess.run(["node", str(HARNESS), str(out)], capture_output=True, text=True)
     assert r.returncode == 0, f"{r.stdout}\n{r.stderr}"
     assert "dialog opened      : true" in r.stdout
     figures = int(re.search(r"figures\s+:\s+(\d+)", r.stdout).group(1))

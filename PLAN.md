@@ -137,7 +137,7 @@ in the appendix.
 5. **Vendor a small local `ValidationReport`** — no `mlwp-data-specs` dependency.
 6. **Walking skeleton first**: scaffolding + core + HTML backend end-to-end. Matplotlib
    backend, drill-down charts, pagination and the ECMWF preset come in pass 2.
-7. **Significance is deferred** (see *Open assumption* below).
+7. **Significance is supplied, not derived** (see *Significance* below).
 
 ---
 
@@ -531,31 +531,57 @@ rendered legend rather than leaving implicit:
 
 ---
 
-## Open assumption: significance
+## Significance: supplied, not derived
 
-The card's **value** is `experiment − control`, which the package computes by selecting two
-members of `prediction_source` and differencing. Its **confidence interval is not derivable**
-from the two sources' individual intervals: both are scored on the same forecast cases, so
-their errors are strongly paired and the paired difference interval is far tighter than any
-combination of the marginals. Treating them as independent would overstate the interval and
-mark genuine improvements as insignificant.
+The card's **value** is `experiment - control`. Its **interval cannot be derived**
+from the two sources' individual intervals: both are scored on the same forecast
+cases, so their errors are strongly paired and the paired interval is far tighter
+than any combination of the marginals. Treating them as independent overstates the
+interval and marks genuine improvements as insignificant.
 
-That interval can only come from where the per-case errors still exist — the scoring step.
-Whether the upstream pipeline emits paired difference statistics is currently unresolved, so
-**pass 1 assumes it does not**:
+So the paired statistics are an **input**, supplied as an ancillary variable
+indexed by an ordered pair of prediction sources:
 
-- Cells are coloured by magnitude. No significance borders, no triangle mode.
-- `stat="lower"`/`"upper"` on the per-source scores are still used, for the drill-down chart's
-  error bars.
-- Pass 2 adds an optional second input carrying paired statistics, keyed by
-  `(control_source, experiment_source)` coordinates drawn from the `prediction_source` names.
-  Sparse — only the pairs actually computed are filled.
+```
+    <var>_difference(truth_source, control_source, experiment_source,
+                     ..., metric, lead_time, stat)
+```
 
-This is additive, not a rewrite: `Step.significant` already exists in the model and is simply
-always `False` until that input is supplied. **If the paired statistics turn out to be
-available, this moves from pass 2 into pass 1** — roughly a day of work, not a redesign.
+Sparse by construction — only the pairs actually computed are filled, and the
+diagonal is left NaN. It is found through CF's `ancillary_variables`, and
+classified by its *dimensions* rather than its name: the variable indexed by an
+ordered pair of sources is the difference, anything else attached to a score is a
+case count.
 
----
+A cell is **significant when that interval excludes zero**, and `Step.significant`
+drives the border. Without the input nothing is marked and the card shows magnitude
+only, which `ingest` reports as a warning rather than leaving to be noticed.
+
+Producing it needs one line in the scoring step and is easy to get wrong:
+
+```python
+idx = rng.integers(0, n_case, (n_boot, n_case))   # ONE resample...
+d   = per_case_experiment - per_case_control      # ...applied to the paired
+boot = d[idx].mean(axis=1)                        #    difference, not to each
+```
+
+Measured on the HARMONIE/AIFS card, the paired interval is 1.0x to 3.2x tighter
+than the naive independent one — so the naive version would have hidden real
+results.
+
+**Two channels, independently legible.** Fill carries magnitude, border carries
+significance, and the border must stay readable on every fill. Making it a darkened
+fill fails at the saturated end — dark-on-dark falls to 1.35:1 — so the
+significance channel goes blank exactly where the differences are largest. The
+border therefore flips: dark on light fills, light on dark ones, never below 2.5:1,
+which `test_borders_stay_visible_against_their_own_fill` enforces.
+
+**A high fraction of significant cells is a warning, not a result.** With few or
+autocorrelated cases a naive bootstrap marks almost everything; the HARMONIE card
+comes out 92% significant from five initialisations spanning 24 hours, which is
+over-claiming. `Layout` adds a note to the card when fewer than 30 cases back a
+cell, and another when over 75% of boxes are marked, rather than letting the
+borders speak for themselves.
 
 ## Layout vocabulary
 
@@ -787,7 +813,7 @@ class Step:                    # one lead_time inside a Cell -> one drawn box
     n: int | None
     level: int                 # signed ramp bucket, computed by Scaling
     family: str                # "error" | "activity"
-    significant: bool          # always False until paired statistics exist
+    significant: bool          # paired interval excludes zero
     tooltip: str               # "T+24 8.81% better (414 cases)"
 
 Key = tuple[str | float, ...]      # coordinate values in nesting order
@@ -949,9 +975,9 @@ half-pixel edges.
   `colorspacious` — a dev-only dependency, never imported at runtime, so output is
   byte-reproducible.
 - **A diverging ramp is luminance-symmetric, so sign is unrecoverable in greyscale for any hue
-  pair.** No palette fixes this, which is why the significance-glyph mode (pass 2, once paired
-  statistics exist) is the **print default** rather than a fallback. Tests *assert* the
-  greyscale collapse, documenting why.
+  pair.** No palette fixes this, which is why the significance-glyph mode (pass 2) is planned
+  as the **print default** rather than a fallback. Tests *assert* the greyscale collapse,
+  documenting why.
 - The reference's `triangleDict` is replaced: it maps `-1` and `+1` to the same glyph, and maps
   `0` (weakest signal) to a full block (heaviest glyph). Use a monotone triangle family.
 - The legend is generated from the same `ColourScheme` that colours the cells, with a test
@@ -1033,9 +1059,9 @@ HTML-only install stays light; `render/__init__.py` imports backends lazily and 
 7. `render/html/` — markup and CSS first, then JS column toggling.
 8. `api.py`, `cli.py`, tests throughout.
 
-**Pass 2** — paired difference statistics and the significance layer, pagination for the
-static backend, `presets/ecmwf.py`, accessibility pass, `compact_cells` gradient path if real
-cards justify it.
+**Pass 2** — pagination for the static backend, `presets/ecmwf.py`, the
+significance-glyph mode for print and greyscale, accessibility pass, `compact_cells` gradient
+path if real cards justify it.
 
 ---
 

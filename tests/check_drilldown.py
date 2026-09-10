@@ -47,11 +47,15 @@ def main() -> None:
         raise SystemExit("no drill-down payload in the page")
     raw = gzip.decompress(base64.b64decode(m.group(1)))
     payload = json.loads(raw)
-    print(f"payload {len(m.group(1)) / 1024:.0f} kB encoded, "
-          f"{len(raw) / 1024:.0f} kB raw ({len(raw) / len(m.group(1)):.1f}x)")
+    print(
+        f"payload {len(m.group(1)) / 1024:.0f} kB encoded, "
+        f"{len(raw) / 1024:.0f} kB raw ({len(raw) / len(m.group(1)):.1f}x)"
+    )
 
     idx = sorted(int(i) for i in re.findall(r'data-i="(\d+)"', page))
-    assert idx == list(range(len(payload["cells"]))), "data-i does not index the payload"
+    assert idx == list(
+        range(len(payload["cells"]))
+    ), "data-i does not index the payload"
     print(f"every one of {len(idx)} data-i values resolves")
 
     first = payload["cells"][0]
@@ -61,8 +65,12 @@ def main() -> None:
         if key in first:
             vals = [f"{v:.4g}" if v is not None else "--" for v in first[key]]
             print(f"  {label:<10} {vals}")
-    for key, label in (("cl", "control lo"), ("cu", "control hi"),
-                       ("el", "experiment lo"), ("eu", "experiment hi")):
+    for key, label in (
+        ("cl", "control lo"),
+        ("cu", "control hi"),
+        ("el", "experiment lo"),
+        ("eu", "experiment hi"),
+    ):
         if key in first:
             print(f"  {label:<13} present")
     print(f"  cases      {first.get('n')}")

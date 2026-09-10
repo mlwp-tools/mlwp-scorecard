@@ -262,27 +262,34 @@ _JS = r"""
                           'font-size': 9.5, fill: '#5b6470' }, [txt(lab)]));
     });
 
-    series.forEach(function (s) {
+    series.forEach(function (s, si) {
+      /* Error bars, offset slightly per series so two of them do not overlap
+         into an unreadable smear at the same x. */
+      var off = (si - (series.length - 1) / 2) * 3;
       if (s.lo && s.hi) {
-        var up = [], dn = [];
+        var cap = 3;
         s.y.forEach(function (v, i) {
           if (v == null || s.lo[i] == null || s.hi[i] == null) return;
-          up.push(sx(i) + ',' + sy(s.hi[i]));
-          dn.unshift(sx(i) + ',' + sy(s.lo[i]));
+          var xx = sx(i) + off, a = sy(s.lo[i]), b = sy(s.hi[i]);
+          g.push(el('line', { x1: xx, x2: xx, y1: a, y2: b,
+                              stroke: s.colour, 'stroke-width': 1.2 }));
+          g.push(el('line', { x1: xx - cap, x2: xx + cap, y1: a, y2: a,
+                              stroke: s.colour, 'stroke-width': 1.2 }));
+          g.push(el('line', { x1: xx - cap, x2: xx + cap, y1: b, y2: b,
+                              stroke: s.colour, 'stroke-width': 1.2 }));
         });
-        if (up.length > 1) {
-          g.push(el('polygon', { points: up.concat(dn).join(' '),
-                                 fill: s.colour, 'fill-opacity': 0.16 }));
-        }
       }
       var pts = [];
-      s.y.forEach(function (v, i) { if (v != null) pts.push(sx(i) + ',' + sy(v)); });
+      s.y.forEach(function (v, i) {
+        if (v != null) pts.push((sx(i) + off) + ',' + sy(v));
+      });
       g.push(el('polyline', { points: pts.join(' '), fill: 'none',
                               stroke: s.colour, 'stroke-width': 1.9,
                               'stroke-dasharray': s.dash || null }));
       s.y.forEach(function (v, i) {
         if (v != null) {
-          g.push(el('circle', { cx: sx(i), cy: sy(v), r: 2.4, fill: s.colour }));
+          g.push(el('circle', { cx: sx(i) + off, cy: sy(v), r: 2.4,
+                                fill: s.colour }));
         }
       });
     });
@@ -295,6 +302,10 @@ _JS = r"""
     }
     return el('svg', { viewBox: '0 0 ' + W + ' ' + H, width: W, height: H,
                        role: 'img', 'aria-label': opts.ylabel || '' }, g);
+  }
+
+  function pctLabel(conf) {
+    return conf ? Math.round(conf * 100) + '%' : '';
   }
 
   function swatch(colour, dash) {
@@ -314,24 +325,28 @@ _JS = r"""
       dlg.querySelector('.meta').textContent =
         c.m + (c.u ? ' (' + c.u + ')' : '');
 
-      var pct = (c.d || []).map(function (v) {
-        return v == null ? null : v * 100;
-      });
       var charts = dlg.querySelector('.charts');
       charts.replaceChildren();
 
+      /* Chart 1: the paired difference in the metric's own units, with its
+         interval. Plotted in units rather than percent so the error bars are on
+         the same scale as the quantity -- the percentage is a ratio of two
+         uncertain numbers and its interval is not simply the scaled one. */
+      var haveDiffCI = c.vl && c.vu;
       var f1 = document.createElement('figure');
       var cap1 = document.createElement('figcaption');
-      cap1.textContent = 'Difference, % (positive = ' + d.experiment + ' better)';
+      cap1.textContent = 'Difference: ' + d.experiment + ' minus ' + d.control
+        + (c.u ? ' (' + c.u + ')' : '')
+        + (haveDiffCI ? ', paired ' + pctLabel(d.confidence) + ' interval' : '');
       f1.append(cap1, chart({
-        x: d.labels, zeroLine: true, ylabel: '% better',
-        series: [{ y: pct, colour: COLOURS.diff }]
+        x: d.labels, zeroLine: true, ylabel: c.u || 'difference',
+        series: [{ y: c.v || [], lo: c.vl, hi: c.vu, colour: COLOURS.diff }]
       }));
 
       var f2 = document.createElement('figure');
       var cap2 = document.createElement('figcaption');
-      cap2.textContent = c.m + (c.u ? ' (' + c.u + ')' : '') + ', with '
-        + (d.confidence ? Math.round(d.confidence * 100) + '% intervals' : 'intervals');
+      cap2.textContent = c.m + (c.u ? ' (' + c.u + ')' : '')
+        + ', each with its own ' + pctLabel(d.confidence) + ' interval';
       f2.append(cap2, chart({
         x: d.labels, ylabel: c.u || c.m,
         series: [
@@ -349,11 +364,16 @@ _JS = r"""
       note.append(swatch(COLOURS.experiment, true), txt(' ' + d.experiment));
       var extra = document.createElement('div');
       extra.style.marginTop = '6px';
-      extra.textContent =
-        'Bands are each source’s own confidence interval over forecast cases. '
-        + 'The difference has no band: that needs a paired resample, which this '
-        + 'card does not carry, so overlapping bands here do not mean the '
-        + 'difference is insignificant.';
+      extra.textContent = haveDiffCI
+        ? 'The difference interval is paired: it is computed per forecast case '
+          + 'before averaging, so the error the two sources share cancels. It is '
+          + 'therefore much tighter than the two intervals on the right, and it '
+          + 'is the one that decides significance. Overlapping intervals on the '
+          + 'right do not mean the difference is insignificant.'
+        : 'Intervals on the right are each source’s own, over forecast cases. The '
+          + 'difference has none: that needs a paired resample, which this card '
+          + 'does not carry, so nothing here is marked significant and '
+          + 'overlapping intervals do not mean the difference is insignificant.';
       note.append(extra);
       if (c.n) {
         var cases = document.createElement('div');

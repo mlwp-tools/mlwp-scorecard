@@ -148,8 +148,13 @@ model. All are recorded in the dataset attributes and repeated on the card:
    direction, and it leaves the truth untouched, but it charges AIFS for detail it
    never claimed to resolve.
 4. **Five initialisations spanning 24 hours.** A small and heavily autocorrelated
-   sample, bootstrapped iid, so the intervals are optimistic. See *Two ways this
-   goes wrong* in `PLAN.md`.
+   sample, bootstrapped iid, so the intervals are optimistic. The card comes out
+   **92% significant**, which should be read as a warning about the resampling
+   rather than as a strong result — see *Two ways this goes wrong* in `PLAN.md`,
+   where a naive per-case bootstrap is measured reporting significance 44% of the
+   time on data with no effect at all. A moving-block bootstrap needs more than
+   five cases to be possible at all, so the honest fix here is more
+   initialisations.
 
 ## What the tests actually check
 
@@ -164,6 +169,8 @@ if the pipeline were broken rather than any expected answer:
 - **Regridding** left no holes, which is the longitude-convention failure.
 - **The card is mixed.** A uniformly one-colour card would usually mean the
   comparison had collapsed, not that one model won everything.
+- **The paired difference interval is 1.0x to 3.2x tighter** than treating the two
+  sources as independent, so the naive version would have hidden real results.
 - **The two truths disagree**, and in the specific direction expected: HARMONIE
   scores relatively better against its own analysis than against observations, on
   every variable. That is asserted rather than left as an observation, because if

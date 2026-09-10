@@ -33,6 +33,25 @@ def test_borders_are_visible_against_white(name):
         assert contrast_ratio(sw.edge, "#ffffff") >= 1.9, (name, family)
 
 
+@pytest.mark.parametrize("name", sorted(SCHEMES))
+def test_borders_stay_visible_against_their_own_fill(name):
+    """Significance must be readable at every point on the ramp.
+
+    Fill carries magnitude, border carries significance, and they have to be
+    independently legible. A border made by darkening the fill fails this at the
+    saturated end -- dark-on-dark falls to about 1.3:1 -- so the significance
+    channel goes blank exactly where the differences are largest, which is the
+    worst place to lose it.
+    """
+    scheme = SCHEMES[name]
+    for family in scheme.families:
+        for level in range(1, scheme.depth + 1):
+            for signed in (level, -level):
+                sw = scheme.swatch(family, signed)
+                r = contrast_ratio(sw.fill, sw.edge)
+                assert r >= 2.5, f"{name}/{family}/{signed}: only {r:.2f}:1"
+
+
 def test_scaling_is_symmetric_and_monotone():
     s = FixedScaling()
     assert s.level(0.0) == 0

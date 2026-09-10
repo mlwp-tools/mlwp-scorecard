@@ -152,16 +152,19 @@ class Ramp:
 def _build_ramp(light: str, dark: str, n: int = 14) -> Ramp:
     """Interpolate ``n`` swatches from ``light`` to ``dark``.
 
-    The border is a darker companion of the fill so a significant cell reads as
-    framed rather than merely darker, and the foreground flips to white once the
-    fill is dark enough that black would fail contrast.
+    Fill carries direction and magnitude; the border carries significance, and the
+    two must stay independently readable. A border made by darkening the fill fails
+    that at the saturated end -- dark-on-dark drops to about 1.3:1 contrast, so the
+    significance channel goes silently blank exactly where the differences are
+    largest. The border therefore flips: dark on light fills, light on dark ones.
     """
     out = []
     for i in range(n):
         t = i / (n - 1)
         fill = _mix(light, dark, t)
-        edge = _mix(fill, "#000000", 0.35)
-        fg = "#000000" if contrast_ratio(fill, "#000000") >= 4.5 else "#ffffff"
+        dark_ok = contrast_ratio(fill, "#000000") >= 4.5
+        edge = _mix(fill, "#000000", 0.62) if dark_ok else _mix(fill, "#ffffff", 0.72)
+        fg = "#000000" if dark_ok else "#ffffff"
         out.append(Swatch(fill, edge, fg))
     return Ramp(tuple(out))
 

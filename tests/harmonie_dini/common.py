@@ -96,7 +96,9 @@ OUT = Path(__file__).resolve().parents[2] / "tmp" / "harmonie"
 #: Scored quantities. Both are error metrics: lower is better.
 METRICS = ("rmse", "mae")
 
-CONFIDENCE = 0.95
+#: Interval width. 0.90 gives the 5th and 95th bootstrap percentiles.
+#: With only five forecast cases a narrower interval would be over-claiming.
+CONFIDENCE = 0.90
 N_BOOT = 2000
 
 

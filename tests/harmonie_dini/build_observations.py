@@ -26,7 +26,6 @@ from collections import defaultdict
 
 import numpy as np
 import xarray as xr
-
 from common import METOBS_BASE, METOBS_PARAMETERS, OBS_BBOX, OBS_WINDOW_MIN, OUT
 
 
@@ -50,7 +49,9 @@ def fetch(parameter: str, when: np.datetime64, *, limit: int = 100000) -> list[d
         "datetime": f"{lo}/{hi}",
         "limit": limit,
     }
-    url = f"{METOBS_BASE}/collections/observation/items?{urllib.parse.urlencode(params)}"
+    url = (
+        f"{METOBS_BASE}/collections/observation/items?{urllib.parse.urlencode(params)}"
+    )
     with urllib.request.urlopen(url, timeout=60) as r:
         return json.loads(r.read()).get("features", [])
 
@@ -132,7 +133,9 @@ def build(force: bool = False) -> None:
     )
     for name, (_, scale, offset) in METOBS_PARAMETERS.items():
         ds[name].attrs.update(
-            units={"t2m": "K", "pres_seasurface": "Pa", "wind_speed_10m": "m s-1"}[name],
+            units={"t2m": "K", "pres_seasurface": "Pa", "wind_speed_10m": "m s-1"}[
+                name
+            ],
             conversion=f"metObs value * {scale} + {offset}",
         )
 
@@ -144,8 +147,10 @@ def build(force: bool = False) -> None:
     print("\nsanity check (should be physically plausible):")
     for name in METOBS_PARAMETERS:
         v = ds[name].values
-        print(f"  {name:<16} min {np.nanmin(v):>10.2f}  mean {np.nanmean(v):>10.2f}  "
-              f"max {np.nanmax(v):>10.2f}  {ds[name].attrs['units']}")
+        print(
+            f"  {name:<16} min {np.nanmin(v):>10.2f}  mean {np.nanmean(v):>10.2f}  "
+            f"max {np.nanmax(v):>10.2f}  {ds[name].attrs['units']}"
+        )
 
 
 def main() -> None:

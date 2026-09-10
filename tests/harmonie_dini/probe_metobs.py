@@ -50,10 +50,10 @@ def diagnose() -> None:
     """Resolve a few hosts, to tell a blocked host from a wrong hostname."""
     hosts = [
         HOST,
-        "dmigw.govcloud.dk",              # retired 2026-06-30
-        "dmiapi.govcloud.dk",             # the key-issuing portal
+        "dmigw.govcloud.dk",  # retired 2026-06-30
+        "dmiapi.govcloud.dk",  # the key-issuing portal
         "s3.eu-central-1.amazonaws.com",  # known good: the DINI bucket
-        "pypi.org",                       # known good: uv resolves against it
+        "pypi.org",  # known good: uv resolves against it
     ]
     for h in hosts:
         try:
@@ -82,7 +82,9 @@ def main() -> None:
     try:
         cols = get("collections")
     except urllib.error.HTTPError as exc:
-        raise SystemExit(f"  HTTP {exc.code}: {exc.read()[:300].decode(errors='replace')}")
+        raise SystemExit(
+            f"  HTTP {exc.code}: {exc.read()[:300].decode(errors='replace')}"
+        )
     for c in cols.get("collections", []):
         print(f"  {c.get('id'):<14} {c.get('title', '')}")
 
@@ -107,8 +109,10 @@ def main() -> None:
             continue
         p = feats[0]["properties"]
         print(f"  {pid:<18} {desc}")
-        print(f"    value={p.get('value')} station={p.get('stationId')} "
-              f"observed={p.get('observed')}")
+        print(
+            f"    value={p.get('value')} station={p.get('stationId')} "
+            f"observed={p.get('observed')}"
+        )
 
     print("\nbbox + datetime query (the shape the extraction will use)")
     obs = get(

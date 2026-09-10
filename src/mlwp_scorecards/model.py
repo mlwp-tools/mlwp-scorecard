@@ -57,13 +57,24 @@ class Step:
     relative: float | None
     control: float | None
     experiment: float | None
-    lower: float | None
-    upper: float | None
+    control_lower: float | None
+    control_upper: float | None
+    experiment_lower: float | None
+    experiment_upper: float | None
     n: int | None
     level: int
     family: str
     significant: bool
     tooltip: str
+
+    @property
+    def has_intervals(self) -> bool:
+        """Whether either source carries a confidence interval.
+
+        The *difference* has no interval: that needs a paired resample, which is
+        not yet an input. See "Open assumption: significance" in PLAN.md.
+        """
+        return self.control_lower is not None or self.experiment_lower is not None
 
 
 @dataclass(frozen=True, slots=True)

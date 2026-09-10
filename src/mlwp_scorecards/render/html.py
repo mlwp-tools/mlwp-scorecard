@@ -4,6 +4,12 @@ Emits one file with no external requests of any kind: no CDN, no analytics, no
 webfonts. The colour ramp is applied through CSS custom properties on each box
 rather than a full inline style triple, and column visibility is toggled by
 injecting a single CSS rule rather than writing inline styles to every cell.
+
+Clicking a cell opens a drill-down with two charts: the difference over lead time,
+and the two sources' own values with their confidence intervals. The charts are
+~80 lines of generated SVG rather than a plotting library -- the reference
+implementation pulls 2.7 MB of Plotly over plain HTTP from an unpinned CDN to draw
+two line charts.
 """
 
 from __future__ import annotations
@@ -16,6 +22,7 @@ from jinja2 import Template
 
 from ..colours import ColourScheme
 from ..model import Layout
+from .payload import payload_for
 
 __all__ = ["render_html"]
 
@@ -50,8 +57,10 @@ table.sc {{ border-collapse: separate; border-spacing: 0; font-size: 11px; }}
   padding: 1px 7px 1px 6px; text-align: left; }}
 .corner {{ left: 0; z-index: 4 !important; }}
 .sc tbody th.lv {{ text-align: right; }}
-td.c {{ padding: 2px 3px; line-height: 0; }}
-td.c.empty {{ background: {missing}; }}
+td.c {{ padding: 2px 3px; line-height: 0; cursor: pointer; }}
+td.c.empty {{ background: {missing}; cursor: default; }}
+td.c:hover {{ outline: 2px solid #7d8894; outline-offset: -2px; }}
+td.c:focus-visible {{ outline: 2px solid #06c; outline-offset: -2px; }}
 td.c > i {{ display: inline-block; width: var(--bw); height: var(--bh);
   margin-right: var(--bg); vertical-align: top; border: 1px solid #fff;
   background: var(--f, transparent); }}
@@ -68,12 +77,36 @@ tbody tr:hover th {{ background: #eaeef3; }}
 .ramp i {{ display: inline-block; width: 11px; height: 13px; border: 1px solid; }}
 .caveat {{ border-left: 3px solid #d8b24a; padding: 6px 0 6px 11px; margin: 7px 0;
   background: #fffdf5; }}
+
+/* ---- drill-down ---------------------------------------------------------- */
+dialog#sc-detail {{ border: 1px solid #c8ced6; border-radius: 8px; padding: 0;
+  max-width: 96vw; box-shadow: 0 10px 40px rgba(0,0,0,.22); }}
+dialog#sc-detail::backdrop {{ background: rgba(20,24,28,.45); }}
+#sc-detail .head {{ display: flex; align-items: baseline; gap: 12px;
+  padding: 12px 16px 8px; border-bottom: 1px solid #eceff3; }}
+#sc-detail h2 {{ font-size: 14px; margin: 0; }}
+#sc-detail .meta {{ font-size: 12px; color: #5b6470; }}
+#sc-detail .close {{ margin-left: auto; font: inherit; font-size: 16px;
+  line-height: 1; border: 0; background: none; cursor: pointer; color: #5b6470;
+  padding: 0 2px; }}
+#sc-detail .charts {{ display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 12px 4px; }}
+#sc-detail figure {{ margin: 0; }}
+#sc-detail figcaption {{ font-size: 11px; color: #5b6470; margin: 0 0 2px 46px; }}
+#sc-detail .note {{ font-size: 11px; color: #5b6470; padding: 0 16px 12px;
+  max-width: 62em; }}
+#sc-detail .key {{ display: inline-block; width: 22px; height: 2px;
+  vertical-align: middle; margin: 0 4px 0 10px; }}
+
 @media print {{
   .controls {{ display: none; }}
   .scroll {{ max-height: none; overflow: visible; border: 0; }}
   .sc thead th, .sc tbody th {{ position: static; }}
+  dialog#sc-detail {{ display: none; }}
 }}
 """
+
+#: Drawn by the JS below; kept here so both agree on the colours.
+DETAIL_COLOURS = {"control": "#8a6d1f", "experiment": "#1f5c8a", "diff": "#3b424b"}
 
 _JS = r"""
 (function () {
@@ -129,6 +162,224 @@ _JS = r"""
       .forEach(function (b) { b.checked = want; });
     recompute();
   });
+
+  /* ---- drill-down -------------------------------------------------------- */
+  var dlg = document.getElementById('sc-detail');
+  var dataEl = document.getElementById('sc-data');
+  if (!dlg || !dataEl) return;
+
+  var COLOURS = JSON.parse(document.getElementById('sc-colours').textContent);
+  var payload = null;
+
+  /* Inflated on first click, not at load: the page is useful without it, and on a
+     full-size card this is the largest thing in the file. */
+  function load() {
+    if (payload) return Promise.resolve(payload);
+    var bin = Uint8Array.from(atob(dataEl.textContent.trim()), function (c) {
+      return c.charCodeAt(0);
+    });
+    if (!('DecompressionStream' in window)) {
+      return Promise.reject(new Error('DecompressionStream unavailable'));
+    }
+    var stream = new Blob([bin]).stream()
+      .pipeThrough(new DecompressionStream('gzip'));
+    return new Response(stream).text().then(function (t) {
+      payload = JSON.parse(t);
+      return payload;
+    });
+  }
+
+  var NS = 'http://www.w3.org/2000/svg';
+  function el(tag, attrs, kids) {
+    var n = document.createElementNS(NS, tag);
+    for (var k in attrs) if (attrs[k] != null) n.setAttribute(k, attrs[k]);
+    (kids || []).forEach(function (c) { n.append(c); });
+    return n;
+  }
+  function txt(s) { return document.createTextNode(String(s)); }
+
+  function ticks(lo, hi, n) {
+    var span = hi - lo;
+    if (!(span > 0)) return [lo];
+    var raw = span / n;
+    var mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    var step = [1, 2, 2.5, 5, 10].reduce(function (a, b) {
+      return Math.abs(b * mag - raw) < Math.abs(a * mag - raw) ? b : a;
+    }) * mag;
+    var out = [], v = Math.ceil(lo / step) * step;
+    for (; v <= hi + step * 1e-9; v += step) out.push(v);
+    return out;
+  }
+
+  function fmt(v) {
+    var a = Math.abs(v);
+    if (a === 0) return '0';
+    if (a >= 1000 || a < 0.01) return v.toExponential(1);
+    return String(Number(v.toPrecision(4)));
+  }
+
+  /* One line with an optional confidence band. `series` entries are
+     {y, lo, hi, colour, name, dash}. */
+  function chart(opts) {
+    var x = opts.x, series = opts.series.filter(function (s) { return s.y; });
+    var W = opts.w || 430, H = opts.h || 250;
+    var m = { l: 58, r: 12, t: 8, b: 30 };
+    var all = [];
+    series.forEach(function (s) {
+      s.y.forEach(function (v, i) {
+        if (v == null) return;
+        all.push(v);
+        if (s.lo && s.lo[i] != null) all.push(s.lo[i]);
+        if (s.hi && s.hi[i] != null) all.push(s.hi[i]);
+      });
+    });
+    if (opts.zeroLine) all.push(0);
+    if (!all.length) return el('svg', { width: W, height: H });
+    var y0 = Math.min.apply(null, all), y1 = Math.max.apply(null, all);
+    var pad = (y1 - y0) * 0.08 || Math.abs(y0) * 0.1 || 1;
+    y0 -= pad; y1 += pad;
+
+    var sx = function (i) {
+      return x.length < 2 ? m.l : m.l + i * (W - m.l - m.r) / (x.length - 1);
+    };
+    var sy = function (v) {
+      return m.t + (y1 - v) * (H - m.t - m.b) / (y1 - y0);
+    };
+
+    var g = [];
+    ticks(y0, y1, 5).forEach(function (t) {
+      g.push(el('line', { x1: m.l, x2: W - m.r, y1: sy(t), y2: sy(t),
+                          stroke: '#e8ebee' }));
+      g.push(el('text', { x: m.l - 7, y: sy(t) + 3, 'text-anchor': 'end',
+                          'font-size': 10, fill: '#5b6470' }, [txt(fmt(t))]));
+    });
+    if (opts.zeroLine) {
+      g.push(el('line', { x1: m.l, x2: W - m.r, y1: sy(0), y2: sy(0),
+                          stroke: '#98a2ad', 'stroke-dasharray': '4 3' }));
+    }
+    x.forEach(function (lab, i) {
+      g.push(el('text', { x: sx(i), y: H - 10, 'text-anchor': 'middle',
+                          'font-size': 9.5, fill: '#5b6470' }, [txt(lab)]));
+    });
+
+    series.forEach(function (s) {
+      if (s.lo && s.hi) {
+        var up = [], dn = [];
+        s.y.forEach(function (v, i) {
+          if (v == null || s.lo[i] == null || s.hi[i] == null) return;
+          up.push(sx(i) + ',' + sy(s.hi[i]));
+          dn.unshift(sx(i) + ',' + sy(s.lo[i]));
+        });
+        if (up.length > 1) {
+          g.push(el('polygon', { points: up.concat(dn).join(' '),
+                                 fill: s.colour, 'fill-opacity': 0.16 }));
+        }
+      }
+      var pts = [];
+      s.y.forEach(function (v, i) { if (v != null) pts.push(sx(i) + ',' + sy(v)); });
+      g.push(el('polyline', { points: pts.join(' '), fill: 'none',
+                              stroke: s.colour, 'stroke-width': 1.9,
+                              'stroke-dasharray': s.dash || null }));
+      s.y.forEach(function (v, i) {
+        if (v != null) {
+          g.push(el('circle', { cx: sx(i), cy: sy(v), r: 2.4, fill: s.colour }));
+        }
+      });
+    });
+
+    if (opts.ylabel) {
+      g.push(el('text', { x: 12, y: H / 2, 'font-size': 10.5, fill: '#3b424b',
+                          'text-anchor': 'middle',
+                          transform: 'rotate(-90 12 ' + H / 2 + ')' },
+                [txt(opts.ylabel)]));
+    }
+    return el('svg', { viewBox: '0 0 ' + W + ' ' + H, width: W, height: H,
+                       role: 'img', 'aria-label': opts.ylabel || '' }, g);
+  }
+
+  function swatch(colour, dash) {
+    var s = document.createElement('span');
+    s.className = 'key';
+    s.style.background = dash
+      ? 'repeating-linear-gradient(90deg,' + colour + ' 0 4px,transparent 4px 7px)'
+      : colour;
+    return s;
+  }
+
+  function open(index) {
+    load().then(function (d) {
+      var c = d.cells[index];
+      if (!c) return;
+      dlg.querySelector('h2').textContent = c.t;
+      dlg.querySelector('.meta').textContent =
+        c.m + (c.u ? ' (' + c.u + ')' : '');
+
+      var pct = (c.d || []).map(function (v) {
+        return v == null ? null : v * 100;
+      });
+      var charts = dlg.querySelector('.charts');
+      charts.replaceChildren();
+
+      var f1 = document.createElement('figure');
+      var cap1 = document.createElement('figcaption');
+      cap1.textContent = 'Difference, % (positive = ' + d.experiment + ' better)';
+      f1.append(cap1, chart({
+        x: d.labels, zeroLine: true, ylabel: '% better',
+        series: [{ y: pct, colour: COLOURS.diff }]
+      }));
+
+      var f2 = document.createElement('figure');
+      var cap2 = document.createElement('figcaption');
+      cap2.textContent = c.m + (c.u ? ' (' + c.u + ')' : '') + ', with '
+        + (d.confidence ? Math.round(d.confidence * 100) + '% intervals' : 'intervals');
+      f2.append(cap2, chart({
+        x: d.labels, ylabel: c.u || c.m,
+        series: [
+          { y: c.c, lo: c.cl, hi: c.cu, colour: COLOURS.control,
+            name: d.control },
+          { y: c.e, lo: c.el, hi: c.eu, colour: COLOURS.experiment,
+            name: d.experiment, dash: '5 3' }
+        ]
+      }));
+      charts.append(f1, f2);
+
+      var note = dlg.querySelector('.note');
+      note.replaceChildren();
+      note.append(swatch(COLOURS.control), txt(' ' + d.control + '   '));
+      note.append(swatch(COLOURS.experiment, true), txt(' ' + d.experiment));
+      var extra = document.createElement('div');
+      extra.style.marginTop = '6px';
+      extra.textContent =
+        'Bands are each source’s own confidence interval over forecast cases. '
+        + 'The difference has no band: that needs a paired resample, which this '
+        + 'card does not carry, so overlapping bands here do not mean the '
+        + 'difference is insignificant.';
+      note.append(extra);
+      if (c.n) {
+        var cases = document.createElement('div');
+        cases.style.marginTop = '4px';
+        cases.textContent = 'Cases per lead time: ' + c.n.join(', ') + '.';
+        note.append(cases);
+      }
+      dlg.showModal();
+    }).catch(function (err) {
+      console.error('drill-down unavailable:', err);
+    });
+  }
+
+  table.addEventListener('click', function (e) {
+    var td = e.target.closest('td.c[data-i]');
+    if (td) open(Number(td.dataset.i));
+  });
+  table.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    var td = e.target.closest('td.c[data-i]');
+    if (td) { e.preventDefault(); open(Number(td.dataset.i)); }
+  });
+  dlg.querySelector('.close').addEventListener('click', function () { dlg.close(); });
+  dlg.addEventListener('click', function (e) {
+    if (e.target === dlg) dlg.close();   // click the backdrop
+  });
 })();
 """
 
@@ -162,7 +413,7 @@ _PAGE = Template(
      {{ n_lead }} boxes from {{ first_lead }} to {{ last_lead }}. Colour shows the
      difference between <b>{{ experiment }}</b> and <b>{{ control }}</b>, and its
      intensity the size of that difference relative to {{ control }}. Hover a box
-     for the exact value.</p>
+     for the exact value{% if has_detail %}, or click a cell for the full series{% endif %}.</p>
   {%- for fam in ramps %}
   <p><b>{{ fam.label }}</b>: {{ fam.negative_word }}
      <span class="ramp">{% for s in fam.neg %}<i style="background:{{ s.fill }};border-color:{{ s.edge }}"></i>{% endfor %}</span>
@@ -181,6 +432,18 @@ _PAGE = Template(
   <p class="sub">{{ stats_line }}</p>
 </div>
 
+{% if has_detail -%}
+<dialog id="sc-detail">
+  <div class="head">
+    <h2></h2><span class="meta"></span>
+    <button type="button" class="close" aria-label="Close">&#10005;</button>
+  </div>
+  <div class="charts"></div>
+  <div class="note"></div>
+</dialog>
+<script type="application/gzip;base64" id="sc-data">{{ payload_b64 }}</script>
+<script type="application/json" id="sc-colours">{{ colours_json }}</script>
+{%- endif %}
 <script type="application/json" id="sc-groups">{{ groups_json }}</script>
 <script type="application/json" id="sc-colkeys">{{ colkeys_json }}</script>
 <script type="application/json" id="sc-sep">{{ sep_json }}</script>
@@ -224,7 +487,14 @@ def _boxes(cell) -> str:
     return "".join(out)
 
 
-def render_html(layout: Layout, path: str | Path, *, scheme: ColourScheme) -> Path:
+def render_html(
+    layout: Layout,
+    path: str | Path,
+    *,
+    scheme: ColourScheme,
+    detail: bool = True,
+    precision: int = 4,
+) -> Path:
     """Write ``layout`` as a self-contained interactive HTML page.
 
     Parameters
@@ -232,6 +502,12 @@ def render_html(layout: Layout, path: str | Path, *, scheme: ColourScheme) -> Pa
     layout : Layout
     path : str or Path
     scheme : ColourScheme
+    detail : bool, optional
+        Embed the click-through drill-down data. On a full-size card this is the
+        largest thing in the file; pass False for a table-only page.
+    precision : int, optional
+        Significant figures kept in the drill-down data. A chart cannot show more,
+        and rounding is what makes it compress.
 
     Returns
     -------
@@ -268,6 +544,14 @@ def render_html(layout: Layout, path: str | Path, *, scheme: ColourScheme) -> Pa
         f"<tr>{''.join(head2)}</tr>" if head2 else ""
     )
 
+    # Cell identity for the drill-down is an integer, enumerated in the same order
+    # the payload uses. Labels never participate: the reference builds ids by
+    # concatenating them, which breaks on any label containing the separator.
+    index_of = {
+        (cell.row_key, cell.col_key): i
+        for i, (_, _, cell) in enumerate(layout.iter_cells())
+    }
+
     body = []
     for r, rl in enumerate(layout.rows):
         tds = []
@@ -284,8 +568,10 @@ def render_html(layout: Layout, path: str | Path, *, scheme: ColourScheme) -> Pa
                 tds.append(f'<td class="c empty" data-col="{key}"></td>')
             else:
                 fam = cell.steps[0].family if cell.steps else "error"
+                i = index_of[(cell.row_key, cell.col_key)]
                 tds.append(
-                    f'<td class="c f-{fam}" data-col="{key}" '
+                    f'<td class="c f-{fam}" data-col="{key}" data-i="{i}" '
+                    f'tabindex="0" role="button" '
                     f'data-cell="{esc(cell.cell_id)}">{_boxes(cell)}</td>'
                 )
         body.append(f"<tr>{''.join(tds)}</tr>")
@@ -326,6 +612,14 @@ def render_html(layout: Layout, path: str | Path, *, scheme: ColourScheme) -> Pa
     if s.n_saturated:
         stats_line += f" {s.n_saturated} values sit at or beyond the top of the scale."
 
+    payload_b64 = ""
+    if detail and s.n_cells_present:
+        payload_b64, raw_bytes, packed_bytes = payload_for(layout, precision=precision)
+        stats_line += (
+            f" Drill-down data {packed_bytes / 1024:.0f} kB "
+            f"({raw_bytes / packed_bytes:.1f}x compressed)."
+        )
+
     page = _PAGE.render(
         title=layout.title or "Scorecard",
         subtitle=layout.subtitle,
@@ -341,6 +635,9 @@ def render_html(layout: Layout, path: str | Path, *, scheme: ColourScheme) -> Pa
         last_lead=layout.lead_labels[-1],
         control=layout.control,
         experiment=layout.experiment,
+        has_detail=bool(payload_b64),
+        payload_b64=payload_b64,
+        colours_json=json.dumps(DETAIL_COLOURS),
         groups_json=json.dumps(groups),
         colkeys_json=json.dumps(col_keys),
         sep_json=json.dumps(SEP),

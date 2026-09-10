@@ -67,6 +67,12 @@ mlwp.make_scorecard verification_summary.nc \
 Output format follows the suffix: `.html` for the interactive page, `.png`, `.pdf`
 or `.svg` for the static figure.
 
+The HTML page is self-contained — no CDN, no analytics, no webfonts, so it works
+offline and from `file://`. Hover a box for its value, use the checkboxes to filter
+columns, and click a cell for a drill-down showing the difference over lead time
+and both sources' own values with their confidence intervals. The charts are
+generated SVG rather than a plotting library.
+
 ## Input
 
 One score variable per physical variable; everything else is a coordinate. A

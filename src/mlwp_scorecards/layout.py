@@ -214,10 +214,15 @@ def resolve(
     with np.errstate(divide="ignore", invalid="ignore"):
         rel = diff / np.abs(ctl)
 
-    lower = upper = None
+    # Intervals for both sources, for the drill-down chart. The *difference* has
+    # no interval here: that needs a paired resample over cases, which is not yet
+    # an input. See "Open assumption: significance" in PLAN.md.
+    ctl_lo = ctl_hi = exp_lo = exp_hi = None
     if has_stat and "lower" in [str(s) for s in da.coords[stat_dim].values]:
-        lower = da.sel({prediction_dim: experiment, stat_dim: "lower"})
-        upper = da.sel({prediction_dim: experiment, stat_dim: "upper"})
+        ctl_lo = da.sel({prediction_dim: control, stat_dim: "lower"})
+        ctl_hi = da.sel({prediction_dim: control, stat_dim: "upper"})
+        exp_lo = da.sel({prediction_dim: experiment, stat_dim: "lower"})
+        exp_hi = da.sel({prediction_dim: experiment, stat_dim: "upper"})
 
     if counts is not None and prediction_dim in counts.dims:
         counts = counts.sel({prediction_dim: experiment})
@@ -239,9 +244,11 @@ def resolve(
     rel = rel.transpose(*dims, cell_dim)
     ctl = ctl.transpose(*dims, cell_dim)
     exp = exp.transpose(*dims, cell_dim)
-    if lower is not None:
-        lower = lower.transpose(*dims, cell_dim)
-        upper = upper.transpose(*dims, cell_dim)
+    if ctl_lo is not None:
+        ctl_lo = ctl_lo.transpose(*dims, cell_dim)
+        ctl_hi = ctl_hi.transpose(*dims, cell_dim)
+        exp_lo = exp_lo.transpose(*dims, cell_dim)
+        exp_hi = exp_hi.transpose(*dims, cell_dim)
     if counts is not None:
         counts = counts.transpose(*[d for d in dims if d in counts.dims], cell_dim)
 
@@ -277,8 +284,11 @@ def resolve(
         return tuple(coords[d].index(v) for d, v in zip(dim_names, key))
 
     diff_v, rel_v, ctl_v, exp_v = diff.values, rel.values, ctl.values, exp.values
-    low_v = lower.values if lower is not None else None
-    up_v = upper.values if upper is not None else None
+    has_ci = ctl_lo is not None
+    clo_v = ctl_lo.values if has_ci else None
+    chi_v = ctl_hi.values if has_ci else None
+    elo_v = exp_lo.values if has_ci else None
+    ehi_v = exp_hi.values if has_ci else None
     cnt_v = counts.values if counts is not None else None
     cnt_dims = [d for d in dims if counts is not None and d in counts.dims]
 
@@ -313,18 +323,20 @@ def resolve(
                 if not np.isfinite(d_):
                     steps.append(
                         Step(
-                            lead_times[k],
-                            None,
-                            None,
-                            None,
-                            None,
-                            None,
-                            None,
-                            None,
-                            0,
-                            fam,
-                            False,
-                            f"{lead_labels[k]} no data",
+                            lead_time=lead_times[k],
+                            value=None,
+                            relative=None,
+                            control=None,
+                            experiment=None,
+                            control_lower=None,
+                            control_upper=None,
+                            experiment_lower=None,
+                            experiment_upper=None,
+                            n=None,
+                            level=0,
+                            family=fam,
+                            significant=False,
+                            tooltip=f"{lead_labels[k]} no data",
                         )
                     )
                     continue
@@ -332,8 +344,13 @@ def resolve(
                 lvl = scaling.level(signed)
                 if scaling.saturated(signed):
                     n_sat += 1
-                lo = float(low_v[idx + (k,)]) if low_v is not None else None
-                up = float(up_v[idx + (k,)]) if up_v is not None else None
+
+                def _at(arr, k=k, idx=idx):
+                    if arr is None:
+                        return None
+                    v = arr[idx + (k,)]
+                    return float(v) if np.isfinite(v) else None
+
                 sig = False  # paired difference intervals are not yet an input
                 if sig:
                     n_sig += 1
@@ -355,18 +372,20 @@ def resolve(
                     tip += f" ({nn} cases)"
                 steps.append(
                     Step(
-                        lead_times[k],
-                        float(d_),
-                        signed,
-                        float(ctl_v[idx + (k,)]),
-                        float(exp_v[idx + (k,)]),
-                        lo,
-                        up,
-                        nn,
-                        lvl,
-                        fam,
-                        sig,
-                        tip,
+                        lead_time=lead_times[k],
+                        value=float(d_),
+                        relative=signed,
+                        control=_at(ctl_v),
+                        experiment=_at(exp_v),
+                        control_lower=_at(clo_v),
+                        control_upper=_at(chi_v),
+                        experiment_lower=_at(elo_v),
+                        experiment_upper=_at(ehi_v),
+                        n=nn,
+                        level=lvl,
+                        family=fam,
+                        significant=sig,
+                        tooltip=tip,
                     )
                 )
 

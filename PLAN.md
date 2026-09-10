@@ -737,9 +737,9 @@ mlwp-scorecards/
 │   ├── render/
 │   │   ├── __init__.py    Renderer protocol, registry, lazy backend import
 │   │   ├── geometry.py    Geometry, span_cells() — shared, dependency-free
-│   │   ├── payload.py     compact drill-down JSON + gzip/base64      [pass 2]
-│   │   ├── html/          backend.py, templates/*.j2, assets/{scorecard.css,scorecard.js}
-│   │   └── static/        backend.py, draw.py, paginate.py           [pass 2]
+│   │   ├── payload.py     compact drill-down JSON + gzip/base64
+│   │   ├── html.py        self-contained interactive page + drill-down
+│   │   └── static.py      matplotlib backend
 │   └── cli.py             mlwp.make_scorecard
 └── tests/                 conftest.py, data/, baseline/, test_*.py
 ```
@@ -898,15 +898,25 @@ Departures from the reference, each deliberate:
 | label-concatenated cell id | integer `data-i` | breaks on `_`, `.`, unicode |
 | `<td>` row labels | `<th scope="row">` | screen readers |
 | `setVisibility` writes 15k inline styles | one injected CSS rule in `<style id="sc-dyn">` | hundreds of ms → one reflow |
-| Plotly 2.7 MB over `http://`, unpinned | ~90 lines of hand-rolled SVG charts (pass 2) | offline, no CDN, prints as vector |
+| Plotly 2.7 MB over `http://`, unpinned | ~140 lines of hand-rolled SVG charts | offline, no CDN, prints as vector |
 | GTM + full ECMWF site template | removed | ~200 kB, and no third-party tracking |
 
-Drill-down (pass 2) uses a native `<dialog>` — focus trap, Esc and backdrop come free — rather
-than rewriting the cell's `innerHTML`. Its payload is rounded to 4 significant figures, gzipped
-with `mtime=0`, base64'd into a `<script>`, and inflated lazily via `DecompressionStream`
-(works on `file://`).
+Clicking a cell opens a drill-down with two charts: the difference over lead time, and the
+two sources' own values with their confidence intervals. It uses a native `<dialog>` — focus
+trap, Esc and backdrop come free — rather than rewriting the cell's `innerHTML`, which in the
+reference loses the mode state and leaks the old DOM. The payload is rounded to 4 significant
+figures, gzipped with `mtime=0`, base64'd into a `<script>`, and inflated lazily on first
+click via `DecompressionStream` (which works on `file://`).
 
-Projected size: **~0.93 MB vs the reference's 7.4 MB** for the same card.
+**The difference has no confidence band**, and the dialog says so rather than leaving the
+absence to be noticed: that needs a paired resample, which is not yet an input. Overlapping
+bands on the second chart therefore do *not* mean the difference is insignificant — the
+marginal intervals are much wider than the paired one (see *Why the difference interval
+cannot be reconstructed*).
+
+Measured on a 45x30x15 card: **1.64 MB against the reference's 7.4 MB**, of which the
+drill-down payload is 0.46 MB against the reference's 3.2 MB — 6.9x smaller for the same
+data, from rounding plus gzip. `detail=False` drops it to 1.17 MB.
 
 ---
 
@@ -1023,9 +1033,9 @@ HTML-only install stays light; `render/__init__.py` imports backends lazily and 
 7. `render/html/` — markup and CSS first, then JS column toggling.
 8. `api.py`, `cli.py`, tests throughout.
 
-**Pass 2** — paired difference statistics and the significance layer, matplotlib backend,
-`render/payload.py` + SVG drill-down charts, pagination, `presets/ecmwf.py`, accessibility
-pass, `compact_cells` gradient path if real cards justify it.
+**Pass 2** — paired difference statistics and the significance layer, pagination for the
+static backend, `presets/ecmwf.py`, accessibility pass, `compact_cells` gradient path if real
+cards justify it.
 
 ---
 

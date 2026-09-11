@@ -96,3 +96,56 @@ def test_unknown_output_format_exits_nonzero(netcdf, tmp_path):
     )
     assert rc == 1
     assert not (tmp_path / "c.txt").exists()
+
+
+@pytest.fixture(scope="module")
+def zarr_store(tmp_path_factory):
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).parent))
+    from synthetic import make_verification_dataset
+
+    ds = make_verification_dataset(n_case=32, n_boot=40, drift=0.25, seed=3)
+    p = tmp_path_factory.mktemp("cli") / "v.zarr"
+    ds.to_zarr(p)
+    return p
+
+
+def test_reads_zarr_as_well_as_netcdf(zarr_store, tmp_path):
+    """Both documented input formats, not just the one the other tests use."""
+    out = tmp_path / "c.html"
+    rc = main(
+        [
+            str(zarr_store),
+            "--control",
+            "persistence",
+            "--experiment",
+            "drifting-persistence",
+            "-o",
+            str(out),
+        ]
+    )
+    assert rc == 0
+    assert out.stat().st_size > 2000
+
+
+def test_unknown_input_format_exits_nonzero(tmp_path):
+    """A CSV or a mistyped path should say so, not surface as whatever error
+    the engine xarray guessed happens to raise."""
+    bad = tmp_path / "v.csv"
+    bad.write_text("not,a,dataset\n")
+    out = tmp_path / "c.html"
+    rc = main(
+        [
+            str(bad),
+            "--control",
+            "persistence",
+            "--experiment",
+            "drifting-persistence",
+            "-o",
+            str(out),
+        ]
+    )
+    assert rc == 1
+    assert not out.exists()

@@ -11,6 +11,11 @@ from loguru import logger
 
 from .api import build_layout, render
 
+#: The only input formats. Anything else is refused by name rather than handed
+#: to ``xr.open_dataset`` to be sniffed: a mistyped path or a CSV should say so,
+#: not surface as whatever error the guessed engine happens to raise.
+_INPUT_SUFFIXES = {".nc", ".nc4", ".cdf", ".zarr"}
+
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the CLI argument parser.
@@ -26,7 +31,10 @@ def build_parser() -> argparse.ArgumentParser:
             "statistics. Compares two prediction sources scored against a common truth."
         ),
     )
-    p.add_argument("dataset", help="verification summary (.nc or .zarr)")
+    p.add_argument(
+        "dataset",
+        help=f"verification summary ({', '.join(sorted(_INPUT_SUFFIXES))})",
+    )
     p.add_argument("--control", required=True, help="baseline prediction source")
     p.add_argument("--experiment", required=True, help="prediction source under test")
     p.add_argument(
@@ -60,6 +68,36 @@ def build_parser() -> argparse.ArgumentParser:
         default="cvd",
         choices=("cvd", "ecmwf"),
         help="colour scheme (default: cvd, colour-vision-safe)",
+    )
+    p.add_argument(
+        "--bootstrap",
+        default="moving-block",
+        choices=("moving-block", "iid"),
+        help=(
+            "how to resample forecast cases. Consecutive forecasts share weather, "
+            "so iid over-marks significance badly (default: moving-block)"
+        ),
+    )
+    p.add_argument(
+        "--block-length",
+        type=int,
+        default=None,
+        metavar="N",
+        help="block length in forecast CASES, not hours (default: from the cadence)",
+    )
+    p.add_argument("--n-resamples", type=int, default=2000, metavar="N")
+    p.add_argument(
+        "--confidence-level",
+        action="append",
+        type=float,
+        metavar="C",
+        help="a fraction such as 0.95; repeatable (default: 0.68 0.95 0.997)",
+    )
+    p.add_argument(
+        "--seed",
+        type=int,
+        default=0,
+        help="fixed by default, so two runs on one file agree",
     )
     p.add_argument("--title", default="")
     p.add_argument("--subtitle", default="")
@@ -97,7 +135,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
 
     path = Path(args.dataset)
-    ds = xr.open_zarr(path) if path.suffix == ".zarr" else xr.open_dataset(path)
+    suffix = path.suffix.lower()
+    if suffix not in _INPUT_SUFFIXES:
+        logger.error(
+            f"cannot read {path.name}: expected one of "
+            f"{', '.join(sorted(_INPUT_SUFFIXES))}"
+        )
+        return 1
+    ds = xr.open_zarr(path) if suffix == ".zarr" else xr.open_dataset(path)
 
     polarity = {}
     for item in args.metric_polarity or []:
@@ -111,6 +156,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         rows=_split(args.rows),
         columns=_split(args.columns),
         cell=args.cell,
+        bootstrap=args.bootstrap,
+        block_length=args.block_length,
+        n_resamples=args.n_resamples,
+        seed=args.seed,
+        **(
+            {"confidence_levels": tuple(args.confidence_level)}
+            if args.confidence_level
+            else {}
+        ),
         truth_source=args.truth_source,
         metric_polarity=polarity or None,
         scheme=args.scheme,

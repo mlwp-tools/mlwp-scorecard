@@ -1,9 +1,8 @@
 """Score HARMONIE-AROME and AIFS against two independent truths.
 
-Produces the verification summary the scorecard package consumes:
+Produces the per-case scores the scorecard package consumes:
 
-    <var>(truth_source, prediction_source, metric, lead_time, stat)
-    <var>_number_of_cases(truth_source, prediction_source, metric, lead_time)
+    {metric}.{var}(truth_source, forecast_source, lead_time, init_time)
 
 Two truth sources, which is the point of the exercise:
 
@@ -18,13 +17,15 @@ Neither is "the" truth. Putting both on one card is the honest presentation, and
 is what the ``truth_source`` dimension is for -- the ECMWF reference card stacks
 its ``an`` and ``ob`` blocks the same way.
 
-The two collapses, in both cases:
+The two collapses, and which one is this script's:
 
 1. **Over space** -- grid points (area-weighted by cos(latitude)) or stations
    (equal weight) -- giving one number per forecast case. Deterministic; no
-   sampling uncertainty attaches here.
+   sampling uncertainty attaches here, and it needs the fields, so it happens
+   here. **This is all this script does.**
 2. **Over forecast cases.** The five initialisations reduce to a mean, and *that*
-   is the sample whose uncertainty ``lower``/``upper`` describe.
+   is the sample an interval describes. It belongs to the package, which needs
+   the per-case numbers to pair the two sources against the same weather.
 """
 
 from __future__ import annotations
@@ -35,7 +36,7 @@ from pathlib import Path
 
 import numpy as np
 import xarray as xr
-from common import CONFIDENCE, METRICS, N_BOOT, OUT
+from common import METRICS, OUT
 
 #: Scored fields. Wind speed is derived from u/v, which both models carry.
 SCORED = ("t2m", "pres_seasurface", "wind_speed_10m")
@@ -148,69 +149,6 @@ def score_against_stations(
     return _reduce(p_at - o_full, np.ones(o_full.shape[-1]))
 
 
-def resample(n_case: int, rng: np.random.Generator) -> np.ndarray:
-    """One set of bootstrap case indices, ``(boot, case)``.
-
-    Drawn **once** and reused for every source and every metric. That is what makes
-    the difference interval below a *paired* one: within each replicate the two
-    sources are compared on the same weather, so the shared component of their
-    error cancels instead of adding.
-    """
-    return rng.integers(0, n_case, (N_BOOT, n_case))
-
-
-def summarise(per_case: np.ndarray, idx: np.ndarray) -> dict[str, np.ndarray]:
-    """Collapse cases: the mean, its bootstrap interval, and the case count.
-
-    Parameters
-    ----------
-    per_case : np.ndarray
-        ``(case, lead_time)`` -- one score per forecast case.
-    idx : np.ndarray
-        ``(boot, case)`` from :func:`resample`.
-    """
-    with np.errstate(invalid="ignore"):
-        boot = np.nanmean(per_case[idx], axis=1)  # (boot, lead_time)
-        mean = np.nanmean(per_case, axis=0)  # (lead_time,)
-    a = (1 - CONFIDENCE) / 2 * 100
-    return dict(
-        mean=mean,
-        lower=np.nanpercentile(boot, a, axis=0),
-        upper=np.nanpercentile(boot, 100 - a, axis=0),
-        n=np.sum(np.isfinite(per_case), axis=0),
-    )
-
-
-def summarise_difference(
-    experiment: np.ndarray, control: np.ndarray, idx: np.ndarray
-) -> dict[str, np.ndarray]:
-    """The paired difference and its interval.
-
-    The difference is taken **per case, before any averaging**, and the same
-    resample is applied to it. Differencing two independently-bootstrapped means
-    would give a far wider and quite wrong interval: the two models are run on the
-    same weather, so most of their error is shared and cancels.
-
-    Parameters
-    ----------
-    experiment, control : np.ndarray
-        ``(case, lead_time)`` per-case scores for the two sources.
-    idx : np.ndarray
-        ``(boot, case)`` from :func:`resample`.
-    """
-    d = experiment - control  # (case, lead_time) -- paired
-    with np.errstate(invalid="ignore"):
-        boot = np.nanmean(d[idx], axis=1)  # (boot, lead_time)
-        mean = np.nanmean(d, axis=0)
-    a = (1 - CONFIDENCE) / 2 * 100
-    return dict(
-        mean=mean,
-        lower=np.nanpercentile(boot, a, axis=0),
-        upper=np.nanpercentile(boot, 100 - a, axis=0),
-        n=np.sum(np.isfinite(d), axis=0),
-    )
-
-
 def build_summary() -> xr.Dataset:
     """Score both prediction sources against both truths."""
     analysis = xr.open_zarr(OUT / "truth.zarr")
@@ -220,9 +158,8 @@ def build_summary() -> xr.Dataset:
         "harmonie-arome": xr.open_zarr(OUT / "forecast.zarr"),
     }
     leads = sources["harmonie-arome"]["lead_time"].values
+    inits = sources["harmonie-arome"]["init_time"].values
     truths = ["dini-analysis", "observations"]
-    stats = ["mean", "lower", "upper"]
-    rng = np.random.default_rng(0)
 
     flat_index, distance_km = station_indices(sources["harmonie-arome"], obs)
     print(
@@ -230,19 +167,18 @@ def build_summary() -> xr.Dataset:
         f"median {np.median(distance_km):.1f} km, max {distance_km.max():.1f} km"
     )
 
-    n_case = int(sources["harmonie-arome"].sizes["init_time"])
-    idx = resample(n_case, rng)
     names = list(sources)
+    n_case = len(inits)
 
+    # One score per forecast case. The collapse over cases -- the mean, its
+    # interval, the paired difference and the case count -- is the package's, so
+    # none of it happens here. What remains is the collapse over *space*, which
+    # needs the fields and so cannot move.
     out: dict[str, xr.DataArray] = {}
     for var in SCORED:
-        shape = (len(truths), len(sources), len(METRICS), len(leads))
-        vals = np.full(shape + (len(stats),), np.nan)
-        cnts = np.zeros(shape, dtype=np.int64)
-
-        # per-case scores kept, so the difference below can be paired
-        per_case: dict[tuple[str, str, str], np.ndarray] = {}
-
+        raw = np.full(
+            (len(truths), len(names), len(METRICS), len(leads), n_case), np.nan
+        )
         for si, (name, pred) in enumerate(sources.items()):
             scored = {
                 "dini-analysis": score_against_grid(pred, analysis, var),
@@ -250,80 +186,25 @@ def build_summary() -> xr.Dataset:
             }
             for ti, truth_name in enumerate(truths):
                 for mi, metric in enumerate(METRICS):
-                    series = scored[truth_name][metric]
-                    per_case[(name, truth_name, metric)] = series
-                    s = summarise(series, idx)
-                    for ki, key in enumerate(stats):
-                        vals[ti, si, mi, :, ki] = s[key]
-                    cnts[ti, si, mi] = s["n"]
+                    raw[ti, si, mi] = scored[truth_name][metric].T  # (lead, case)
 
         coords = dict(
             truth_source=truths,
-            prediction_source=names,
+            forecast_source=names,
             metric=list(METRICS),
             lead_time=leads,
-            stat=stats,
+            init_time=inits,
         )
-        out[var] = xr.DataArray(
-            vals,
-            dims=list(coords),
-            coords=coords,
-            attrs=dict(
+        scored_da = xr.DataArray(raw, dims=list(coords), coords=coords)
+        for metric in METRICS:
+            out[f"{metric}.{var}"] = scored_da.sel(
+                metric=metric, drop=True
+            ).assign_attrs(
                 units=UNITS[var],
-                long_name=LONG_NAMES[var],
-                ancillary_variables=f"{var}_number_of_cases {var}_difference",
-            ),
-        )
-        out[f"{var}_number_of_cases"] = xr.DataArray(
-            cnts,
-            dims=[d for d in coords if d != "stat"],
-            coords={k: v for k, v in coords.items() if k != "stat"},
-            attrs=dict(standard_name="number_of_observations"),
-        )
-
-        # ---- the paired difference, for every ordered pair of sources ---------
-        # Sparse by construction: the diagonal is zero and is left NaN.
-        dshape = (len(truths), len(names), len(names), len(METRICS), len(leads))
-        dvals = np.full(dshape + (len(stats),), np.nan)
-        for ci, ctl_name in enumerate(names):
-            for ei, exp_name in enumerate(names):
-                if ci == ei:
-                    continue
-                for ti, truth_name in enumerate(truths):
-                    for mi, metric in enumerate(METRICS):
-                        s = summarise_difference(
-                            per_case[(exp_name, truth_name, metric)],
-                            per_case[(ctl_name, truth_name, metric)],
-                            idx,
-                        )
-                        for ki, key in enumerate(stats):
-                            dvals[ti, ci, ei, mi, :, ki] = s[key]
-
-        dcoords = dict(
-            truth_source=truths,
-            control_source=names,
-            experiment_source=names,
-            metric=list(METRICS),
-            lead_time=leads,
-            stat=stats,
-        )
-        out[f"{var}_difference"] = xr.DataArray(
-            dvals,
-            dims=list(dcoords),
-            coords=dcoords,
-            attrs=dict(
-                units=UNITS[var],
-                long_name=f"{LONG_NAMES[var]}: experiment minus control",
-                note=(
-                    "paired: the difference is taken per forecast case before "
-                    "averaging, and one bootstrap resample is shared by both "
-                    "sources, so their common error cancels"
-                ),
-            ),
-        )
+                long_name=f"{LONG_NAMES[var]} {metric.upper()}",
+            )
 
     ds = xr.Dataset(out)
-    ds.coords["confidence"] = CONFIDENCE
     ds.attrs.update(
         title="HARMONIE-AROME DINI vs ECMWF AIFS",
         caveat_analysis=(
@@ -362,15 +243,13 @@ def main() -> None:
     for var in SCORED:
         print(f"\n{var} RMSE ({UNITS[var]})")
         for truth in ds["truth_source"].values:
-            v = ds[var].sel(truth_source=truth, metric="rmse", stat="mean")
+            v = ds[f"rmse.{var}"].sel(truth_source=truth).mean("init_time")
             print(f"  vs {truth}")
-            print(
-                "      " + "".join(f"{s:>17s}" for s in ds["prediction_source"].values)
-            )
+            print("      " + "".join(f"{s:>17s}" for s in ds["forecast_source"].values))
             for i, h in enumerate(leads):
                 row = "".join(
                     f"{float(v[si, i]):>17.4g}"
-                    for si in range(ds.sizes["prediction_source"])
+                    for si in range(ds.sizes["forecast_source"])
                 )
                 print(f"    {h:>3d}h" + row)
 

@@ -40,6 +40,17 @@ REGIONS = {
 
 METRICS = ("rmse", "mae", "spread")
 
+#: First initialisation. Cases are 12-hourly, which is what makes the case count
+#: fall by two per 24 h of lead time -- and, in the per-case form, what the
+#: package reads to derive a block length.
+INIT0 = np.datetime64("2024-01-01T00")
+
+#: Every level the bootstrap intervals are reported at. Three, so the card can
+#: say *how* significant a cell is rather than only that it is.
+CONFIDENCE_LEVELS = (0.68, 0.95, 0.997)
+
+ESTIMATES = ("mean", "lower_confidence_bound", "upper_confidence_bound")
+
 
 def make_reanalysis(
     *, n_case: int = 120, n_lat: int = 24, n_lon: int = 48, seed: int = 0
@@ -159,17 +170,24 @@ def make_verification_dataset(
     n_boot: int = 300,
     block: int = 8,
     seed: int = 0,
+    per_case: bool = True,
 ) -> xr.Dataset:
-    """Build a complete verification-summary dataset from synthetic data.
+    """Build a complete verification dataset from synthetic data.
 
     Scores persistence (control) and drifting persistence (experiment) against the
-    reanalysis, over three latitude bands and three metrics, and summarises over
-    forecast cases with a moving-block bootstrap.
+    reanalysis, over three latitude bands and three metrics.
+
+    Parameters
+    ----------
+    per_case : bool, optional
+        Emit one score per forecast case, which is what the package reads: the
+        collapse over cases is its job. ``False`` emits the older pre-aggregated
+        form, collapsed here with a moving-block bootstrap, and exists only so
+        the two can be compared while that form is on its way out.
 
     Returns
     -------
     xr.Dataset
-        One score variable per physical variable, plus case-count ancillaries.
     """
     rng = np.random.default_rng(seed + 99)
     ana = make_reanalysis(n_case=n_case, seed=seed)
@@ -177,7 +195,6 @@ def make_verification_dataset(
     lat = ana["lat"].values
     coslat = np.cos(np.deg2rad(lat))
 
-    stats = ["mean", "lower", "upper"]
     out: dict[str, xr.DataArray] = {}
 
     for name, meta in VARIABLES.items():
@@ -193,10 +210,22 @@ def make_verification_dataset(
         valid = np.arange(n_case)[:, None] + (leads[None, :] // 12)  # (case, lead)
         ok = valid < n_case  # (case, lead)
 
-        shape = (2, len(levels), len(REGIONS), len(METRICS), len(leads), len(stats))
+        shape = (
+            2,
+            len(levels),
+            len(REGIONS),
+            len(METRICS),
+            len(leads),
+            len(ESTIMATES),
+            len(CONFIDENCE_LEVELS),
+        )
         vals = np.full(shape, np.nan)
         cnts = np.full(
             (2, len(levels), len(REGIONS), len(METRICS), len(leads)), 0, dtype=np.int64
+        )
+        # every per-case score, kept so the un-collapsed form can be emitted
+        raw = np.full(
+            (2, len(levels), len(REGIONS), len(METRICS), len(leads), n_case), np.nan
         )
 
         for li, lev in enumerate(levels):
@@ -239,12 +268,18 @@ def make_verification_dataset(
                         sc = np.where(ok, sc, np.nan)
                         se = np.where(ok, se, np.nan)
                     # sc, se: (case, lead)
-                    for si, per_case in enumerate((sc, se)):
-                        # per_case: (case, lead_time) -- ONE number per forecast case
-                        cnts[si, li, ri, mi] = np.sum(np.isfinite(per_case), axis=0)
+                    for si, series in enumerate((sc, se)):
+                        # series: (case, lead_time) -- ONE number per forecast case
+                        raw[si, li, ri, mi] = series.T
+                        cnts[si, li, ri, mi] = np.sum(np.isfinite(series), axis=0)
                         with warnings.catch_warnings():
                             warnings.simplefilter("ignore", RuntimeWarning)
-                            vals[si, li, ri, mi, :, 0] = np.nanmean(per_case, axis=0)
+                            # the mean is one number per cell; it is repeated at
+                            # every confidence level only to keep the array
+                            # rectangular
+                            vals[si, li, ri, mi, :, 0, :] = np.nanmean(series, axis=0)[
+                                :, None
+                            ]
                             # moving-block bootstrap over CASES: consecutive runs
                             # share a weather system, so an iid resample would
                             # badly overstate certainty
@@ -255,50 +290,90 @@ def make_verification_dataset(
                             )[
                                 :, :n_case
                             ]  # (boot, case)
-                            b = np.nanmean(per_case[idx], axis=1)  # (boot, lead_time)
-                            vals[si, li, ri, mi, :, 1] = np.nanpercentile(
-                                b, 2.5, axis=0
-                            )
-                            vals[si, li, ri, mi, :, 2] = np.nanpercentile(
-                                b, 97.5, axis=0
-                            )
+                            b = np.nanmean(series[idx], axis=1)  # (boot, lead_time)
+                            for ki, conf in enumerate(CONFIDENCE_LEVELS):
+                                a = (1 - conf) / 2 * 100
+                                vals[si, li, ri, mi, :, 1, ki] = np.nanpercentile(
+                                    b, a, axis=0
+                                )
+                                vals[si, li, ri, mi, :, 2, ki] = np.nanpercentile(
+                                    b, 100 - a, axis=0
+                                )
+
+        if per_case:
+            pdims = (
+                ["forecast_source"]
+                + (["level"] if has_level else [])
+                + ["spatial_region", "metric", "lead_time", "init_time"]
+            )
+            pcoords = dict(
+                forecast_source=["persistence", "drifting-persistence"],
+                spatial_region=list(REGIONS),
+                metric=list(METRICS),
+                lead_time=leads.astype("timedelta64[h]"),
+                init_time=INIT0 + np.arange(n_case) * np.timedelta64(12, "h"),
+            )
+            if has_level:
+                pcoords["level"] = np.asarray(levels, dtype=float)
+            scored = xr.DataArray(
+                raw if has_level else raw[:, 0], dims=pdims, coords=pcoords
+            )
+            for metric in METRICS:
+                out[f"{metric}.{name}"] = scored.sel(
+                    metric=metric, drop=True
+                ).assign_attrs(
+                    units=meta["units"],
+                    long_name=f"{meta['long_name']} {metric.upper()}",
+                )
+            continue
 
         dims = (
-            ["prediction_source"]
+            ["forecast_source"]
             + (["level"] if has_level else [])
-            + ["spatial_region", "metric", "lead_time", "stat"]
+            + ["spatial_region", "metric", "lead_time", "estimate", "confidence"]
         )
         arr = vals if has_level else vals[:, 0]
         cnt = cnts if has_level else cnts[:, 0]
         coords = dict(
-            prediction_source=["persistence", "drifting-persistence"],
+            forecast_source=["persistence", "drifting-persistence"],
             spatial_region=list(REGIONS),
             metric=list(METRICS),
             lead_time=leads.astype("timedelta64[h]"),
-            stat=stats,
+            estimate=list(ESTIMATES),
+            confidence=np.asarray(CONFIDENCE_LEVELS),
         )
         if has_level:
             coords["level"] = np.asarray(levels, dtype=float)
 
-        out[name] = xr.DataArray(
-            arr,
-            dims=dims,
-            coords=coords,
-            attrs=dict(
-                units=meta["units"],
-                long_name=meta["long_name"],
-                ancillary_variables=f"{name}_number_of_cases",
-            ),
-        )
-        out[f"{name}_number_of_cases"] = xr.DataArray(
+        scored = xr.DataArray(arr, dims=dims, coords=coords)
+        # One count for the whole variable: the case count does not depend on
+        # which metric was computed, and `ancillary_variables` lets every metric
+        # point at the same array rather than storing it three times.
+        count_name = f"number_of_forecasts.{name}"
+        out[count_name] = xr.DataArray(
             cnt,
-            dims=[d for d in dims if d != "stat"],
-            coords={k: v for k, v in coords.items() if k != "stat"},
-            attrs=dict(standard_name="number_of_observations"),
-        )
+            dims=[d for d in dims if d not in ("estimate", "confidence")],
+            coords={
+                k: v for k, v in coords.items() if k not in ("estimate", "confidence")
+            },
+            attrs=dict(
+                standard_name="number_of_observations", resampling_unit="forecast"
+            ),
+        ).sel(metric=METRICS[0], drop=True)
+
+        for metric in METRICS:
+            out[f"{metric}.{name}"] = scored.sel(metric=metric, drop=True).assign_attrs(
+                units=meta["units"],
+                long_name=f"{meta['long_name']} {metric.upper()}",
+                ancillary_variables=count_name,
+                interval_method=(
+                    f"moving-block bootstrap over forecast cases, {n_boot} resamples, "
+                    f"block {block}"
+                ),
+                resampling_unit="forecast",
+            )
 
     ds = xr.Dataset(out)
     ds = ds.expand_dims(truth_source=["analysis"])
-    ds.coords["confidence"] = 0.95
     ds.attrs.update(control="persistence", experiment="drifting-persistence")
     return ds

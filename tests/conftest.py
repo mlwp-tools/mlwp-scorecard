@@ -25,7 +25,7 @@ COLUMNS = ["spatial_region", "metric"]
 @pytest.fixture(scope="session")
 def verification() -> "xr.Dataset":  # noqa: F821
     """A small verification-summary dataset with a known answer."""
-    return make_verification_dataset(n_case=48, n_boot=80, drift=0.25, seed=3)
+    return make_verification_dataset(n_case=48, drift=0.25, seed=3)
 
 
 @pytest.fixture(scope="session")
@@ -40,4 +40,5 @@ def layout(verification):
         rows=ROWS,
         columns=COLUMNS,
         title="test card",
+        n_resamples=200,
     )

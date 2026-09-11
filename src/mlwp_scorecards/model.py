@@ -63,14 +63,23 @@ class Step:
     experiment_upper: float | None
     #: The *paired* difference interval. Not derivable from the two marginals
     #: above: both sources are scored on the same cases, so their errors are
-    #: correlated and this is much tighter. It is what decides ``significant``.
+    #: correlated and this is much tighter. It is what decides significance.
     value_lower: float | None
     value_upper: float | None
     n: int | None
     level: int
     family: str
-    significant: bool
+    #: The **tightest** confidence level whose paired interval excludes zero, or
+    #: None when even the widest one does not. Graded rather than boolean because
+    #: "significant at 99.7%" and "significant at 68%" are different claims, and a
+    #: card that shows only the second is over-claiming.
+    significant_at: float | None
     tooltip: str
+
+    @property
+    def significant(self) -> bool:
+        """Whether the paired interval excludes zero at any level supplied."""
+        return self.significant_at is not None
 
     @property
     def has_intervals(self) -> bool:
@@ -133,9 +142,26 @@ class Layout:
     subtitle: str = ""
     control: str = ""
     experiment: str = ""
-    confidence: float | None = None
+    #: Every confidence level the data supplied, ascending.
+    confidence_levels: tuple[float, ...] = field(default_factory=tuple)
+    #: How the intervals were produced. On the card, not only in a docstring: a
+    #: significance claim cannot be checked without knowing what was resampled,
+    #: how many times, and from what seed.
+    resampling: str = ""
+    block_length: int = 1
+    n_resamples: int = 0
+    seed: int = 0
     scheme_name: str = "cvd"
     notes: tuple[str, ...] = field(default_factory=tuple)
+
+    @property
+    def confidence(self) -> float | None:
+        """The level the drill-down error bars are drawn at.
+
+        The widest supplied, which is the most conservative choice: the interval a
+        reader sees should not be narrower than the evidence for it.
+        """
+        return max(self.confidence_levels) if self.confidence_levels else None
 
     # ---- shape -------------------------------------------------------------
     @property

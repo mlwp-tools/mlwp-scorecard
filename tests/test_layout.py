@@ -8,8 +8,18 @@ from mlwp_scorecards import build_layout
 
 
 def test_rows_follow_dataset_coordinate_order(verification, layout):
-    """Presentation order is the caller's coordinate order, not alphabetical."""
-    want = [str(v) for v in verification["metric"].values]
+    """Presentation order is the caller's order, not alphabetical.
+
+    With the metric folded into the variable name there is no metric coordinate
+    to order, so the order that must be honoured is first appearance among the
+    data variables -- which for this dataset is rmse, mae, spread, deliberately
+    not alphabetical.
+    """
+    want = []
+    for name in verification.data_vars:
+        metric = str(name).rsplit(".", 1)[0]
+        if metric != "number_of_forecasts" and metric not in want:
+            want.append(metric)
     got = []
     for c in layout.columns:
         if c.key[1] not in got:
@@ -85,3 +95,37 @@ def test_unassigned_dimension_is_rejected_clearly(verification):
 def test_unknown_source_is_rejected_clearly(verification):
     with pytest.raises(KeyError, match="experiment="):
         build_layout(verification, control="persistence", experiment="nonsuch")
+
+
+@pytest.mark.parametrize("unit", ["h", "s", "ms", "us", "ns"])
+def test_lead_times_are_labelled_the_same_at_every_time_resolution(unit):
+    """Six hours is `T+6` however the coordinate was stored.
+
+    Nanoseconds is the case that broke: `.item()` on a `timedelta64` returns a
+    `datetime.timedelta` at every coarser resolution but a bare int of
+    nanoseconds at `ns`, and an int is indistinguishable from a lead time
+    already given in hours -- so every box was labelled `T+2.16e+13`. It is also
+    the resolution a netCDF round trip commonly produces, so it is the common
+    case rather than an exotic one, and it survived because no test had ever
+    asserted a label.
+    """
+    import numpy as np
+    import xarray as xr
+
+    lead = np.arange(6, 25, 6).astype("timedelta64[h]").astype(f"timedelta64[{unit}]")
+    values = np.outer([1.0, 1.1], np.linspace(1.0, 2.0, len(lead)))
+    ds = xr.Dataset(
+        {
+            "rmse.2t": xr.DataArray(
+                values,
+                dims=["forecast_source", "lead_time"],
+                coords=dict(forecast_source=["ctl", "exp"], lead_time=lead),
+                attrs=dict(units="K"),
+            )
+        }
+    )
+    layout = build_layout(ds, control="ctl", experiment="exp")
+
+    assert layout.lead_labels == ("T+6", "T+12", "T+18", "T+24")
+    assert layout.lead_times == (6.0, 12.0, 18.0, 24.0)
+    assert layout.sel(variable="2t", metric="rmse").steps[0].tooltip.startswith("T+6 ")

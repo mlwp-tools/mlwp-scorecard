@@ -6,9 +6,14 @@ Guidance for agents and contributors working in this repository.
 
 - `mlwp-scorecards` renders weather forecasting scorecards from **pre-computed
   verification statistics**.
-- It performs **no scoring and no statistics**. Metrics, confidence intervals and
-  case counts are computed upstream (typically by `mxalign`) and consumed here.
-- A scorecard compares **two prediction sources** against a **common truth source**
+- It performs **no scoring**. Metrics are computed upstream (typically by
+  `mxalign`), where the fields are, and the collapse over *space* happens there.
+- It **does** perform the collapse over forecast cases: the mean, its bootstrap
+  interval, the paired difference that decides significance, and the case count.
+  That reverses an earlier rule ("no statistics"), deliberately — pairing the two
+  sources against the same weather has to happen before the averaging, so the
+  package needs one score per case and must do the averaging itself.
+- A scorecard compares **two forecast sources** against a **common truth source**
   and colours the *difference* between their scores. "Better" means better than the
   other model, not better than truth.
 
@@ -46,6 +51,13 @@ Guidance for agents and contributors working in this repository.
 - **No user-facing configuration object.** The API takes coordinate names, source
   names and output paths. Do not reintroduce a spec/config class into the public
   surface; internal dataclasses are fine.
+- **One input shape, and its dimension names are constants.** The package reads a
+  netCDF or Zarr dataset in the schema documented in README.md — per-case scores,
+  no adapters for frames or records. The schema's dimension names are the `*_DIM` constants in
+  `ingest.py`, not parameters: they were parameters once, nothing ever passed a
+  non-default, and two of them silently did not work because the same names were
+  also hardcoded elsewhere. `rows`, `columns` and `cell` are different in kind —
+  they choose where a coordinate goes, not what it is called.
 - **Never guess a metric's polarity.** `colours.METRIC_POLARITY` is an explicit
   table and `polarity_of` raises for anything absent, because guessing produces a
   confidently backwards card. The reference implementation's

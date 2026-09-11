@@ -96,9 +96,15 @@ OUT = Path(__file__).resolve().parents[2] / "tmp" / "harmonie"
 #: Scored quantities. Both are error metrics: lower is better.
 METRICS = ("rmse", "mae")
 
-#: Interval width. 0.90 gives the 5th and 95th bootstrap percentiles.
-#: With only five forecast cases a narrower interval would be over-claiming.
-CONFIDENCE = 0.90
+#: Interval widths, ascending. The card marks a cell at the highest of these
+#: whose interval still excludes zero, so reporting several is what lets it say
+#: *how* significant a difference is rather than only that it is.
+#:
+#: 0.997 (3 sigma, which ECMWF uses) is deliberately absent: with five forecast
+#: cases the bootstrap distribution has few enough distinct means that its
+#: 0.15th percentile is essentially the minimum, and quoting a three-sigma bound
+#: off that would be arithmetic dressed up as evidence.
+CONFIDENCE_LEVELS = (0.68, 0.90, 0.95)
 N_BOOT = 2000
 
 

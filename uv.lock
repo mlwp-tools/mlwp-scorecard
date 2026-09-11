@@ -1173,7 +1173,6 @@ dependencies = [
     { name = "jinja2" },
     { name = "loguru" },
     { name = "numpy" },
-    { name = "pandas" },
     { name = "pyyaml" },
     { name = "xarray" },
 ]
@@ -1222,7 +1221,6 @@ requires-dist = [
     { name = "netcdf4", marker = "extra == 'netcdf'", specifier = ">=1.6" },
     { name = "netcdf4", marker = "extra == 'test'", specifier = ">=1.6" },
     { name = "numpy", specifier = ">=1.26" },
-    { name = "pandas", specifier = ">=2.2" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.0.0" },
     { name = "pytest-mpl", marker = "extra == 'test'", specifier = ">=0.17" },
     { name = "pyyaml", specifier = ">=6.0" },

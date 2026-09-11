@@ -137,7 +137,7 @@ in the appendix.
 5. **Vendor a small local `ValidationReport`** — no `mlwp-data-specs` dependency.
 6. **Walking skeleton first**: scaffolding + core + HTML backend end-to-end. Matplotlib
    backend, drill-down charts, pagination and the ECMWF preset come in pass 2.
-7. **Significance is supplied, not derived** (see *Significance* below).
+7. **Significance is computed here**, from per-case scores (see *Significance* below).
 
 ---
 
@@ -152,21 +152,21 @@ One element is:
 > source**, for one physical variable, aggregated over a spatial region and over a set of
 > forecast cases, at one forecast lead time.
 
-`ds.z.sel(truth_source="analysis", prediction_source="GraphCast", metric="rmse", level=500,
-spatial_region="n.hem", lead_time="3 days", stat="mean")` → `41.7` — over all forecast cases in the
+`ds["rmse.z"].sel(truth_source="analysis", forecast_source="GraphCast", level=500,
+spatial_region="n.hem", lead_time="3 days").mean("init_time")` → `41.7` — over all forecast cases in the
 study, GraphCast's 3-day forecast of 500 hPa geopotential height had an RMSE of 41.7 m against
 the analysis, averaged over the northern hemisphere.
 
 | Quantity in the raw comparison | Fate in this dataset |
 |---|---|
 | latitude, longitude | **collapsed** (1) → `spatial_region` names the area averaged over |
-| forecast case / initialisation date | **collapsed** (2) → an ancillary count variable records how many |
-| the pointwise error itself | **collapsed** → `metric` names how it was reduced |
+| forecast case / initialisation date | **kept** → `init_time`, and collapsed by the package |
+| the pointwise error itself | **collapsed** → the metric half of the name says how it was reduced |
 | forecast lead time | kept → `lead_time` |
-| physical variable | kept → the data variable name, plus `level` |
-| which forecast system | kept → `prediction_source` |
+| physical variable | kept → the variable half of the name, plus `level` |
+| which forecast system | kept → `forecast_source` |
 | what it was scored against | kept → `truth_source` |
-| sampling uncertainty over cases | `stat` ∈ {mean, lower, upper} at `confidence` |
+| sampling uncertainty over cases | **produced here**, by a bootstrap over `init_time` |
 
 No gridpoints and no dates remain. It is `mxalign`'s verification output after both collapses
 — the table you would otherwise stare at as a wall of line plots.
@@ -180,10 +180,10 @@ They are different in kind, and only the second is a *sample*:
    (RMSE takes the root of the area-weighted mean squared error, CRPS the area-weighted mean
    of the pointwise CRPS). **No sampling uncertainty attaches here** — it is a deterministic
    reduction of that case's error field.
-2. **Over forecast cases.** The initialisation dates reduce to a mean, which is `stat="mean"`.
+2. **Over forecast cases.** The initialisation dates reduce to a mean. **This one the package performs.**
    *This* is the sample: N weather situations drawn from the population of possible ones,
-   whose mean score estimates the expected score with a standard error. The ancillary count
-   variable holds N; `lower`/`upper` are its sampling uncertainty.
+   whose mean score estimates the expected score with a standard error. N is the number of
+   finite cases, and the bootstrap over them is where the interval comes from.
 
 Confirmed against the reference: its `popul` falls by exactly 2 per 24-hour lead step in
 13,447 of 14,154 transitions, with twice-daily case dates — the signature of cases dropping
@@ -194,24 +194,24 @@ dimension: variable (248 of 396 groups differ), level (93/411), spatial region (
 (31/337) and truth source (432/579). It cannot be factored into a smaller array, which is why
 it is a sibling variable rather than a coordinate or a scalar.
 
-**The package is agnostic to the interval method.** It requires only `lower ≤ mean ≤ upper` at
-the stated `confidence`. What matters is that the resampling is over *cases*, and that for the
-difference it is a **paired** resample.
+**The interval method is an argument.** `bootstrap=`, `block_length=`, `n_resamples=`,
+`confidence_levels=` and `seed=`, all printed on the card. What matters is that the resampling
+is over *cases*, and that for the difference it is a **paired** resample.
 
-### What `n` and `stat` mean here
+### What `n` and the interval mean here
 
 `n` counts the forecast cases that survive into the mean, so it falls by **2 per 24-hour
 step** with twice-daily runs — cases near the end of the study have no truth to verify
 against. That reproduces the reference's 417→389 pattern exactly.
 
-`lower`/`upper` are percentiles of the **bootstrap distribution of the mean**, not of the
+The two bounds are percentiles of the **bootstrap distribution of the mean**, not of the
 data. Full code with array shapes is in *Computing significance* below.
 
 2 m temperature against observations at T+48, in kelvin:
 
 ```
-stat                 mean   lower   upper
-prediction_source
+estimate             mean   lower   upper
+forecast_source
 IFS-HRES           2.2204  2.0805  2.3765
 GraphCast          2.0806  1.9439  2.2252
 ```
@@ -243,78 +243,91 @@ package performs neither, but `lower`/`upper` must be consistent with whichever 
 
 ### Schema
 
-**One score variable per physical variable, plus an optional ancillary count.
-Everything else is a coordinate.**
+**One variable per `{metric}.{physical_variable}` pair, holding one score per
+forecast case. Everything else is a coordinate.**
+
+The naming is [WeatherBench-X]'s: `AggregationState.metric_values` builds each
+output name as `f'{metric_name}.{var_name}'`, and `Aggregator.reduce_dims` is a
+required argument, so leaving `init_time` out of it produces exactly this shape.
+
+[WeatherBench-X]: https://github.com/google-research/weatherbenchX
 
 ```
 <xarray.Dataset>
-Dimensions:  (truth_source: 2, prediction_source: 2, level: 7,
-              spatial_region: 10, metric: 3, lead_time: 15, stat: 3)
+Dimensions:  (truth_source: 2, forecast_source: 2, level: 7, spatial_region: 10,
+              lead_time: 15, init_time: 400)
 Coordinates:
-  * truth_source       (truth_source)      <U12   'observations' 'analysis'
-  * prediction_source  (prediction_source) <U16   'IFS-HRES' 'GraphCast'
-  * level              (level)             f8     50.0 100.0 250.0 500.0 850.0 ...
-  * spatial_region     (spatial_region)    <U9    'n.hem' 's.hem' 'tropics' 'europe' ...
-  * metric             (metric)            <U6    'rmse' 'crps' 'spread'
-  * lead_time          (lead_time)         m8[ns] 1 days 2 days ... 15 days
-  * stat               (stat)              <U5    'mean' 'lower' 'upper'
-    confidence                             f8     0.95
+  * truth_source     (truth_source)    <U12   'observations' 'analysis'
+  * forecast_source  (forecast_source) <U9    'IFS-HRES' 'GraphCast'
+  * level            (level)           f8     50.0 100.0 250.0 500.0 850.0 ...
+  * spatial_region   (spatial_region)  <U9    'n.hem' 's.hem' 'tropics' ...
+  * lead_time        (lead_time)       m8[ns] 1 days 2 days ... 15 days
+  * init_time        (init_time)       M8[ns] 2024-01-01 ... 2024-07-15
 Data variables:
-    z                    (truth_source, prediction_source, level, spatial_region, metric, lead_time, stat) f8
-    t                    (truth_source, prediction_source, level, spatial_region, metric, lead_time, stat) f8
-    msl                  (truth_source, prediction_source,        spatial_region, metric, lead_time, stat) f8
-    z_number_of_cases    (truth_source, prediction_source, level, spatial_region, metric, lead_time) i8
-    msl_number_of_cases  (truth_source, prediction_source,        spatial_region, metric, lead_time) i8
+    rmse.z    (truth_source, forecast_source, level, spatial_region, lead_time, init_time) f8
+    rmse.msl  (truth_source, forecast_source,        spatial_region, lead_time, init_time) f8
+    crps.z    (truth_source, forecast_source, level, spatial_region, lead_time, init_time) f8
 
->>> ds.z.attrs
-{'standard_name': 'geopotential_height', 'long_name': 'Geopotential height',
- 'units': 'm', 'ancillary_variables': 'z_number_of_cases'}
+>>> ds["rmse.z"].attrs
+{'standard_name': 'geopotential_height', 'long_name': 'Geopotential height RMSE',
+ 'units': 'm'}
 ```
 
-- **`stat` has exactly one meaning**: which view of the estimated score — the point estimate
-  and its two interval edges. It never carries anything of a different kind or unit.
-- **`truth_source` and `prediction_source` are disjoint lists.** A source is one or the other;
-  the cross product of all sources against all sources is mostly meaningless and not stored.
-- **A variable omits dimensions that don't apply to it.** `msl` has no `level`. This is the
-  whole reason each physical variable gets its own data variable — raggedness then needs no
-  sentinel value.
-- **`units`, `standard_name`, `long_name`** live on the data variable, where CF puts them.
-  rmse, mae, crps and spread all inherit the physical variable's units. A dimensionless
-  metric such as ACC needs `units` as a coordinate indexed by `metric` — supported, not
-  the default.
-- **The case count is a sibling variable**, associated through CF's `ancillary_variables`
-  attribute, with a `_number_of_cases` / `_n` suffix as a fallback if the attribute is absent.
-  It keeps its integer dtype and carries no units. Entirely optional — it only enriches the
-  tooltip ("414 cases"), which is worth having, since a cell computed from 40 cases deserves
-  less trust than one from 417.
-- **`stat="lower"`/`"upper"`** are the confidence-interval bounds on the mean, at
-  `confidence`. Also optional. `confidence` may be promoted to a dimension
-  (`[0.68, 0.95, 0.997]`) for multi-level significance, in which case `mean` must not vary
-  along it.
+- **The name splits on its last dot.** Metric first, so a metric may carry
+  parameters of its own: `seeps.v1.5.tp` is the metric `seeps.v1.5` of variable
+  `tp`, which is what WBX's `unique_name` produces. A name with no dot, or with an
+  empty half, is refused rather than guessed at.
+- **`init_time` is the sample.** One score per forecast case, not yet averaged.
+  The package collapses it — see *Significance* — because the pairing between the
+  two sources has to happen before the averaging and cannot be recovered after.
+  Absent, the values are read as already-collapsed means and nothing can be marked.
+- **`truth_source` and `forecast_source` are disjoint lists.** A source is one or
+  the other; the cross product of all sources against all sources is mostly
+  meaningless and not stored.
+- **A variable omits dimensions that don't apply to it.** `msl` has no `level`,
+  and `crps` simply has no variable for a field with no ensemble. This is the
+  whole reason each (metric, variable) pair gets its own data variable —
+  raggedness then needs no sentinel value, in either direction.
+- **`units`, `standard_name`, `long_name`** live on the data variable, where CF
+  puts them — and because the metric is in the name there is one set per
+  (metric, variable), so `rmse.2t` can be in K while `acc.2t` is dimensionless.
+- **No ancillary variables.** The case count is `isfinite(...).sum("init_time")`,
+  and the paired difference is computed from the per-case numbers. Both used to be
+  supplied, which is what forced the control/experiment roles into the file.
 
-Accepted equivalents, normalised on ingest: a flat cube that already has a `variable`
-dimension, a tidy `pandas.DataFrame`, or a sequence of records.
+Which source is control and which is experiment is decided at the call and appears
+nowhere in the data, so one file renders both directions.
 
-Size is negligible: `2 × 2 × 7 × 10 × 3 × 15 × 4` ≈ 25k points per physical variable, a
-few MB for a full card. Density is not a concern.
+
+There is one input shape and no adapters. `variable` and `metric` are *produced* by
+`prepare`, so a dataset already carrying either is a differently-shaped dataset and is
+refused by name rather than being coerced.
+
+Size: `2 × 2 × 7 × 10 × 15 × 400` ≈ 1.7M points per physical variable, ~120 MB for a
+full card of nine. Larger than the collapsed form above ~27 cases and smaller below it,
+since that form costs `estimate × confidence` per cell plus a whole difference cube.
 
 ### Normalisation on ingest
 
 `ingest.prepare(ds, spec)` turns the CF form into a uniform cube so the layout engine treats
 every coordinate identically:
 
-1. Partition the data variables into **scores** and **ancillaries**, by following each score's
-   `ancillary_variables` attribute (falling back to a `_number_of_cases` / `_n` suffix).
-2. For each score variable, `expand_dims` any *optional* layout coordinate it lacks with a
+1. Every data variable is a score; there are no ancillaries to partition off.
+2. Split each score name on its last dot into `(metric, variable)`, keeping first-appearance
+   order for both. Never a set: `test_determinism` renders the same card in a fresh process
+   under a different `PYTHONHASHSEED` and demands identical bytes.
+3. For each score variable, `expand_dims` any *optional* layout coordinate it lacks with a
    single `NaN` element — so `msl` gains `level = [nan]`, producing **one** row, not seven.
-3. `xr.concat` along a new `variable` dimension with `join="outer"`; do the same for the
-   counts.
-4. Hoist `units`, `standard_name`, `long_name` from each score's `.attrs` into non-dimension
-   coordinates indexed by `variable`.
+   `init_time` needs no padding: a case a variable did not score is NaN.
+4. `xr.concat` twice, into the full **metric × variable** grid, NaN-filling the combinations
+   that do not exist; `layout._resolve_axis` drops them again, since it already removes
+   categories with no data anywhere below them. Do the same for the counts and the
+   differences.
+5. Hoist `units` from each score's `.attrs`, keyed by `(metric, variable)`.
 
-Result: `score(variable, truth_source, prediction_source, level, spatial_region, metric,
-stat)` and an aligned `n(...)` without `stat`. `layout.resolve` then flattens once to a frame
-for the group-by.
+Result: `score(metric, variable, truth_source, forecast_source, level, spatial_region,
+lead_time, init_time)`, which `aggregate` then collapses over `init_time`.
+`layout.resolve` then flattens once to a frame for the group-by.
 
 ### Missing vs NaN
 
@@ -343,8 +356,7 @@ design is right and is kept.
 
 ## Computing significance
 
-All of this happens **upstream** of this package — it consumes `stat="lower"`/`"upper"` and
-only asks that `lower <= mean <= upper` at the stated `confidence`. It is documented here
+All of this happens **inside** this package now, in `aggregate.py`. It is documented here
 because the numbers are meaningless without knowing how they were produced, and because
 getting them wrong is easy (see *Two ways this goes wrong*).
 
@@ -426,7 +438,7 @@ idx     = (starts[:, :, None] + np.arange(L)).reshape(N_BOOT, -1)[:, :N_CASE]
 boot = np.nanmean(d[idx], axis=1)                            # (boot, lead_time)
 #      ^ the sampling distribution of the mean difference
 
-# ── stat = mean / lower / upper ────────────────────────────────────────────────
+# ── estimate = mean / lower_confidence_bound / upper_confidence_bound ────────────────────────────────────────────────
 lower = np.percentile(boot,  2.5, axis=0)                    # (lead_time,)
 upper = np.percentile(boot, 97.5, axis=0)                    # (lead_time,)
 
@@ -531,7 +543,7 @@ rendered legend rather than leaving implicit:
 
 ---
 
-## Significance: supplied, not derived
+## Significance: computed here, from per-case scores
 
 The card's **value** is `experiment - control`. Its **interval cannot be derived**
 from the two sources' individual intervals: both are scored on the same forecast
@@ -539,23 +551,20 @@ cases, so their errors are strongly paired and the paired interval is far tighte
 than any combination of the marginals. Treating them as independent overstates the
 interval and marks genuine improvements as insignificant.
 
-So the paired statistics are an **input**, supplied as an ancillary variable
-indexed by an ordered pair of prediction sources:
+That is why the input is **per-case**. The pairing has to happen before the
+averaging — difference each case, then resample — and once the cases are gone it
+cannot be recovered. So the package takes one score per case and does the collapse
+itself, rather than asking for a pre-computed difference indexed by an ordered
+pair of sources. The earlier schema did the latter, which forced the control and
+experiment *roles* into the file even though they are chosen at the call.
 
-```
-    <var>_difference(truth_source, control_source, experiment_source,
-                     ..., metric, lead_time, stat)
-```
+A cell is **significant when the paired interval excludes zero**, at the highest
+confidence level that still holds; `Step.significant_at` carries that level and
+drives the border. With no `init_time` axis nothing can be marked and the card
+shows magnitude only, which `aggregate` reports as a warning rather than leaving
+to be noticed.
 
-Sparse by construction — only the pairs actually computed are filled, and the
-diagonal is left NaN. It is found through CF's `ancillary_variables`, and
-classified by its *dimensions* rather than its name: the variable indexed by an
-ordered pair of sources is the difference, anything else attached to a score is a
-case count.
-
-A cell is **significant when that interval excludes zero**, and `Step.significant`
-drives the border. Without the input nothing is marked and the card shows magnitude
-only, which `ingest` reports as a warning rather than leaving to be noticed.
+The collapse is one line, and is easy to get wrong:
 
 Producing it needs one line in the scoring step and is easy to get wrong:
 
@@ -710,14 +719,16 @@ is truth, control or experiment is an argument rather than baked into the data.
 **How each coordinate is consumed.** Every coordinate is placeable on the card *except* two,
 which the rendering consumes:
 
-- `prediction_source` — **collapsed by differencing**: `experiment − control`.
-- `stat` — becomes **colour and (later) border**: `mean` drives the fill; `lower`/`upper` feed
-  the drill-down error bars and, once paired statistics exist, significance.
+- `forecast_source` — **collapsed by differencing**: `experiment − control`.
+- `estimate` and `confidence` — become **colour and border**: `mean` drives the fill; the
+  bounds feed the drill-down error bars, drawn at the widest level, and the paired bounds
+  decide significance, reported at the highest level that still excludes zero.
 
 Validated with a clear error rather than a downstream `KeyError`: every name in
 `rows + columns + [cell]` must be a coordinate of the prepared cube; every coordinate must
-appear exactly once across those three, `prediction_source`, and `stat`; `control` and
-`experiment` must be members of `prediction_source`; passing a list to `truth_source` without
+appear exactly once across those three, `forecast_source`, `estimate` and `confidence`;
+`control` and
+`experiment` must be members of `forecast_source`; passing a list to `truth_source` without
 naming it in `rows` or `columns` is an error, since there would be nowhere to show both.
 
 ---
@@ -751,24 +762,24 @@ mlwp-scorecards/
 ├── .github/workflows/{ci,pre-commit}.yml
 ├── src/mlwp_scorecards/
 │   ├── __init__.py        version + public re-exports
-│   ├── api.py             make_scorecard / build_layout / render / validate_input / load_spec
-│   ├── spec.py            Category, MetricSpec, Dimension, ScorecardSpec, YAML I/O
-│   ├── model.py           HeaderCell, Line, Step, Cell, CellDetail, LayoutStats, Layout
-│   ├── ingest.py          CF Dataset -> uniform cube -> frame; vendored ValidationReport
-│   ├── adapters.py        from_dataframe, from_records, read_dataset (nc/zarr)
-│   ├── layout.py          resolve(cube, spec) -> Layout
+│   ├── api.py             make_scorecard / build_layout / render
+│   ├── cli.py             mlwp.make_scorecard entry point
+│   ├── model.py           HeaderCell, Line, Step, Cell, LayoutStats, Layout
+│   ├── ingest.py          CF Dataset -> uniform cube; schema constants; ValidationReport
+│   ├── layout.py          resolve(cube, ...) -> Layout
 │   ├── colours.py         Swatch, Ramp, Family, ColourScheme, Scaling, SCHEMES
-│   ├── symbols.py         significance level -> unicode glyph / matplotlib marker
-│   ├── presets/           ecmwf.py — the reference spec, tints, tooltips, lat/lon boxes
-│   ├── render/
-│   │   ├── __init__.py    Renderer protocol, registry, lazy backend import
-│   │   ├── geometry.py    Geometry, span_cells() — shared, dependency-free
-│   │   ├── payload.py     compact drill-down JSON + gzip/base64
-│   │   ├── html.py        self-contained interactive page + drill-down
-│   │   └── static.py      matplotlib backend
-│   └── cli.py             mlwp.make_scorecard
-└── tests/                 conftest.py, data/, baseline/, test_*.py
+│   └── render/
+│       ├── __init__.py    lazy backend import
+│       ├── payload.py     compact drill-down JSON + gzip/base64
+│       ├── html.py        self-contained interactive page + drill-down
+│       └── static.py      matplotlib backend
+└── tests/                 conftest.py, synthetic.py, harmonie_dini/, test_*.py
 ```
+
+This is the tree as built. An earlier draft of this document also listed
+`spec.py`, `adapters.py`, `symbols.py`, `presets/` and `render/geometry.py`; none
+were written, and the design settled without them — `adapters.py` in particular
+because the package takes one input shape.
 
 ---
 
@@ -878,7 +889,7 @@ class Layout:
 
 1. Resolve `rows` / `columns` / `cell` against the cube's coordinates; error on an unknown or
    unassigned one.
-2. Select the truth subset; select `control` and `experiment` along `prediction_source` and
+2. Select the truth subset; select `control` and `experiment` along `forecast_source` and
    difference them, dropping that coordinate.
 3. Resolve rows and columns independently. **Ordering rule: one global per-dimension `order`,
    filtered by presence within each parent branch.** Verified against the reference — a single
@@ -1078,11 +1089,11 @@ through one `%.{p}g` helper; no `set` iteration in output paths; respect `SOURCE
   and, separately, via the suffix fallback, and keeps its integer dtype through to
   `Step.n`; a dataset with no counts at all renders with countless tooltips rather than
   failing; an all-NaN `(row, col)` slice becomes a missing cell while a partially NaN slice
-  becomes a `Cell` with neutral steps; the CF form, the flat cube and the equivalent tidy
-  frame produce byte-identical HTML.
+  becomes a `Cell` with neutral steps.
 - `test_spec.py` — coordinate-list resolution: an unknown name errors clearly; a coordinate
-  assigned to neither rows, columns, `cell`, `prediction_source` nor `stat` errors clearly; a
-  `control` not in `prediction_source` errors clearly; a list `truth_source` not named in
+  assigned to neither rows, columns, `cell`, `forecast_source`, `estimate` nor
+  `confidence` errors clearly; a
+  `control` not in `forecast_source` errors clearly; a list `truth_source` not named in
   `rows`/`columns` errors clearly; reordering `rows` reorders the nesting; a bare string and an
   equivalent `Dimension` give the same layout.
 - `test_layout.py` is the load-bearing one: the global-order-plus-presence rule reproduces the
@@ -1116,80 +1127,77 @@ through one `%.{p}g` helper; no `set` iteration in output paths; respect `SOURCE
 
 ---
 
-## Proposed schema changes (not yet implemented)
+## Schema decisions, and what they cost
 
-Two changes to the input schema, recorded before acting on them.
+The naming above was arrived at rather than assumed. Recorded here because the
+alternatives are reasonable and someone will propose them again.
 
-### 1. Fold the metric into the variable name: `{variable}.{metric}`
+### Why the metric is in the name
 
-Today `metric` is a coordinate and `units` is an attribute on the score variable,
-which forces **one unit per variable across all metrics**. That is already wrong:
-RMSE, MAE and spread inherit the field's units, but ACC, CRPSS and FSS are
-dimensionless, and a threshold-based score may carry different units again. The
-current escape hatch — `units` as a coordinate indexed by `metric` — is noted
-elsewhere in this document as "supported, not the default", which is a sign the
-shape is wrong rather than a solution.
+`metric` used to be a coordinate, which forced **one unit per variable across all
+metrics**. RMSE, MAE and spread inherit the field's units, but ACC, CRPSS and FSS
+are dimensionless, so a dimensionless metric on a variable declared `units="K"`
+was silently mislabelled "K" on both drill-down axes. The escape hatch was `units`
+as a coordinate indexed by `metric` — a sign the shape was wrong rather than a
+solution.
 
-Naming variables `z.rmse`, `z.fss`, `2t.acc` puts `units`, `standard_name` and
-`long_name` back where CF expects them, one set per (variable, metric).
+Two things fall out for free: ragged metric coverage needs no NaN-filled cross
+product, and the naming matches WeatherBench-X exactly, so its output loads with
+no transformation.
 
-It also fixes something the current shape handles badly: **metric coverage is
-ragged**. CRPS needs an ensemble, FSS needs a threshold and really only suits
-precipitation, ACC needs a climatology. A `metric` coordinate forces a full cross
-product and fills the gaps with NaN; separate variables simply omit what does not
-apply — the same argument that made one-variable-per-field right in the first
-place.
+The cost is real: **the schema stops being self-describing about metrics.** A
+reader must know the split rule to see that `rmse.2t` is two facts. And `.` is
+fragile if a variable name ever contains one — no physical variable in either the
+ECMWF reference (`10ff@sea`, `2t`) or DINI (`pres_seasurface`) does, and the
+splitter fails loudly rather than guessing, but the format itself does not
+guarantee it.
 
-`ingest.prepare` already builds the `variable` dimension by stacking data-variable
-names, so this extends that to split each name into two dimensions rather than one.
-`METRIC_POLARITY` is unaffected: it is keyed on the metric name either way.
+`__` would have avoided the other objection — `ds["rmse.2t"]` works but
+`ds.rmse.2t` does not, and the dot reads as nested attribute access which it is
+not — at the cost of not matching WBX. Interop won.
 
-Three things to settle first:
+### Why `estimate`, and not `cases_reduction_op`
 
-- **The separator.** `.` is clean but breaks xarray's attribute access —
-  `ds["z.rmse"]` works, `ds.z.rmse` does not, and the latter reads as nested
-  attribute access which it is not. `__` avoids that at some cost in looks. Worth
-  checking against real variable names: the ECMWF reference card carries `10ff@sea`
-  and `2t`, neither containing a dot, so `.` looks safe for our data — but the
-  splitter must fail loudly on a name it cannot split, not guess.
-- **Round-tripping.** A dataset that has been through `prepare` and back out should
-  reproduce the same names.
-- **Backwards compatibility.** Accept both forms, or migrate? The existing
-  HARMONIE/AIFS pipeline writes the coordinate form.
+`stat` was vague, and its members are not the same kind of thing: `mean` is a
+reduction over cases, while the bounds are percentiles of the *bootstrap
+distribution of that mean*. So `cases_reduction_op` would be accurate for one
+member out of three. `bootstrap_estimate` fails the other way — `mean` comes from
+the data, not the resample, and the package accepts analytic intervals too.
 
-### 2. Rename `stat`, and say what a "case" is
+What the dimension answers is "which number about the aggregate", which is
+`estimate`. If the central reduction ever needs to vary (median, or a trimmed
+mean) that is a *different* axis and gets a different coordinate, not extra
+members of this one.
 
-`stat` is vague and its members are not all the same kind of thing, which is the
-real problem: `mean` is a reduction over cases, but `lower` and `upper` are
-percentiles of the *bootstrap distribution of that mean*. They are not reduction
-operations at all.
+`lower`/`upper` became `lower_confidence_bound`/`upper_confidence_bound` because
+the short forms invite reading them as bounds on the *data* rather than on the
+mean — a consequential misreading, since the two differ by a factor of √N.
 
-So `cases_reduction_op` would be accurate for one member out of three and
-misleading for the other two. What the dimension actually answers is "which number
-about the aggregate", which suggests **`estimate`** — `ds["z.rmse"].sel(estimate="lower")`
-reads correctly for all three members.
+### Why `confidence` is a dimension and not part of the member name
 
-If the central reduction ever needs to vary (median rather than mean, or a
-trimmed mean), that is a *different* axis and should be a different coordinate, not
-extra members of this one.
+Putting the level in the name (`lower_95`, `lower_997`) keeps one axis, but the
+levels then sort as strings, 99.7% needs a dot inside a coordinate value, and
+adding a level means adding members rather than lengthening an axis. As a numeric
+dimension they select and compare properly, and `Step.significant_at` can report
+the highest level that holds.
 
-**On "cases".** For the current design a case is always one forecast
-initialisation — that is established in *What counts as one sample*, and being
-explicit guards against the mistake of resampling gridpoints or station points
-instead. So `number_of_forecasts` is more informative than the present
-`number_of_cases`, and much more so than `number_of_samples`, which invites the
-question "samples of what?" — exactly the question this package should not leave
-open.
+The cost is that **`mean` is stored redundantly** across that dimension. The card
+is a summary artefact of at most a few MB, so the waste is not worth a ragged
+layout to avoid — but it is why the constant-along-`confidence` check is a
+validation error rather than an optional warning.
 
-The cost is that the name becomes a lie if the resampling unit ever changes: a
-moving-block bootstrap resamples *blocks* of forecasts, not forecasts, and that is
-already the recommended fix for autocorrelation. Suggested resolution: name it
-`number_of_forecasts` and carry a `resampling_unit` attribute alongside, so the
-statistics can say what they actually resampled without the variable name having to
-carry it.
+### Why `number_of_forecasts`
 
-Also worth correcting while there: the count currently declares
-`standard_name = "number_of_observations"`. These are forecasts, not observations.
+A case is always one forecast initialisation — established in *What counts as one
+sample*, and being explicit guards against the mistake of resampling gridpoints or
+station points instead. `number_of_samples` invites "samples of what?", which is
+exactly the question this package should not leave open.
+
+The name becomes a lie if the resampling unit changes: a moving-block bootstrap
+resamples *blocks* of forecasts, and that is already the recommended fix for
+autocorrelation. Hence the `resampling_unit` attribute alongside, so the
+statistics can say what they actually resampled. The count also used to declare
+`standard_name = "number_of_observations"`; these are forecasts.
 
 ## Appendix: the ECMWF reference card, structurally
 

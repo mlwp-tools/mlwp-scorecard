@@ -15,8 +15,9 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 import xarray as xr
 
+from .aggregate import Aggregated
 from .colours import ColourScheme, FixedScaling, Polarity, family_of, polarity_of
-from .ingest import PreparedCube
+from .ingest import METRIC_DIM, VARIABLE_DIM, PreparedCube
 from .model import Cell, HeaderCell, Key, Layout, LayoutStats, Line, Step
 
 __all__ = ["resolve"]
@@ -55,16 +56,31 @@ def _lead_label(v: Any) -> str:
     return f"T+{_lead_hours(v):g}"
 
 
+def _pct(c: float) -> str:
+    """A confidence level as a percentage, keeping 99.7% from rounding to 100%."""
+    return f"{c * 100:.4g}%"
+
+
 def _coord_values(cube: xr.DataArray, dim: str) -> list[Any]:
     """Coordinate values as plain Python objects, with NaN normalised to None.
 
     NaN cannot be used in a layout key: ``nan != nan``, so two layouts built from
     the same data would compare unequal and ``sel(level=float("nan"))`` could never
     match. None is the not-applicable marker in keys; NaN stays in the data.
+
+    Times are the exception to the unwrapping. ``.item()`` on a ``timedelta64``
+    gives a ``datetime.timedelta`` at every resolution *except* nanoseconds,
+    where numpy returns a bare int of nanoseconds -- and an int reaching
+    :func:`_lead_hours` is indistinguishable from a lead time already given in
+    hours, so ``T+6`` came out as ``T+2.16e+13``. Nanoseconds are what a netCDF
+    round trip commonly decodes to, so this is the common case, not the exotic
+    one. Leave numpy time scalars alone; every consumer below already handles
+    them, and they are hashable and comparable so they remain valid keys.
     """
     out = []
     for v in cube.coords[dim].values:
-        v = v.item() if hasattr(v, "item") else v
+        if not isinstance(v, (np.timedelta64, np.datetime64)):
+            v = v.item() if hasattr(v, "item") else v
         out.append(None if isinstance(v, float) and math.isnan(v) else v)
     return out
 
@@ -170,76 +186,93 @@ def resolve(
     row_dims: Sequence[str],
     column_dims: Sequence[str],
     cell_dim: str,
-    prediction_dim: str = "prediction_source",
-    stat_dim: str = "stat",
-    metric_dim: str | None = "metric",
-    variable_dim: str = "variable",
     scheme: ColourScheme,
     scaling: FixedScaling,
     metric_polarity: Mapping[str, str] | None = None,
-    subset: Mapping[str, Any] | None = None,
+    agg: Aggregated,
     title: str = "",
     subtitle: str = "",
 ) -> Layout:
-    """Difference two prediction sources and lay the result out.
+    """Difference two forecast sources and lay the result out.
+
+    Parameters
+    ----------
+    agg : Aggregated
+        The collapse over forecast cases, from
+        :func:`~mlwp_scorecards.aggregate.aggregate`. Subsetting and the choice
+        of pair happen there, because both must precede the resample.
 
     Returns
     -------
     Layout
     """
-    da = cube.score
-    counts = cube.counts
-
-    if subset:
-        sel = {k: (v if isinstance(v, list) else [v]) for k, v in subset.items()}
-        da = da.sel(sel)
-        if counts is not None:
-            counts = counts.sel({k: v for k, v in sel.items() if k in counts.dims})
-
-    if prediction_dim not in da.dims:
-        raise KeyError(f"{prediction_dim!r} is not a dimension of the dataset")
-    sources = [str(s) for s in da.coords[prediction_dim].values]
-    for role, name in (("control", control), ("experiment", experiment)):
-        if name not in sources:
-            raise KeyError(
-                f"{role}={name!r} is not in {prediction_dim} (have: {sources})"
-            )
-
-    has_stat = stat_dim in da.dims
-    take = (lambda a, s: a.sel({stat_dim: s})) if has_stat else (lambda a, s: a)
-
-    ctl = take(da.sel({prediction_dim: control}), "mean")
-    exp = take(da.sel({prediction_dim: experiment}), "mean")
+    ctl, exp = agg.control, agg.experiment
     diff = exp - ctl
     with np.errstate(divide="ignore", invalid="ignore"):
         rel = diff / np.abs(ctl)
+    ctl_lo, ctl_hi = agg.control_lower, agg.control_upper
+    exp_lo, exp_hi = agg.experiment_lower, agg.experiment_upper
+    dif = dict(agg.paired)
+    counts = agg.counts
+    levels = tuple(agg.confidence_levels)
+    chart_conf = max(levels) if levels else None
 
-    # Each source's own interval, for the drill-down chart.
-    ctl_lo = ctl_hi = exp_lo = exp_hi = None
-    if has_stat and "lower" in [str(s) for s in da.coords[stat_dim].values]:
-        ctl_lo = da.sel({prediction_dim: control, stat_dim: "lower"})
-        ctl_hi = da.sel({prediction_dim: control, stat_dim: "upper"})
-        exp_lo = da.sel({prediction_dim: experiment, stat_dim: "lower"})
-        exp_hi = da.sel({prediction_dim: experiment, stat_dim: "upper"})
+    return _lay_out(
+        cube=cube,
+        control=control,
+        experiment=experiment,
+        row_dims=row_dims,
+        column_dims=column_dims,
+        cell_dim=cell_dim,
+        scheme=scheme,
+        scaling=scaling,
+        metric_polarity=metric_polarity,
+        title=title,
+        subtitle=subtitle,
+        diff=diff,
+        rel=rel,
+        ctl=ctl,
+        exp=exp,
+        ctl_lo=ctl_lo,
+        ctl_hi=ctl_hi,
+        exp_lo=exp_lo,
+        exp_hi=exp_hi,
+        dif=dif,
+        counts=counts,
+        levels=levels,
+        chart_conf=chart_conf,
+        agg=agg,
+    )
 
-    # The *paired* difference interval, if supplied. It cannot be derived from the
-    # two marginals above: both models are run on the same cases, so their errors
-    # are correlated and the paired interval is far tighter. This is what makes a
-    # cell significant.
-    dif_lo = dif_hi = None
-    if cube.difference is not None:
-        pair = cube.difference
-        try:
-            pair = pair.sel(control_source=control, experiment_source=experiment)
-        except KeyError:
-            pair = None
-        if pair is not None and stat_dim in pair.dims:
-            dif_lo = pair.sel({stat_dim: "lower"})
-            dif_hi = pair.sel({stat_dim: "upper"})
 
-    if counts is not None and prediction_dim in counts.dims:
-        counts = counts.sel({prediction_dim: experiment})
-
+def _lay_out(
+    *,
+    cube: PreparedCube,
+    control: str,
+    experiment: str,
+    row_dims: Sequence[str],
+    column_dims: Sequence[str],
+    cell_dim: str,
+    scheme: ColourScheme,
+    scaling: FixedScaling,
+    metric_polarity: Mapping[str, str] | None,
+    title: str,
+    subtitle: str,
+    diff: xr.DataArray,
+    rel: xr.DataArray,
+    ctl: xr.DataArray,
+    exp: xr.DataArray,
+    ctl_lo: xr.DataArray | None,
+    ctl_hi: xr.DataArray | None,
+    exp_lo: xr.DataArray | None,
+    exp_hi: xr.DataArray | None,
+    dif: dict[float, tuple[xr.DataArray, xr.DataArray]],
+    counts: xr.DataArray | None,
+    levels: tuple[float, ...],
+    chart_conf: float | None,
+    agg: Aggregated,
+) -> Layout:
+    """Lay collapsed arrays out on the card. Indifferent to where they came from."""
     dims = list(row_dims) + list(column_dims)
     for d in dims + [cell_dim]:
         if d not in diff.dims:
@@ -262,9 +295,10 @@ def resolve(
         ctl_hi = ctl_hi.transpose(*dims, cell_dim)
         exp_lo = exp_lo.transpose(*dims, cell_dim)
         exp_hi = exp_hi.transpose(*dims, cell_dim)
-    if dif_lo is not None:
-        dif_lo = dif_lo.transpose(*dims, cell_dim)
-        dif_hi = dif_hi.transpose(*dims, cell_dim)
+    dif = {
+        c: (lo.transpose(*dims, cell_dim), hi.transpose(*dims, cell_dim))
+        for c, (lo, hi) in dif.items()
+    }
     if counts is not None:
         counts = counts.transpose(*[d for d in dims if d in counts.dims], cell_dim)
 
@@ -305,8 +339,9 @@ def resolve(
     chi_v = ctl_hi.values if has_ci else None
     elo_v = exp_lo.values if has_ci else None
     ehi_v = exp_hi.values if has_ci else None
-    dlo_v = dif_lo.values if dif_lo is not None else None
-    dhi_v = dif_hi.values if dif_hi is not None else None
+    dif_v = {c: (lo.values, hi.values) for c, (lo, hi) in dif.items()}
+    dif_levels = sorted(dif_v)
+    chart_lo, chart_hi = dif_v.get(chart_conf, (None, None))
     cnt_v = counts.values if counts is not None else None
     cnt_dims = [d for d in dims if counts is not None and d in counts.dims]
 
@@ -321,18 +356,14 @@ def resolve(
             if not finite[idx].any():
                 continue
 
-            metric = "value"
-            if metric_dim:
-                for d, v in zip(list(row_dims) + list(column_dims), rl.key + cl.key):
-                    if d == metric_dim:
-                        metric = str(v)
+            # Both are always on an axis: `prepare` produces them, the subset
+            # above cannot drop a dimension (every selector is a list), and the
+            # unassigned check rejects any layout that fails to place them.
+            pos = dict(zip(dims, rl.key + cl.key))
+            metric = str(pos[METRIC_DIM])
+            variable = str(pos[VARIABLE_DIM])
             pol = polarity_of(metric, metric_polarity)
             fam = family_of(pol)
-
-            variable = None
-            for d, v in zip(list(row_dims) + list(column_dims), rl.key + cl.key):
-                if d == variable_dim:
-                    variable = str(v)
 
             steps = []
             for k in range(len(lead_times)):
@@ -355,7 +386,7 @@ def resolve(
                             n=None,
                             level=0,
                             family=fam,
-                            significant=False,
+                            significant_at=None,
                             tooltip=f"{lead_labels[k]} no data",
                         )
                     )
@@ -374,10 +405,21 @@ def resolve(
                 # Significant when the paired difference interval excludes zero.
                 # Without that input nothing is marked: the two sources' marginal
                 # intervals cannot answer this, being much wider than the paired one.
-                d_lo, d_hi = _at(dlo_v), _at(dhi_v)
-                sig = d_lo is not None and d_hi is not None and (d_lo > 0 or d_hi < 0)
-                if sig:
+                #
+                # Levels ascend, so intervals widen; the answer is the highest one
+                # that still excludes zero. Stopping at the first failure rather
+                # than scanning on keeps a non-nested set of intervals -- analytic
+                # bounds from different approximations, say -- from reporting a
+                # level whose narrower neighbours do not support it.
+                sig_at = None
+                for c in dif_levels:
+                    lo, hi = _at(dif_v[c][0]), _at(dif_v[c][1])
+                    if lo is None or hi is None or not (lo > 0 or hi < 0):
+                        break
+                    sig_at = c
+                if sig_at is not None:
                     n_sig += 1
+                d_lo, d_hi = _at(chart_lo), _at(chart_hi)
                 nn = None
                 if cnt_v is not None:
                     cidx = tuple(
@@ -392,8 +434,8 @@ def resolve(
                 word = scheme.word(fam, lvl)
                 pct = abs(float(r_)) * 100
                 tip = f"{lead_labels[k]} {pct:.3g}% {word}"
-                if sig:
-                    tip += ", significant"
+                if sig_at is not None:
+                    tip += f", significant at {_pct(sig_at)}"
                 if nn is not None:
                     tip += f" ({nn} cases)"
                 steps.append(
@@ -412,7 +454,7 @@ def resolve(
                         n=nn,
                         level=lvl,
                         family=fam,
-                        significant=sig,
+                        significant_at=sig_at,
                         tooltip=tip,
                     )
                 )
@@ -424,7 +466,7 @@ def resolve(
                 col_key=cl.key,
                 cell_id=f"{rl.slug}__{cl.slug}",
                 metric=metric,
-                units=cube.units.get(variable) if variable else None,
+                units=cube.units.get((metric, variable)),
                 steps=tuple(steps),
             )
 
@@ -444,13 +486,39 @@ def resolve(
         s.n for cell in cells.values() for s in cell.steps if s.n is not None
     }
 
-    notes = [
-        "Forecast cases are autocorrelated: consecutive runs share a weather system, "
-        "so a resample that treats them as independent understates the interval and "
-        "over-marks significance.",
-        f"This card shows {stats.n_boxes} simultaneous comparisons. Isolated cells mean "
-        "little; coherent blocks mean a lot.",
-    ]
+    notes = []
+    if agg.n_resamples:
+        block = (
+            f"blocks of {agg.block_length} cases"
+            if agg.block_length > 1
+            else "independent cases"
+        )
+        notes.append(
+            f"Intervals from a {agg.method} bootstrap over forecast cases "
+            f"({block}, {agg.n_resamples} resamples, seed {agg.seed}). The "
+            f"difference is paired: it is taken per case before averaging, with "
+            f"one resample shared by both sources, so their common error cancels."
+        )
+    # The package chooses the resample now, so the caveat has to name what it
+    # chose -- and the measured cost of that choice, not a general warning.
+    if agg.block_length > 1:
+        notes.append(
+            "Consecutive forecasts share a weather system. Blocking reduces the "
+            "resulting over-marking but does not remove it: measured at roughly "
+            "8% false positives against a nominal 5% on AR(1) synthetic data, "
+            "and no block length reaches nominal."
+        )
+    elif agg.n_resamples:
+        notes.append(
+            "Cases were resampled independently, which treats consecutive "
+            "forecasts as unrelated weather. On AR(1) synthetic data that marks "
+            "about 44% of truly-null cells as significant against a nominal 5%, "
+            "so read the markings below as optimistic."
+        )
+    notes.append(
+        f"This card shows {stats.n_boxes} simultaneous comparisons. Isolated cells "
+        "mean little; coherent blocks mean a lot."
+    )
     if case_counts:
         lo, hi = min(case_counts), max(case_counts)
         span = f"{lo}" if lo == hi else f"{lo}-{hi}"
@@ -485,7 +553,11 @@ def resolve(
         subtitle=subtitle,
         control=control,
         experiment=experiment,
-        confidence=cube.confidence,
+        confidence_levels=levels,
+        resampling=agg.method,
+        block_length=agg.block_length,
+        n_resamples=agg.n_resamples,
+        seed=agg.seed,
         scheme_name=scheme.name,
         notes=tuple(notes),
     )

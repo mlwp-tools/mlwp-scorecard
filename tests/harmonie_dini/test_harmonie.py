@@ -16,7 +16,7 @@ import pytest
 
 xr = pytest.importorskip("xarray")
 
-from common import OUT  # noqa: E402
+from common import CONFIDENCE_LEVELS, N_BOOT, OUT  # noqa: E402
 
 pytestmark = pytest.mark.skipif(
     not (OUT / "verification.zarr").exists(),
@@ -32,7 +32,7 @@ def summary():
     return xr.open_zarr(OUT / "verification.zarr")
 
 
-def card(summary, control: str, experiment: str):
+def card(summary, control: str, experiment: str, levels=CONFIDENCE_LEVELS):
     from mlwp_scorecards import build_layout
 
     return build_layout(
@@ -42,11 +42,14 @@ def card(summary, control: str, experiment: str):
         rows=["truth_source", "variable"],
         columns=["metric"],
         cell="lead_time",
+        confidence_levels=levels,
+        n_resamples=N_BOOT,
+        seed=0,
     )
 
 
 def test_both_sources_and_both_truths_are_present(summary):
-    assert list(summary["prediction_source"].values) == list(SOURCES)
+    assert list(summary["forecast_source"].values) == list(SOURCES)
     assert list(summary["truth_source"].values) == list(TRUTHS)
 
 
@@ -144,7 +147,7 @@ def test_errors_are_physically_plausible(summary):
     }
     for var, (lo, hi) in bounds.items():
         for truth in TRUTHS:
-            v = summary[var].sel(truth_source=truth, metric="rmse", stat="mean")
+            v = summary[f"rmse.{var}"].sel(truth_source=truth).mean("init_time")
             assert np.all(
                 (v.values > lo) & (v.values < hi)
             ), f"{var} vs {truth}: {v.values}"
@@ -154,26 +157,69 @@ def test_errors_grow_with_lead_time(summary):
     """Forecast error must grow as the forecast ages, for both models."""
     for source in SOURCES:
         v = (
-            summary["wind_speed_10m"]
-            .sel(
-                truth_source="dini-analysis",
-                prediction_source=source,
-                metric="rmse",
-                stat="mean",
-            )
+            summary["rmse.wind_speed_10m"]
+            .sel(truth_source="dini-analysis", forecast_source=source)
+            .mean("init_time")
             .values
         )
         assert v[-1] > v[0], f"{source} error did not grow with lead time: {v}"
 
 
 def test_confidence_intervals_bracket_the_mean(summary):
-    """`lower <= mean <= upper` is the one thing the package asks of the input."""
-    for var in ("t2m", "pres_seasurface", "wind_speed_10m"):
-        v = summary[var]
-        lo = v.sel(stat="lower").values
-        mid = v.sel(stat="mean").values
-        hi = v.sel(stat="upper").values
-        assert np.all(lo <= mid) and np.all(mid <= hi), var
+    """`lower <= mean <= upper`, which the package now produces rather than reads.
+
+    It used to be the one thing asked of the input; with the collapse moved
+    inside, it is the one thing asked of the bootstrap.
+    """
+    lay = card(summary, "aifs", "harmonie-arome")
+    for _, _, cell in lay.iter_cells():
+        for s in cell.steps:
+            if s.control is None or s.control_lower is None:
+                continue
+            assert s.control_lower <= s.control <= s.control_upper, cell.cell_id
+            assert (
+                s.experiment_lower <= s.experiment <= s.experiment_upper
+            ), cell.cell_id
+
+
+def test_intervals_nest_with_the_confidence_level(summary):
+    """A wider level must give a wider interval, at every cell.
+
+    Bootstrap percentiles guarantee this, so a violation would mean the level
+    axis had been read in the wrong order -- exactly the bug that would make a
+    cell claim more significance than it has. Two cards at one level each, on the
+    same seed, so the two resamples are identical and only the percentile differs.
+    """
+    narrow = card(summary, "aifs", "harmonie-arome", levels=(0.68,))
+    wide = card(summary, "aifs", "harmonie-arome", levels=(0.95,))
+    seen = 0
+    for (_, _, a), (_, _, b) in zip(narrow.iter_cells(), wide.iter_cells()):
+        for sa, sb in zip(a.steps, b.steps):
+            if sa.value_lower is None or sb.value_lower is None:
+                continue
+            assert sb.value_lower <= sa.value_lower + 1e-12, a.cell_id
+            assert sb.value_upper >= sa.value_upper - 1e-12, a.cell_id
+            seen += 1
+    assert seen, "no intervals were compared"
+
+
+def test_significance_is_graded_and_nested(summary):
+    """A cell significant at 95% must also be significant at 68%.
+
+    `significant_at` reports the highest level whose paired interval still
+    excludes zero, so the claim it makes is checkable rather than a bare flag.
+    """
+    lay = card(summary, "aifs", "harmonie-arome")
+    assert lay.confidence_levels == tuple(CONFIDENCE_LEVELS)
+    marked = [
+        s
+        for _, _, cell in lay.iter_cells()
+        for s in cell.steps
+        if s.significant_at is not None
+    ]
+    assert marked, "the real data should mark something"
+    assert all(s.significant_at in lay.confidence_levels for s in marked)
+    assert all(s.significant for s in marked)
 
 
 def test_the_card_reports_a_mixed_result(summary):
@@ -263,8 +309,9 @@ def test_analysis_flatters_harmonie_on_every_variable(summary):
 
 
 def test_case_counts_are_the_number_of_initialisations(summary):
-    n = summary["t2m_number_of_cases"].values
-    assert set(np.unique(n)) == {summary.attrs["n_initialisations"]}
+    lay = card(summary, "aifs", "harmonie-arome")
+    n = {s.n for _, _, cell in lay.iter_cells() for s in cell.steps}
+    assert n == {summary.sizes["init_time"]}
 
 
 def test_renders_both_formats(summary, tmp_path):

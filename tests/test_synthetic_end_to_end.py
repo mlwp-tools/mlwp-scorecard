@@ -130,7 +130,13 @@ def test_html_box_count_matches_the_layout(layout, verification, tmp_path):
 
 def test_unknown_metric_refuses_to_guess(verification, tmp_path):
     """Guessing polarity would produce a confidently backwards card."""
-    ds = verification.assign_coords(metric=["rmse", "mae", "wibble"])
+    ds = verification.rename(
+        {
+            n: str(n).replace("spread.", "wibble.")
+            for n in verification.data_vars
+            if str(n).startswith("spread.")
+        }
+    )
     with pytest.raises(KeyError, match="unknown metric"):
         build_layout(ds, control="persistence", experiment="drifting-persistence")
 

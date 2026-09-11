@@ -305,7 +305,10 @@ _JS = r"""
   }
 
   function pctLabel(conf) {
-    return conf ? Math.round(conf * 100) + '%' : '';
+    // 99.7% is 3 sigma and a real choice of level; rounding it to 100% would
+    // turn a stated interval into a claim of certainty
+    if (!conf) return '';
+    return Number((conf * 100).toPrecision(4)) + '%';
   }
 
   function swatch(colour, dash) {
@@ -447,7 +450,9 @@ _PAGE = Template(
      — its {{ confidence_pct }} interval on the difference excludes zero. An unframed
      box
      <span class="ramp"><i style="background:{{ sig_fill }};border-color:#ffffff"></i></span>
-     is not. {{ n_significant }} of {{ n_boxes }} boxes are framed.</p>
+     is not. {{ n_significant }} of {{ n_boxes }} boxes are framed.
+     {%- if graded %} The frame is one bit; hover a box for the strongest level it
+     reaches, up to {{ widest_pct }}.{% endif %}</p>
   {%- endif %}
   <p>A blank grey cell has no data at all, which is deliberately distinct from a cell
      whose difference happens to be zero. A hatched box is a lead time with no value
@@ -513,6 +518,11 @@ def _boxes(cell) -> str:
             cls += " sig"
         out.append(f'<i class="{cls}" title="{tip}"></i>')
     return "".join(out)
+
+
+def _pct(conf: float | None) -> str:
+    """A confidence level as a percentage, keeping 99.7% from reading as 100%."""
+    return f"{conf * 100:.4g}%" if conf else "confidence"
 
 
 def render_html(
@@ -665,9 +675,12 @@ def render_html(
         experiment=layout.experiment,
         n_significant=s.n_significant,
         n_boxes=s.n_boxes,
-        confidence_pct=(
-            f"{layout.confidence:.0%}" if layout.confidence else "confidence"
-        ),
+        # The border marks a box that clears the *narrowest* level supplied, so
+        # that is the number the legend has to quote; the drill-down charts draw
+        # the widest, and the tooltip names whichever level each box reaches.
+        confidence_pct=_pct(min(layout.confidence_levels, default=None)),
+        widest_pct=_pct(layout.confidence),
+        graded=len(layout.confidence_levels) > 1,
         sig_fill=scheme.swatch("error", 8).fill,
         sig_edge=scheme.swatch("error", 8).edge,
         has_detail=bool(payload_b64),

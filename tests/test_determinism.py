@@ -29,9 +29,10 @@ def test_html_is_identical_in_a_fresh_process(tmp_path):
         sys.path.insert(0, {str((__import__("pathlib").Path(__file__).parent))!r})
         from synthetic import make_verification_dataset
         from mlwp_scorecards import make_scorecard
-        ds = make_verification_dataset(n_case=32, n_boot=40, drift=0.25, seed=3)
+        ds = make_verification_dataset(n_case=32, drift=0.25, seed=3)
         make_scorecard(ds, sys.argv[1], control="persistence",
-                       experiment="drifting-persistence", title="t")
+                       experiment="drifting-persistence", title="t",
+                       n_resamples=100)
         """
     )
     outs = []

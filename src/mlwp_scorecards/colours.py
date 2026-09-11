@@ -67,7 +67,8 @@ def polarity_of(
     Parameters
     ----------
     metric : str
-        Metric name, as it appears on the ``metric`` coordinate.
+        Bare metric name — the half before the last dot of a
+        ``{metric}.{variable}`` data-variable name.
     overrides : mapping, optional
         Caller-supplied polarities, taking precedence over :data:`METRIC_POLARITY`.
 

@@ -11,8 +11,16 @@ from typing import Any, Mapping, Sequence
 
 import xarray as xr
 
+from .aggregate import aggregate
 from .colours import SCHEMES, ColourScheme, FixedScaling
-from .ingest import ValidationReport, prepare
+from .ingest import (
+    CASE_DIM,
+    FORECAST_DIM,
+    METRIC_DIM,
+    VARIABLE_DIM,
+    ValidationReport,
+    prepare,
+)
 from .layout import resolve
 from .model import Layout
 
@@ -25,9 +33,13 @@ __all__ = [
 ]
 
 #: Preferred nesting when ``rows`` is not given, filtered to what the data has.
-DEFAULT_ROWS = ("truth_source", "variable", "level")
-#: Preferred nesting when ``columns`` is not given.
-DEFAULT_COLUMNS = ("spatial_region", "region", "metric")
+#: A *preference*, not a requirement: these names get a conventional position on
+#: the card if they are present, and any dimension not listed here still lands on
+#: an axis -- see ``_infer_axes``.
+DEFAULT_ROWS = ("truth_source", VARIABLE_DIM, "level")
+#: Preferred nesting when ``columns`` is not given. ``region`` is accepted as a
+#: synonym of ``spatial_region`` here only, for datasets that use the short name.
+DEFAULT_COLUMNS = ("spatial_region", "region", METRIC_DIM)
 
 _STATIC_SUFFIXES = {".png", ".pdf", ".svg", ".eps", ".jpg", ".jpeg", ".tif", ".tiff"}
 
@@ -37,12 +49,21 @@ def _infer_axes(
     rows: Sequence[str] | None,
     columns: Sequence[str] | None,
     cell: str,
-    prediction_dim: str,
-    stat_dim: str,
 ) -> tuple[list[str], list[str]]:
-    """Choose row and column nesting when the caller did not."""
-    available = {str(d) for d in ds.dims} | {"variable"}
-    available -= {cell, prediction_dim, stat_dim}
+    """Choose row and column nesting when the caller did not.
+
+    ``variable`` and ``metric`` are not dimensions of the input -- ``prepare``
+    produces them by splitting the ``{metric}.{variable}`` names -- so they are
+    added here rather than read off the dataset. The excluded names are the ones
+    the rendering consumes rather than lays out, and are the same set ``prepare``
+    exempts from its unassigned-dimension check; both are built from the
+    constants in :mod:`~mlwp_scorecards.ingest` so the two cannot drift apart.
+    """
+    available = ({str(d) for d in ds.dims} | {VARIABLE_DIM, METRIC_DIM}) - {
+        cell,
+        FORECAST_DIM,
+        CASE_DIM,
+    }
 
     if rows is not None and columns is not None:
         return list(rows), list(columns)
@@ -80,9 +101,11 @@ def build_layout(
     scheme: str | ColourScheme = "cvd",
     title: str = "",
     subtitle: str = "",
-    prediction_dim: str = "prediction_source",
-    stat_dim: str = "stat",
-    metric_dim: str | None = "metric",
+    bootstrap: str = "moving-block",
+    block_length: int | None = None,
+    n_resamples: int = 2000,
+    confidence_levels: Sequence[float] = (0.68, 0.95, 0.997),
+    seed: int = 0,
     strict: bool = False,
     return_validation_report: bool = False,
 ) -> Layout | tuple[Layout, ValidationReport]:
@@ -91,9 +114,10 @@ def build_layout(
     Parameters
     ----------
     data : xr.Dataset
-        Verification statistics: one score variable per physical variable.
+        Verification statistics: one variable per ``{metric}.{variable}`` pair.
     control, experiment : str
-        Members of ``prediction_dim``. The card colours ``experiment - control``.
+        Members of ``forecast_source``. The card colours
+        ``experiment - control``.
     rows, columns : sequence of str, optional
         Coordinate names to nest on each axis, outermost first. Inferred when omitted.
     cell : str, optional
@@ -107,6 +131,20 @@ def build_layout(
         ``{"my_score": "higher_is_better"}``.
     scheme : str or ColourScheme, optional
         ``"cvd"`` (default, colour-vision-safe) or ``"ecmwf"``.
+    bootstrap : {"moving-block", "iid"}, optional
+        How to resample forecast cases. Consecutive forecasts share a weather
+        system, so an iid resample marks about 44% of truly-null cells as
+        significant against a nominal 5%; moving-block brings that to roughly 8%.
+        Used only when the input carries an ``init_time`` dimension.
+    block_length : int, optional
+        Block length in forecast **cases**, not hours. Derived from the
+        initialisation cadence when omitted, and the choice is reported.
+    n_resamples : int, optional
+    confidence_levels : sequence of float, optional
+        Fractions, so ``0.95`` rather than ``95``.
+    seed : int, optional
+        Fixed by default: two runs on the same file must agree, and an OS-seeded
+        default would flip borderline significance markings between them.
     strict : bool, optional
         Treat warnings as failures.
     return_validation_report : bool, optional
@@ -126,32 +164,37 @@ def build_layout(
             else [truth_source]
         )
 
-    row_dims, col_dims = _infer_axes(
-        data, rows, columns, cell, prediction_dim, stat_dim
-    )
+    row_dims, col_dims = _infer_axes(data, rows, columns, cell)
 
     cube = prepare(
         data,
         row_dims=row_dims,
         column_dims=col_dims,
         cell_dim=cell,
-        stat_dim=stat_dim,
         strict=strict,
+    )
+    agg = aggregate(
+        cube,
+        control=control,
+        experiment=experiment,
+        subset=subset or None,
+        bootstrap=bootstrap,
+        block_length=block_length,
+        n_resamples=n_resamples,
+        confidence_levels=confidence_levels,
+        seed=seed,
     )
     layout = resolve(
         cube,
+        agg=agg,
         control=control,
         experiment=experiment,
         row_dims=row_dims,
         column_dims=col_dims,
         cell_dim=cell,
-        prediction_dim=prediction_dim,
-        stat_dim=stat_dim,
-        metric_dim=metric_dim,
         scheme=sch,
         scaling=FixedScaling(),
         metric_polarity=metric_polarity,
-        subset=subset or None,
         title=title,
         subtitle=subtitle,
     )

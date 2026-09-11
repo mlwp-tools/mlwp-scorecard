@@ -9,12 +9,15 @@ and nobody reads thousands of line plots. A scorecard puts them on one page you 
 in a minute, so a net improvement, an isolated regression, and the difference between
 a real effect and sampling noise are all visible at once.
 
-It compares **two prediction sources, each already scored against a common truth
+It compares **two forecast sources, each already scored against a common truth
 source**, and colours the *difference between their scores*. "Better" means better
-than the other prediction source, not better than truth.
+than the other forecast source, not better than truth.
 
-This package does no scoring and no statistics. It consumes pre-computed verification
-statistics and renders them.
+This package does no scoring: metrics are computed upstream, where the fields
+are. It takes one score per forecast case and performs the collapse over those
+cases itself — the mean, its bootstrap interval, and the *paired* difference that
+decides significance. That last one is why it wants per-case input: pairing has
+to happen before the averaging, and cannot be recovered afterwards.
 
 ## Install
 
@@ -75,43 +78,165 @@ generated SVG rather than a plotting library.
 
 ## Input
 
-One score variable per physical variable; everything else is a coordinate. A
-variable omits the dimensions that do not apply to it, so `msl` simply has no `level`.
+One variable per `{metric}.{physical_variable}` pair, holding that metric's value
+**for each forecast case** (different forecast runs) — not yet averaged over them. The naming convention is
+[WeatherBench-X](https://github.com/google-research/weatherbenchX)'s, and its
+`Aggregator.reduce_dims` is a required argument, so leaving `init_time` out of it
+gives exactly this shape. Everything else is a coordinate.
+
+A variable omits the dimensions that do not apply to it: `msl` (mean sea-level
+pressure) simply has no `level`, and a metric that needs an ensemble simply has
+no variable for the fields that lack one.
 
 ```
 <xarray.Dataset>
-Dimensions:  (truth_source: 2, prediction_source: 2, level: 7,
-              spatial_region: 10, metric: 3, lead_time: 15, stat: 3)
+Dimensions:  (truth_source: 2, forecast_source: 2, level: 7, spatial_region: 10,
+              lead_time: 15, init_time: 400)
 Coordinates:
-  * truth_source       (truth_source)      <U12   'observations' 'analysis'
-  * prediction_source  (prediction_source) <U16   'IFS-HRES' 'GraphCast'
-  * level              (level)             f8     50.0 100.0 250.0 500.0 850.0 ...
-  * spatial_region     (spatial_region)    <U9    'n.hem' 's.hem' 'tropics' ...
-  * metric             (metric)            <U6    'rmse' 'crps' 'spread'
-  * lead_time          (lead_time)         m8[ns] 1 days ... 15 days
-  * stat               (stat)              <U5    'mean' 'lower' 'upper'
-    confidence                             f8     0.95
+  * truth_source     (truth_source)    <U12   'observations' 'analysis'
+  * forecast_source  (forecast_source) <U9    'IFS-HRES' 'GraphCast'
+  * level            (level)           f8     50.0 100.0 250.0 500.0 850.0 ...
+  * spatial_region   (spatial_region)  <U9    'n.hem' 's.hem' 'tropics' ...
+  * lead_time        (lead_time)       m8[ns] 1 days ... 15 days
+  * init_time        (init_time)       M8[ns] 2024-01-01 ... 2024-07-15
 Data variables:
-    z                  (truth_source, prediction_source, level, spatial_region, metric, lead_time, stat) f8
-    msl                (truth_source, prediction_source,        spatial_region, metric, lead_time, stat) f8
-    z_number_of_cases  (truth_source, prediction_source, level, spatial_region, metric, lead_time) i8
+    rmse.z    (truth_source, forecast_source, level, spatial_region, lead_time, init_time) f8
+    rmse.msl  (truth_source, forecast_source,        spatial_region, lead_time, init_time) f8
+    crps.z    (truth_source, forecast_source, level, spatial_region, lead_time, init_time) f8
+
+>>> ds["rmse.z"].attrs
+{'standard_name': 'geopotential_height', 'long_name': 'Geopotential height RMSE',
+ 'units': 'm'}
 ```
 
-One element is *a summary statistic describing how well one prediction source agreed
-with one truth source, for one physical variable, aggregated over a spatial region and
-over a set of forecast cases, at one forecast lead time*.
+One element is *the score of one forecast, from one source, against one truth
+source, for one physical variable, over one spatial region, at one lead time* —
+after the collapse over space, before the collapse over cases. NaN marks a case
+with no verification, and the case count falls out of counting the finite ones.
 
-- `stat` means one thing only: which view of the estimated score — the point estimate
-  and its two interval edges.
-- `lower`/`upper` are the sampling uncertainty **over forecast cases**, not over
-  gridpoints.
-- The case count is a sibling variable found through CF's `ancillary_variables`
-  attribute (with a `_number_of_cases` / `_n` suffix fallback). Optional.
-- `units`, `standard_name` and `long_name` live on the score variable, where CF puts
-  them.
+### The two collapses, and which one is yours
 
-A tidy `pandas.DataFrame`, a sequence of records, or a flat cube that already has a
-`variable` dimension are all accepted and normalised on ingest.
+A scorecard rests on two reductions, and they are different in kind.
+
+**Over space, within one forecast case.** The gridpoints of a region reduce to one
+number, area-weighted by cos(latitude), by a formula specific to the metric. This
+is deterministic, carries no sampling uncertainty, and needs the raw fields — so
+it happens upstream, and the dataset above is its output.
+
+**Over forecast cases.** The initialisations reduce to a mean. *This* is the
+sample: N weather situations drawn from the population of possible ones. **The
+package does this one**, because doing it well requires the per-case numbers:
+
+- the two sources are compared on the *same* cases, so the difference is taken
+  per case and one resample is shared between them. Their common error then
+  cancels instead of adding — measured 1.0x to 3.1x tighter than treating them as
+  independent, and the only thing that can decide significance;
+- consecutive forecasts share a weather system, so the resample blocks them.
+
+Both choices are arguments, and both are printed on the card:
+
+```python
+make_scorecard(ds, "scorecard.html", control="IFS-HRES", experiment="GraphCast",
+               bootstrap="moving-block",   # or "iid"
+               block_length=None,          # in CASES; derived from the cadence
+               n_resamples=2000,
+               confidence_levels=(0.68, 0.95, 0.997),
+               seed=0)
+```
+
+`seed` is fixed rather than drawn from the OS, so two runs on one file agree.
+
+### The smallest input that renders
+
+Almost everything is optional. Two variables, one metric, lead time and cases:
+
+```
+<xarray.Dataset>
+Dimensions:          (forecast_source: 2, lead_time: 8, init_time: 40)
+Coordinates:
+  * forecast_source  (forecast_source) <U9    'IFS-HRES' 'GraphCast'
+  * lead_time        (lead_time)       m8[ns] 0 days 06:00:00 ... 2 days
+  * init_time        (init_time)       M8[ns] 2024-01-01 ... 2024-01-20
+Data variables:
+    rmse.2t          (forecast_source, lead_time, init_time) f8
+    rmse.msl         (forecast_source, lead_time, init_time) f8
+```
+
+```python
+make_scorecard(ds, "scorecard.html", control="IFS-HRES", experiment="GraphCast")
+```
+
+`truth_source`, `level` and `spatial_region` are all absent, so the inferred
+layout is `rows=["variable"]`, `columns=["metric"]` — two rows and one column.
+Adding `mae.2t` and `mae.msl` would give a second column.
+
+`init_time` may be absent too, if all you have is means. Then you get a card
+coloured by magnitude with no error bars, no borders and no case counts, and the
+report says so:
+
+```
+warning no 'init_time' dimension: values are read as already-collapsed means,
+        with no interval and nothing marked significant
+```
+
+Set `units` on each variable either way — it reaches the drill-down axes, and
+nothing else supplies it.
+
+### Which names mean something
+
+Four dimension names are reserved. The package consumes them; they never become
+rows or columns.
+
+| Name | Required | What it does |
+|---|---|---|
+| `forecast_source` | yes | The sources being compared. Collapsed by differencing: the card shows `experiment - control`, both named at call time. |
+| `init_time` | no | The forecast cases. Collapsed by the bootstrap, which is where the intervals and the significance come from. Absent, the values are read as already-collapsed means. |
+| `variable`, `metric` | never | **Produced** by splitting the `{metric}.{variable}` names. Supplying either as an input dimension is an error. |
+
+Everything else is yours. `truth_source`, `level` and `spatial_region` are
+conventions, not rules — they get a sensible default position because they are
+what verification datasets usually carry, and `truth_source` additionally gets a
+`truth_source=` filter argument for convenience. But nothing requires them, and a
+dimension the package has never heard of behaves exactly the same way:
+
+```python
+# season and threshold are not special; they are just axes
+make_scorecard(
+    ds, "scorecard.html",
+    control="IFS-HRES", experiment="GraphCast",
+    rows=["season", "variable"],
+    columns=["threshold", "metric"],
+)
+```
+
+**Every non-reserved dimension must go somewhere** — rows, columns, or `cell`.
+Leaving one out is an error rather than a silent average over it, because a card
+that quietly averaged over your thresholds would look entirely normal and be
+wrong. If you do not want a dimension on the card, pick a value before calling:
+
+```python
+make_scorecard(ds.sel(season="DJF"), ...)   # drops the dimension
+```
+
+`select=` will not do this: it subsets *within* the layout and keeps the
+dimension at length one, so the axis still needs a home.
+
+When `rows` and `columns` are omitted they are inferred: the conventional names
+above take their usual positions, and anything left over is appended to the
+columns in alphabetical order. Inference is a convenience for exploration — name
+the axes explicitly for a card anyone else will read.
+
+Other notes on the shape:
+
+- The name splits on its **last** dot, so a metric may carry parameters of its
+  own: `seeps.v1.5.tp` is the metric `seeps.v1.5` of the variable `tp`. A name
+  with no dot is refused rather than guessed at.
+- `units`, `standard_name` and `long_name` live on the data variable, where CF
+  puts them — and because the metric is in the name there is one set per
+  (metric, variable), so `rmse.2t` can be in K while `acc.2t` is dimensionless.
+- That is the only input shape: a netCDF or Zarr dataset laid out as above. There
+  is no adapter for tidy frames, record sequences or a cube that already carries
+  a `variable` dimension — the last is refused with a message pointing back here.
 
 ## Documentation
 

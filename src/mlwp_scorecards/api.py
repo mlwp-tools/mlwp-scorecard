@@ -9,6 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+import numpy as np
 import xarray as xr
 
 from .aggregate import aggregate, resolve_sources
@@ -43,6 +44,12 @@ DEFAULT_COLUMNS = ("spatial_region", "region", METRIC_DIM)
 
 _STATIC_SUFFIXES = {".png", ".pdf", ".svg", ".eps", ".jpg", ".jpeg", ".tif", ".tiff"}
 _HTML_SUFFIXES = {".html", ".htm"}
+
+
+def _is_many(value: Any) -> bool:
+    """Whether a ``select=`` value picks several members (keeping the dimension)
+    rather than one (dropping it)."""
+    return isinstance(value, (list, tuple, slice, np.ndarray))
 
 
 def _infer_axes(
@@ -146,7 +153,10 @@ def build_layout(
     truth_source : str or sequence of str, optional
         Restrict to these truth sources.
     select : mapping, optional
-        Further coordinate subsetting, applied before layout.
+        Further coordinate subsetting. A single value picks that member and drops
+        the dimension, so it needs no place on the card:
+        ``select={"spatial_region": "europe"}``. A list or slice keeps the
+        dimension, subset, and it still has to be on ``rows`` or ``columns``.
     metric_polarity : mapping, optional
         Polarity for metrics not in the built-in table, e.g.
         ``{"my_score": "higher_is_better"}``.
@@ -193,7 +203,20 @@ def build_layout(
 
     sch = SCHEMES[scheme] if isinstance(scheme, str) else scheme
 
-    subset: dict[str, Any] = dict(select or {})
+    # A single value picks one member and drops the dimension -- it is taken
+    # before the axes are inferred, so it needs no home on the card. A list keeps
+    # the dimension, subset, and still has to be placed.
+    scalars = {k: v for k, v in (select or {}).items() if not _is_many(v)}
+    subset: dict[str, Any] = {
+        k: list(v) if isinstance(v, tuple) else v
+        for k, v in (select or {}).items()
+        if _is_many(v)
+    }
+    if scalars:
+        missing = sorted(set(scalars) - {str(d) for d in data.dims})
+        if missing:
+            raise KeyError(f"select= names {missing}, which are not dimensions")
+        data = data.sel(scalars, drop=True)
     if truth_source is not None:
         subset["truth_source"] = (
             list(truth_source)

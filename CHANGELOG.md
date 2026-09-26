@@ -34,6 +34,10 @@ Design and rationale are documented in [`PLAN.md`](PLAN.md).
   required, and a suffix contradicting its argument (`html_path="card.png"`) is
   refused before anything is computed. The CLI's `-o/--output` becomes
   `--html-path` and a repeatable `--image-path`; `--validate-only` needs neither.
+- **A single value in `select=` drops that dimension**, like `ds.sel(...)`, so it
+  needs no place on the card: `select={"spatial_region": "europe"}`. A list keeps
+  the dimension, as every selector did before. A `select=` key that is not a
+  dimension is now an error.
 
 - **The input is now one score per forecast case**, and the package performs the
   collapse over cases itself: the mean, the per-source bootstrap intervals, the

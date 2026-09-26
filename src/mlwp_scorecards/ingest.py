@@ -252,14 +252,14 @@ def prepare(
     # sources), `init_time` by the bootstrap.
     unassigned = present - set(wanted) - {CASE_DIM, FORECAST_DIM}
     if unassigned:
-        # Not "or subset them away": `select=` is applied inside `resolve`, after
-        # this check, and it keeps the dimension at length 1 rather than dropping
-        # it -- so it is no remedy at all here. Dropping the dimension on the
-        # dataset is.
+        # Picking one value is a remedy only when it drops the dimension: a single
+        # value in `select=` does (it is applied before this check), a list keeps
+        # the dimension and so does not.
+        first = sorted(unassigned)[0]
         raise KeyError(
             f"dimension(s) {sorted(unassigned)} are assigned to neither rows, "
             f"columns nor cell; name them in rows=[...] or columns=[...], or pick "
-            f"one value before calling: ds.sel({sorted(unassigned)[0]}=...)"
+            f"one value: select={{{first!r}: ...}} or ds.sel({first}=...)"
         )
 
     # Dimensions carried by some variables but not others are optional and get a

@@ -210,15 +210,58 @@ def test_an_unplaced_dimension_is_an_error_naming_a_remedy_that_works():
         )
     assert "season" in str(excinfo.value) and "threshold" in str(excinfo.value)
 
-    lay = build_layout(
-        ds.sel(season="DJF", threshold=1.0),
+    kw = dict(
         relative_to="ctl",
         predictions_from=["exp"],
         rows=["variable"],
         columns=["metric"],
         n_resamples=100,
+        seed=0,
     )
-    assert [r.key for r in lay.rows] == [("tp",)]
+    by_sel = build_layout(ds.sel(season="DJF", threshold=1.0), **kw)
+    assert [r.key for r in by_sel.rows] == [("tp",)]
+
+    # both remedies the message names must work, and must agree
+    by_select = build_layout(ds, select={"season": "DJF", "threshold": 1.0}, **kw)
+    assert by_select.row_dims == by_sel.row_dims
+    assert by_select.column_dims == by_sel.column_dims
+    got = by_select.sel(variable="tp", metric="rmse").steps
+    want = by_sel.sel(variable="tp", metric="rmse").steps
+    assert [s.value for s in got] == [s.value for s in want]
+
+
+def test_a_list_in_select_keeps_the_dimension():
+    """Several members stay a dimension, so they still need a place on the card."""
+    ds = _seasonal()
+    with pytest.raises(KeyError, match="assigned to neither"):
+        build_layout(
+            ds,
+            relative_to="ctl",
+            predictions_from=["exp"],
+            rows=["variable"],
+            columns=["metric"],
+            select={"season": ["DJF"], "threshold": 1.0},
+        )
+    lay = build_layout(
+        ds,
+        relative_to="ctl",
+        predictions_from=["exp"],
+        rows=["season", "variable"],
+        columns=["metric"],
+        select={"season": ["DJF"], "threshold": 1.0},
+        n_resamples=100,
+    )
+    assert [r.key for r in lay.rows] == [("DJF", "tp")]
+
+
+def test_select_on_a_name_that_is_not_a_dimension_is_refused():
+    with pytest.raises(KeyError, match="not dimensions"):
+        build_layout(
+            _seasonal(),
+            relative_to="ctl",
+            predictions_from=["exp"],
+            select={"nonsuch": 1},
+        )
 
 
 def test_init_time_and_forecast_source_need_no_home_on_an_axis():

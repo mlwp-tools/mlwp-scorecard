@@ -258,14 +258,16 @@ make_scorecard(
 **Every non-reserved dimension must go somewhere** — rows, columns, or `cell`.
 Leaving one out is an error rather than a silent average over it, because a card
 that quietly averaged over your thresholds would look entirely normal and be
-wrong. If you do not want a dimension on the card, pick a value before calling:
+wrong. If you do not want a dimension on the card, pick one value:
 
 ```python
-make_scorecard(ds.sel(season="DJF"), ...)   # drops the dimension
+make_scorecard(ds, select={"season": "DJF"}, ...)   # drops the dimension
+make_scorecard(ds.sel(season="DJF"), ...)           # the same
 ```
 
-`select=` will not do this: it subsets *within* the layout and keeps the
-dimension at length one, so the axis still needs a home.
+A single value in `select=` drops the dimension; a list keeps it, subset, and so
+it still needs a place on the card: `select={"season": ["DJF", "JJA"]}` with
+`season` on the rows.
 
 When `rows` and `columns` are omitted they are inferred: the conventional names
 above take their usual positions, and anything left over is appended to the

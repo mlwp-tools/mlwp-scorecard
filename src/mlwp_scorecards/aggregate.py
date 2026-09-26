@@ -331,7 +331,9 @@ def aggregate(
         raise ValueError(f"cases must be one of {CASE_POLICIES}, got {cases!r}")
 
     if subset:
-        sel = {k: (v if isinstance(v, list) else [v]) for k, v in subset.items()}
+        # Always several members -- a list or a slice -- so the dimension stays.
+        # A single value is applied by the caller, before layout, and drops it.
+        sel = {k: ([v] if np.isscalar(v) else v) for k, v in subset.items()}
         da = da.sel({k: v for k, v in sel.items() if k in da.dims})
 
     if FORECAST_DIM not in da.dims:

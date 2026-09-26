@@ -1005,22 +1005,31 @@ half-pixel edges.
 ## Public API
 
 ```python
-make_scorecard(data, *, truth_source=None, control, experiment,
-               rows=..., columns=..., cell="lead_time", metrics=None,
-               output, formats=None, spec=None, strict=False,
-               return_validation_report=False, **renderer_kwargs) -> list[Path]
-build_layout(data, spec, **kw) -> Layout
-render(layout, output, *, format=None, **kwargs) -> Path
-validate_input(data, spec=None, **kw) -> ValidationReport
-load_spec(path) -> ScorecardSpec
+make_scorecard(data, *,
+               predictions_from=(...,), relative_to=None,     # sources; ... = all the rest
+               html_path=None, image_path=None, dpi=200,      # at least one output
+               **build_layout_kwargs) -> list[Path]
+
+build_layout(data, *,
+             predictions_from=(...,), relative_to=None, cases="common",
+             rows=None, columns=None, cell="lead_time",
+             truth_source=None, select=None, metric_polarity=None,
+             scheme="cvd", title="", subtitle="",
+             bootstrap="moving-block", block_length=None, n_resamples=2000,
+             confidence_levels=(0.68, 0.95, 0.997), seed=0,
+             strict=False, return_validation_report=False) -> Layout | (Layout, ValidationReport)
+
+render(layout, path, *, scheme=None, dpi=200) -> Path       # format by suffix
 ```
 
-The keyword form builds a `ScorecardSpec` for you; `spec=` accepts a prebuilt one or a YAML
-path for reuse across cards. Re-exported from `__init__.py` alongside `ScorecardSpec`,
-`Dimension`, `Category`, `MetricSpec`, `Polarity`, `Layout`, `ColourScheme`, `SCHEMES`.
+There is no configuration object: everything is a plain argument (see AGENTS.md).
+Re-exported from `__init__.py`: `make_scorecard`, `build_layout`, `render`, `Layout`,
+`Cell`, `Line`, `Step`, `Polarity`, `SCHEMES`, `ValidationReport`, `DEFAULT_ROWS`,
+`DEFAULT_COLUMNS`.
 
-CLI `mlwp.make_scorecard`, argparse + `@logger.catch`, mirroring `mlwp_data_loaders/cli.py` in
-style; exit 1 when `report.has_fails()`.
+CLI `mlwp.make_scorecard DATASET --relative-to NAME [--predictions-from NAME|... ...]
+[--html-path PATH] [--image-path PATH ...]`, argparse + `@logger.catch`; exit 1 when
+`report.has_fails()` or an output path is refused.
 
 ---
 
@@ -1129,15 +1138,26 @@ through one `%.{p}g` helper; no `set` iteration in output paths; respect `SOURCE
 
 ---
 
-## Proposed API changes (not yet implemented)
+## API changes of 2026-09-27
 
 Agreed in discussion on 2026-09-27, after reviewing the prior work in
-`docs/prior-work/` (harp, the ECMWF card, Brightband OWB). Recorded before acting on
-them. Together they generalise the card from "one experiment against one control" to
-"one or more forecast sources, optionally against a baseline". A single source
-against a baseline must still produce today's card, byte-for-byte.
+`docs/prior-work/` (harp, the ECMWF card, Brightband OWB). Together they generalise
+the card from "one experiment against one control" to "one or more forecast sources,
+optionally against a baseline". A single source against a baseline still produces
+the same card: PNG byte-identical, HTML differing only in the drill-down JS.
 
-### 0. Bug to fix first: the difference is not paired when cases are missing
+**Status:** items 0–4 and 6 are implemented. Item 5 (values in cells, and the
+absolute card) still needs a visual design: a cell is a row of up to 15 small
+per-lead-time boxes, with no room for a number in each as things stand. Until then
+`relative_to=None` raises `NotImplementedError`.
+
+The argument names changed during implementation. Item 1 was first built as
+`forecast_source=` / `baseline_source=`, then renamed to **`predictions_from=` /
+`relative_to=`**, and item 4's outputs are **`html_path=` / `image_path=`**. The
+dimension names stay fixed (the `*_DIM` constants); making them configurable was
+considered and rejected, for the reason AGENTS.md gives.
+
+### 0. Fixed: the difference was not paired when cases were missing
 
 `aggregate()` counts only the cases where **both** sources scored (`counts`). But
 `mean_c`, `mean_e` and `bootstrap_mean` each average over **that source's own**
@@ -1151,28 +1171,33 @@ on exactly those. The card shows control mean 3.0, experiment 1.0, difference �
 significant at 99.7 %, with `n = 20`. The paired answer is 0, not significant.
 
 Fix: mask every source to the shared case set (item 3) **before** the means and
-the bootstrap, not only when counting. Write the failing test first.
+the bootstrap, not only when counting. Test:
+`test_the_means_use_only_the_cases_both_sources_scored`.
 
-### 1. Sources: `forecast_source` and `baseline_source`
+### 1. Sources: `predictions_from` and `relative_to`
 
-`control` / `experiment` are replaced by arguments named after the coordinate they
-select, matching the existing `truth_source=`:
+`control` / `experiment` are replaced by:
 
 ```python
-forecast_source: str | Sequence[str]    # the sources shown
-baseline_source: str | None = None      # the reference; omit for absolute scores
+predictions_from: str | Sequence[str | EllipsisType] = (...,)   # the sources shown, in order
+relative_to: str | None = None                                  # the baseline
 ```
 
-- **With `baseline_source`:** each forecast source minus the baseline, paired,
-  coloured by polarity, with the significance border. With one forecast source this
-  is today's card.
-- **Without it:** each source's own scores (see item 5). There is no paired
-  difference, so nothing is marked significant.
-- A `baseline_source` that also appears in `forecast_source` **raises**. The
-  baseline is never a row of its own.
-- "source" rather than "model": a baseline is often not a model (climatology,
-  persistence, an older cycle), and every other argument is named after a
-  coordinate.
+- **`...`** stands for every source not otherwise named, in the order of the
+  `forecast_source` coordinate, and never includes the baseline. So
+  `["GraphCast", ...]` is GraphCast first, then all the rest. At most one `...`
+  is allowed; the default is every source but the baseline.
+- **With `relative_to`:** each forecast source minus the baseline, paired,
+  coloured by polarity, with the significance border.
+- **`relative_to=None`:** reserved for the absolute card (item 5); raises for now.
+- Naming the baseline in `predictions_from` as well **raises**. The baseline is
+  never a row of its own.
+- "relative to" rather than "control" or "baseline model": a baseline is often not
+  a model (climatology, persistence, an older cycle).
+- `resolve_sources()` in `aggregate.py` does the expansion and validation.
+  Internal names are role names and did not change: `Aggregated.baseline*` /
+  `forecast*`, `Layout.baseline_source` / `forecast_sources`, `Step.baseline*` /
+  `forecast*`, `Cell.forecast_source`.
 
 ### 2. `forecast_source` as a layout axis
 
@@ -1186,7 +1211,8 @@ default, as in the Brightband layout. `_infer_axes` stops excluding it in that c
 - `Aggregated` and `Layout` carry `forecast_sources: tuple[str, ...]` in place of
   one `experiment`. `Cell` gains an explicit `forecast_source` field, so renderers
   don't have to dig it out of a row or column key.
-- The legend reads "each row vs <baseline>" in place of "experiment vs control".
+- With several sources the legend reads "each forecast source" in place of the one
+  source's name, and each drill-down names its own cell's source.
 
 ### 3. Case set: `cases="common" | "pairwise"`
 
@@ -1203,86 +1229,69 @@ row. That is the price of not making the Brightband mistake (see
 
 ### 4. Outputs as explicit keywords
 
-```python
-def make_scorecard(
-    data: xr.Dataset,
-    *,
-    forecast_source: str | Sequence[str],
-    baseline_source: str | None = None,
-    html: str | Path | None = None,
-    image: str | Path | Sequence[str | Path] | None = None,   # .png / .pdf / .svg
-    dpi: int = 200,                                           # image only
-    **layout_kwargs: Any,
-) -> list[Path]: ...
-```
+See *Public API* above for the signature.
 
-- Everything after `data` is keyword-only, and the positional `output` goes.
-- At least one of `html` / `image` is required.
-- `image` takes its format from the suffix, and several paths give several
-  formats. A suffix that contradicts the argument raises, e.g. `html="card.png"`.
-- The CLI follows the same pattern: `--forecast-source` (repeatable),
-  `--baseline-source`, `--html`, and `--image` (repeatable).
+- Everything after `data` is keyword-only, and the positional `output` went.
+- At least one of `html_path` / `image_path` is required.
+- `image_path` takes its format from the suffix, and several paths give several
+  formats. A suffix that contradicts the argument raises, e.g.
+  `html_path="card.png"`, and this is checked before anything is computed.
+- The CLI follows the same pattern: `--predictions-from` (repeatable, `...`
+  allowed), `--relative-to`, `--html-path`, and `--image-path` (repeatable).
+  `--validate-only` needs no output.
 - `build_layout()` and `render(layout, path)` stay as the lower-level route, with
   `render` still choosing the format by suffix.
-- This is a breaking change: make a clean break with a CHANGELOG entry, not a
-  deprecated alias.
+- A clean break, with a CHANGELOG entry and no deprecated alias.
 
-### 5. Values in cells, and the absolute card
+### 5. Values in cells, and the absolute card (not yet implemented)
 
 - Each cell can print its value. On a relative card that's the forecast source's
   own score; on an absolute card it's the only content.
-- The absolute card (no `baseline_source`) has no colour to start with: absolute
+- The absolute card (`relative_to=None`) has no colour to start with: absolute
   scores have units and vary across variables, levels and lead times, so there's no
   shared scale. Colouring by rank among the sources in a cell is a possible later
   option.
 - It uses each source's own interval, which `aggregate` already computes, in the
   tooltip and drill-down.
-- The title or legend must say "absolute scores, no baseline", so that forgetting
-  `baseline_source` is visible rather than silent.
+- The title or legend must say "absolute scores, no baseline", so that leaving out
+  `relative_to` is visible rather than silent.
+- **Open:** how to fit a value into each per-lead-time box. Options discussed:
+  opt-in wider boxes (`show_values=True`), or values in the tooltip and drill-down
+  only. To be decided before implementing.
 
 ### 6. Smaller changes
 
-- A scalar in `select=` drops that dimension. A list keeps it as an axis, which is
-  today's behaviour for every selector.
+- A single value in `select=` drops that dimension, like `ds.sel(...)`. It is
+  applied before the axes are inferred, so it needs no place on the card. A list
+  or slice keeps the dimension. A `select=` key that is not a dimension raises.
 
 ### Examples
 
 ```python
-# two sources, analysis and observations on one card (today's card)
-make_scorecard(ds, forecast_source="GraphCast", baseline_source="IFS-HRES",
-               html="graphcast_vs_hres.html", image=["graphcast_vs_hres.png", "graphcast_vs_hres.pdf"],
+# two sources, analysis and observations on one card
+make_scorecard(ds, predictions_from=["GraphCast"], relative_to="IFS-HRES",
+               html_path="graphcast_vs_hres.html",
+               image_path=["graphcast_vs_hres.png", "graphcast_vs_hres.pdf"],
                rows=["truth_source", "variable", "level"], columns=["spatial_region", "metric"])
 
 # several sources against one baseline
-make_scorecard(ds, forecast_source=["GraphCast", "AIFS", "Aurora"], baseline_source="IFS-HRES",
-               html="sources_vs_hres.html",
+make_scorecard(ds, predictions_from=["GraphCast", "AIFS", "Aurora"], relative_to="IFS-HRES",
+               html_path="sources_vs_hres.html",
                rows=["forecast_source"], columns=["variable", "level"],
                truth_source="analysis", select={"spatial_region": "europe", "metric": "rmse"})
 
-# the same, both truths: two blocks of rows
-make_scorecard(ds, forecast_source=["GraphCast", "AIFS", "Aurora"], baseline_source="IFS-HRES",
-               html="sources_vs_hres_an_ob.html",
+# every source but the baseline, both truths: two blocks of rows
+make_scorecard(ds, predictions_from=[...], relative_to="IFS-HRES",
+               html_path="all_vs_hres.html",
                rows=["truth_source", "forecast_source"], columns=["variable", "level"],
-               select={"spatial_region": "europe", "metric": "rmse"})
-
-# absolute scores, no baseline
-make_scorecard(ds, forecast_source=["GraphCast", "AIFS", "Aurora"], html="scores.html",
-               rows=["forecast_source"], columns=["variable", "level"],
                select={"spatial_region": "europe", "metric": "rmse"})
 ```
 
-### Order of work
+### Commits
 
-1. Item 0, test first.
-2. Items 1–3, with the single-source card byte-identical. The determinism test
-   and the matplotlib baselines are the guard.
-3. Item 4.
-4. Item 5: values in cells first, then the absolute card.
-
-AGENTS.md's project intent changes with item 1. It currently says "a scorecard
-compares **two forecast sources**". It becomes: one or more forecast sources scored
-against a common truth, with each one's paired difference from the baseline
-coloured when a baseline is given.
+On branch `forecast-sources`: item 0 (`18327bc`), items 1–3 (`ffd7323`), item 4
+(`a2ae9d5`), the rename to `predictions_from` / `relative_to` (`fe08e54`), item 6
+(`7f87e55`).
 
 ---
 

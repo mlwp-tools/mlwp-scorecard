@@ -381,7 +381,9 @@ by direction:
 | 0 | interval includes zero even at 68% |
 
 A paired t-test on `d_i`, or a Wilcoxon signed-rank test, are alternatives. The bootstrap is
-assumption-light and is what the reference uses.
+assumption-light. The reference does not use it: its intervals are symmetric normal ones, and
+its `siglev` is exactly a z-threshold at 0.994 / 1.96 / 2.97 on the paired mean difference
+(inferred from its embedded data; see `docs/prior-work/ecmwf-scorecard.md`).
 
 ### Worked example, with array shapes
 

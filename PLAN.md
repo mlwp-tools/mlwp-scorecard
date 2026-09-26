@@ -1129,6 +1129,163 @@ through one `%.{p}g` helper; no `set` iteration in output paths; respect `SOURCE
 
 ---
 
+## Proposed API changes (not yet implemented)
+
+Agreed in discussion on 2026-09-27, after reviewing the prior work in
+`docs/prior-work/` (harp, the ECMWF card, Brightband OWB). Recorded before acting on
+them. Together they generalise the card from "one experiment against one control" to
+"one or more forecast sources, optionally against a baseline". A single source
+against a baseline must still produce today's card, byte-for-byte.
+
+### 0. Bug to fix first: the difference is not paired when cases are missing
+
+`aggregate()` counts only the cases where **both** sources scored (`counts`). But
+`mean_c`, `mean_e` and `bootstrap_mean` each average over **that source's own**
+finite cases. When the control has runs the experiment lacks, those runs go into the
+control's mean and not the experiment's, so the difference compares different
+weather.
+
+Reproduced as follows. 40 twice-daily cases. Both sources score 1.0 wherever both
+have data. The experiment is missing the last 20 cases, and the control scores 5.0
+on exactly those. The card shows control mean 3.0, experiment 1.0, difference −2.0,
+significant at 99.7 %, with `n = 20`. The paired answer is 0, not significant.
+
+Fix: mask every source to the shared case set (item 3) **before** the means and
+the bootstrap, not only when counting. Write the failing test first.
+
+### 1. Sources: `forecast_source` and `baseline_source`
+
+`control` / `experiment` are replaced by arguments named after the coordinate they
+select, matching the existing `truth_source=`:
+
+```python
+forecast_source: str | Sequence[str]    # the sources shown
+baseline_source: str | None = None      # the reference; omit for absolute scores
+```
+
+- **With `baseline_source`:** each forecast source minus the baseline, paired,
+  coloured by polarity, with the significance border. With one forecast source this
+  is today's card.
+- **Without it:** each source's own scores (see item 5). There is no paired
+  difference, so nothing is marked significant.
+- A `baseline_source` that also appears in `forecast_source` **raises**. The
+  baseline is never a row of its own.
+- "source" rather than "model": a baseline is often not a model (climatology,
+  persistence, an older cycle), and every other argument is named after a
+  coordinate.
+
+### 2. `forecast_source` as a layout axis
+
+With more than one forecast source, `forecast_source` stays a dimension and can go
+on `rows` or `columns` like any other coordinate. It is outermost on the rows by
+default, as in the Brightband layout. `_infer_axes` stops excluding it in that case.
+
+- `aggregate` keeps the `forecast_source` dimension and broadcasts the baseline
+  against it. It uses **one resampling index for every pair**, as it already does
+  across lead times, so the rows are consistent with each other.
+- `Aggregated` and `Layout` carry `forecast_sources: tuple[str, ...]` in place of
+  one `experiment`. `Cell` gains an explicit `forecast_source` field, so renderers
+  don't have to dig it out of a row or column key.
+- The legend reads "each row vs <baseline>" in place of "experiment vs control".
+
+### 3. Case set: `cases="common" | "pairwise"`
+
+- **`"common"` (default):** only cases every selected source has, including the
+  baseline. Rows are then comparable with each other.
+- **`"pairwise"`:** the cases each forecast source shares with the baseline. Each
+  row uses as much data as it can, but rows no longer answer the same question, and
+  the card must say so.
+
+With one forecast source the two are identical. Either way `n` is on the card. The
+cost of `"common"` is real: a source that runs one cycle a day cuts `n` for every
+row. That is the price of not making the Brightband mistake (see
+`docs/prior-work/brightband/README.md`, *Possible shortcomings*).
+
+### 4. Outputs as explicit keywords
+
+```python
+def make_scorecard(
+    data: xr.Dataset,
+    *,
+    forecast_source: str | Sequence[str],
+    baseline_source: str | None = None,
+    html: str | Path | None = None,
+    image: str | Path | Sequence[str | Path] | None = None,   # .png / .pdf / .svg
+    dpi: int = 200,                                           # image only
+    **layout_kwargs: Any,
+) -> list[Path]: ...
+```
+
+- Everything after `data` is keyword-only, and the positional `output` goes.
+- At least one of `html` / `image` is required.
+- `image` takes its format from the suffix, and several paths give several
+  formats. A suffix that contradicts the argument raises, e.g. `html="card.png"`.
+- The CLI follows the same pattern: `--forecast-source` (repeatable),
+  `--baseline-source`, `--html`, and `--image` (repeatable).
+- `build_layout()` and `render(layout, path)` stay as the lower-level route, with
+  `render` still choosing the format by suffix.
+- This is a breaking change: make a clean break with a CHANGELOG entry, not a
+  deprecated alias.
+
+### 5. Values in cells, and the absolute card
+
+- Each cell can print its value. On a relative card that's the forecast source's
+  own score; on an absolute card it's the only content.
+- The absolute card (no `baseline_source`) has no colour to start with: absolute
+  scores have units and vary across variables, levels and lead times, so there's no
+  shared scale. Colouring by rank among the sources in a cell is a possible later
+  option.
+- It uses each source's own interval, which `aggregate` already computes, in the
+  tooltip and drill-down.
+- The title or legend must say "absolute scores, no baseline", so that forgetting
+  `baseline_source` is visible rather than silent.
+
+### 6. Smaller changes
+
+- A scalar in `select=` drops that dimension. A list keeps it as an axis, which is
+  today's behaviour for every selector.
+
+### Examples
+
+```python
+# two sources, analysis and observations on one card (today's card)
+make_scorecard(ds, forecast_source="GraphCast", baseline_source="IFS-HRES",
+               html="graphcast_vs_hres.html", image=["graphcast_vs_hres.png", "graphcast_vs_hres.pdf"],
+               rows=["truth_source", "variable", "level"], columns=["spatial_region", "metric"])
+
+# several sources against one baseline
+make_scorecard(ds, forecast_source=["GraphCast", "AIFS", "Aurora"], baseline_source="IFS-HRES",
+               html="sources_vs_hres.html",
+               rows=["forecast_source"], columns=["variable", "level"],
+               truth_source="analysis", select={"spatial_region": "europe", "metric": "rmse"})
+
+# the same, both truths: two blocks of rows
+make_scorecard(ds, forecast_source=["GraphCast", "AIFS", "Aurora"], baseline_source="IFS-HRES",
+               html="sources_vs_hres_an_ob.html",
+               rows=["truth_source", "forecast_source"], columns=["variable", "level"],
+               select={"spatial_region": "europe", "metric": "rmse"})
+
+# absolute scores, no baseline
+make_scorecard(ds, forecast_source=["GraphCast", "AIFS", "Aurora"], html="scores.html",
+               rows=["forecast_source"], columns=["variable", "level"],
+               select={"spatial_region": "europe", "metric": "rmse"})
+```
+
+### Order of work
+
+1. Item 0, test first.
+2. Items 1–3, with the single-source card byte-identical. The determinism test
+   and the matplotlib baselines are the guard.
+3. Item 4.
+4. Item 5: values in cells first, then the absolute card.
+
+AGENTS.md's project intent changes with item 1. It currently says "a scorecard
+compares **two forecast sources**". It becomes: one or more forecast sources scored
+against a common truth, with each one's paired difference from the baseline
+coloured when a baseline is given.
+
+---
+
 ## Schema decisions, and what they cost
 
 The naming above was arrived at rather than assumed. Recorded here because the

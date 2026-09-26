@@ -17,6 +17,7 @@ tests/baseline/**/*.diff.png
 
 # Local agent/editor settings
 .claude/
+.serena/
 
 # Design reference: the ECMWF-generated card this package was reverse-engineered
 # from. Kept locally, deliberately not committed (7.4 MB). See PLAN.md appendix.

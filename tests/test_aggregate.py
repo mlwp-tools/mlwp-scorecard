@@ -191,6 +191,27 @@ def test_counts_are_the_cases_where_both_sources_scored():
     assert set(np.unique(agg.counts.values)) == {20 - 6}
 
 
+def test_the_means_use_only_the_cases_both_sources_scored():
+    """A case one source lacks must drop out of *both* means, not only the count.
+
+    The sources agree exactly wherever both scored, and the control is bad on
+    exactly the cases the experiment is missing. Averaging each source over its
+    own cases would compare different weather and report a large, confidently
+    significant difference that the paired data does not contain.
+    """
+    ds = _per_case(n_case=40)
+    ds["rmse.2t"][:] = 1.0
+    ds["rmse.2t"][0, 20:] = 5.0  # control: bad on the second half
+    ds["rmse.2t"][1, 20:] = np.nan  # experiment: missing the second half
+    agg = aggregate(_cube(ds), control="ctl", experiment="exp", n_resamples=200, seed=0)
+
+    assert np.allclose(agg.control.values, 1.0)
+    assert np.allclose(agg.experiment.values, 1.0)
+    for lo, hi in agg.paired.values():
+        assert np.allclose(lo.values, 0.0) and np.allclose(hi.values, 0.0)
+    assert set(np.unique(agg.counts.values)) == {20}
+
+
 # --------------------------------------------------------------------------- #
 # reproducibility and provenance
 # --------------------------------------------------------------------------- #

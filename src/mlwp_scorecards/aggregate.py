@@ -243,6 +243,12 @@ def aggregate(
 
     ctl_da = da.sel({FORECAST_DIM: control}, drop=True)
     exp_da = da.sel({FORECAST_DIM: experiment}, drop=True)
+    # Pair the sources before anything is averaged: a case either one lacks is
+    # dropped from both. Otherwise each mean is taken over that source's own
+    # cases, the difference compares different weather, and a card can show a
+    # confidently significant difference the paired data does not contain.
+    both = np.isfinite(ctl_da) & np.isfinite(exp_da)
+    ctl_da, exp_da = ctl_da.where(both), exp_da.where(both)
 
     levels = tuple(sorted(float(c) for c in confidence_levels))
     if not all(0.0 < c < 1.0 for c in levels):

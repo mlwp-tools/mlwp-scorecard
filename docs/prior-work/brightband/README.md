@@ -35,9 +35,9 @@ regions and lead times) and `310-*/6717.js` (the colour rule).
   stored value per model × target × variable × metric × region × **initialisation
   time** × lead time. It uses a 0.25° grid with cos(lat) area weighting and WBX
   region bounds.
-- **Truth: each model against its own analysis.** Each model is verified against
-  its own step-0 field. For an ensemble, that's the control member at step 0. The
-  exceptions:
+- **Truth: each model against its own analysis.** A forecast valid at *t* is
+  verified against the step-0 field of the same system's run initialised at *t*.
+  For an ensemble, that's the control member at step 0. The exceptions:
   - WeatherNext 2/3 and climatology are verified against the IFS analysis.
   - Precipitation is always verified against ERA5, because an analysis has no
     accumulated rainfall.
@@ -60,7 +60,8 @@ regions and lead times) and `310-*/6717.js` (the colour rule).
 
   Each model's value pools whatever cycles it has in the window. Nothing restricts
   the pooling to the cases every model has. (The home-page ranking does restrict to
-  12 UTC cycles, for exactly this reason. The scorecard doesn't.)
+  12 UTC cycles, for exactly this reason. The scorecard doesn't.) See *Possible
+  shortcomings* below for what this does to a cell.
 
 ## The API
 
@@ -123,6 +124,62 @@ mid-blue.
 **There is none.** The page and API have no confidence intervals, no significance
 marking and no case counts. A cell at +1.5 % gets the same pale-blue treatment
 whether it rests on 30 cycles or 3.
+
+## Possible shortcomings
+
+Each item below says how it was established.
+
+1. **The models don't share a set of forecast cases** *(from the methodology; not
+   confirmed from the data, because the API returns no case counts)*. The scorecard
+   pools "all initialization times in the selected date window", and models run
+   different cycles. In a 30-day window at day 1, that is up to about 120 cases for
+   IFS-ENS (00/06/12/18 UTC), about 60 for Aurora (00/12 UTC) and about 30 for Atlas
+   (12 UTC). Beyond 144 h, IFS-ENS falls back to its 00/12 UTC runs, and GEFS stops
+   at 10 days. So a cell compares a model with the baseline over different sets of
+   days' weather, with different amounts of noise. The home-page ranking avoids this
+   by ranking only 12 UTC cycles; the scorecard doesn't.
+2. **…and so not at the same times of day** *(follows from 1)*. Lead time and cycle
+   together fix the valid time. At day 1, Atlas is verified only at 12 UTC valid
+   times, while IFS-ENS is averaged over all four synoptic hours. For
+   diurnally-varying fields, especially 2 m temperature, part of the colour can come
+   from which hours were scored, not from model skill.
+3. **The models aren't scored against the same truth** *(stated in the
+   methodology)*. Each model is verified against its own analysis, with the IFS
+   analysis for WeatherNext and climatology, and ERA5 for precipitation. A cell
+   therefore mixes model skill with differences between the verifying analyses.
+   - **What the truth is.** A forecast valid at *t* is verified against the step-0
+     field of the same system's run initialised at *t*, not against its own initial
+     state. So OWB keeps every cycle's step-0 field as a historical series of
+     analyses.
+   - **Where it flatters.** That analysis blends the system's short-range forecast
+     with observations. Where observations are sparse it is mostly the model's own
+     forecast, so errors the model shares with its own data assimilation are partly
+     in the truth and don't count against it. The effect is largest at short lead
+     times.
+   - **How many truths there really are.** The ML models initialised from the IFS
+     analysis (GraphCast, Aurora, Atlas, and probably AIFS) have a step-0 field that
+     is essentially that IFS analysis. So "own analysis" probably reduces to a few
+     actual truths: IFS, GFS/GEFS, and ERA5 for precipitation. This is inferred; the
+     methodology doesn't say it.
+
+   The methodology presents own-analysis verification as the operational convention
+   and a deliberate trade-off.
+4. **No uncertainty and no case count** *(confirmed from the page code and the
+   API)*. Nothing on the card separates a real difference from noise, so 1–3 can't be
+   judged from the card either.
+5. **The ±1 % dead zone hides the differences that matter for mature systems**
+   *(confirmed from module 6717)*. Anything within ±1 % is white. NWP cycle upgrades
+   typically move scores by about that much: the ECMWF 47r1 card's z500 n.hem
+   RMSE improvement at T+24 is 0.96 %, highly significant. On this card it would be
+   blank. That suits comparing very different models, but not closely matched ones.
+6. **The truth grid differs for some models** *(stated in the methodology)*. GEFS
+   upper air is verified against a 0.5° analysis replicated onto 0.25°, which is a
+   smoother truth than everyone else's. The methodology itself warns against
+   over-reading those cells.
+
+Items 1 and 2 could be confirmed with the time-series view (chunk
+`page-0b3fffd74aa12316.js`). Its API is likely to return one value per
+initialisation time, which would give the actual case count per model.
 
 ## Compared with mlwp-scorecards
 

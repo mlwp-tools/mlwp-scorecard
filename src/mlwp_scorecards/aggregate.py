@@ -237,7 +237,9 @@ def aggregate(
     sources = [str(s) for s in da.coords[FORECAST_DIM].values]
     for role, name in (("control", control), ("experiment", experiment)):
         if name not in sources:
-            raise KeyError(f"{role}={name!r} is not in {FORECAST_DIM} (have: {sources})")
+            raise KeyError(
+                f"{role}={name!r} is not in {FORECAST_DIM} (have: {sources})"
+            )
 
     ctl_da = da.sel({FORECAST_DIM: control}, drop=True)
     exp_da = da.sel({FORECAST_DIM: experiment}, drop=True)
@@ -300,10 +302,7 @@ def aggregate(
     n_series = c_flat.shape[0]
 
     widest = levels[-1]
-    out = {
-        k: np.empty(n_series)
-        for k in ("c_lo", "c_hi", "e_lo", "e_hi")
-    }
+    out = {k: np.empty(n_series) for k in ("c_lo", "c_hi", "e_lo", "e_hi")}
     paired_flat = {c: (np.empty(n_series), np.empty(n_series)) for c in levels}
 
     for lo in range(0, n_series, CHUNK):

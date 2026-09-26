@@ -244,7 +244,7 @@ def test_a_produced_name_cannot_be_an_input_dimension(reserved):
 # what the package computes, now that it computes it
 # --------------------------------------------------------------------------- #
 def test_significance_is_reported_at_the_highest_level_that_holds():
-    """"Significant at 99.7%" and "significant at 68%" are different claims.
+    """ "Significant at 99.7%" and "significant at 68%" are different claims.
 
     Two variables with the same gap between the sources but different unshared
     noise: the quiet one clears every level, the noisy one less.

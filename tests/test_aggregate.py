@@ -106,11 +106,12 @@ def test_moving_block_draws_contiguous_runs():
 
 
 def test_iid_and_a_block_of_one_are_the_same_thing():
-    a = resample_indices(
-        30, n_resamples=20, method="iid", rng=np.random.default_rng(7)
-    )
+    a = resample_indices(30, n_resamples=20, method="iid", rng=np.random.default_rng(7))
     b = resample_indices(
-        30, n_resamples=20, method="moving-block", block_length=1,
+        30,
+        n_resamples=20,
+        method="moving-block",
+        block_length=1,
         rng=np.random.default_rng(7),
     )
     assert (a == b).all()
@@ -163,8 +164,12 @@ def test_intervals_nest_with_the_confidence_level():
     )
     assert agg.confidence_levels == (0.68, 0.95, 0.997)
     for lower, upper in zip((0.68, 0.95), (0.95, 0.997)):
-        assert (agg.paired[upper][0].values <= agg.paired[lower][0].values + 1e-12).all()
-        assert (agg.paired[upper][1].values >= agg.paired[lower][1].values - 1e-12).all()
+        assert (
+            agg.paired[upper][0].values <= agg.paired[lower][0].values + 1e-12
+        ).all()
+        assert (
+            agg.paired[upper][1].values >= agg.paired[lower][1].values - 1e-12
+        ).all()
 
 
 def test_the_mean_is_the_plain_mean_over_cases():
@@ -193,7 +198,9 @@ def test_the_same_seed_gives_the_same_interval_and_a_different_one_does_not():
     """`test_determinism` asserts byte-identical HTML, which an OS-seeded RNG
     would break intermittently and in a way that looks like a rendering bug."""
     cube = _cube(_per_case())
-    kw = dict(control="ctl", experiment="exp", n_resamples=200, confidence_levels=(0.95,))
+    kw = dict(
+        control="ctl", experiment="exp", n_resamples=200, confidence_levels=(0.95,)
+    )
     a = aggregate(cube, seed=0, **kw).paired[0.95][0].values
     b = aggregate(cube, seed=0, **kw).paired[0.95][0].values
     c = aggregate(cube, seed=1, **kw).paired[0.95][0].values
@@ -237,4 +244,6 @@ def test_no_case_dimension_means_the_values_are_already_means():
     assert agg.paired == {}
     assert agg.confidence_levels == ()
     assert agg.control_lower is None
-    assert any("already-collapsed means" in w for w in cube.report.warnings), cube.report
+    assert any(
+        "already-collapsed means" in w for w in cube.report.warnings
+    ), cube.report

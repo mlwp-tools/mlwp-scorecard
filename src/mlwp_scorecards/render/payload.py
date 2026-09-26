@@ -1,7 +1,7 @@
 """Compact drill-down payload for the interactive HTML page.
 
 Clicking a cell shows two charts, which need numbers the table itself does not
-carry: the control and experiment series with their confidence intervals. That is
+carry: the baseline and forecast series with their confidence intervals. That is
 ~8 arrays per cell, and on a full-size card it is the single largest thing on the
 page -- 3.2 MB of the reference implementation's 7.4 MB is exactly this, stored as
 a raw JSON literal at full float precision.
@@ -32,12 +32,12 @@ __all__ = ["build_payload", "pack", "payload_for"]
 
 #: Short keys: this repeats once per cell, so the names matter.
 _SERIES = (
-    ("c", "control"),
-    ("cl", "control_lower"),
-    ("cu", "control_upper"),
-    ("e", "experiment"),
-    ("el", "experiment_lower"),
-    ("eu", "experiment_upper"),
+    ("c", "baseline"),
+    ("cl", "baseline_lower"),
+    ("cu", "baseline_upper"),
+    ("e", "forecast"),
+    ("el", "forecast_lower"),
+    ("eu", "forecast_upper"),
     ("d", "relative"),
     # the paired difference in the metric's own units, with its interval
     ("v", "value"),
@@ -76,6 +76,10 @@ def build_payload(layout: Layout, *, precision: int = 4) -> dict:
             "u": cell.units or "",
             "m": cell.metric,
         }
+        # Only when rows differ in source: with one, the page-level name covers
+        # every cell and repeating it per cell would only grow the payload.
+        if len(layout.forecast_sources) > 1:
+            entry["s"] = cell.forecast_source
         for short, attr in _SERIES:
             values = [getattr(s, attr) for s in cell.steps]
             if all(v is None for v in values):
@@ -86,8 +90,9 @@ def build_payload(layout: Layout, *, precision: int = 4) -> dict:
     return {
         "lead": list(layout.lead_times),
         "labels": list(layout.lead_labels),
-        "control": layout.control,
-        "experiment": layout.experiment,
+        # Keys kept from the two-source card so its page stays byte-identical.
+        "control": layout.baseline_source,
+        "experiment": layout.forecast_label,
         "confidence": layout.confidence,
         "cells": cells,
     }

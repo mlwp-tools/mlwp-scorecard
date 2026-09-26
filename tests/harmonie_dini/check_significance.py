@@ -28,8 +28,8 @@ def main() -> None:
     def card(truth: str):
         return build_layout(
             ds,
-            control="aifs",
-            experiment="harmonie-arome",
+            baseline_source="aifs",
+            forecast_source="harmonie-arome",
             rows=["truth_source", "variable"],
             columns=["metric"],
             truth_source=truth,
@@ -54,8 +54,8 @@ def main() -> None:
             paired = s.value_upper - s.value_lower
             # independent: add the two half-widths in quadrature
             naive = 2 * np.hypot(
-                (s.control_upper - s.control_lower) / 2,
-                (s.experiment_upper - s.experiment_lower) / 2,
+                (s.baseline_upper - s.baseline_lower) / 2,
+                (s.forecast_upper - s.forecast_lower) / 2,
             )
             print(
                 f"  {var:<16} {s.lead_time:>4.0f}h {paired:>10.4g} {naive:>10.4g} "

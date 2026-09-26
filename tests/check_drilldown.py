@@ -27,8 +27,8 @@ def main() -> None:
     OUT.mkdir(exist_ok=True)
     ds = make_verification_dataset(n_case=80, n_boot=200, drift=0.25)
     kwargs = dict(
-        control="persistence",
-        experiment="drifting-persistence",
+        baseline_source="persistence",
+        forecast_source="drifting-persistence",
         rows=["truth_source", "variable", "level"],
         columns=["spatial_region", "metric"],
         title="drifting-persistence vs persistence",
@@ -61,15 +61,15 @@ def main() -> None:
     first = payload["cells"][0]
     print(f"\nfirst cell: {first['t']}  [{first['m']}, {first['u']}]")
     print(f"  lead     {payload['labels']}")
-    for key, label in (("c", "control"), ("e", "experiment"), ("d", "difference")):
+    for key, label in (("c", "baseline"), ("e", "forecast"), ("d", "difference")):
         if key in first:
             vals = [f"{v:.4g}" if v is not None else "--" for v in first[key]]
             print(f"  {label:<10} {vals}")
     for key, label in (
-        ("cl", "control lo"),
-        ("cu", "control hi"),
-        ("el", "experiment lo"),
-        ("eu", "experiment hi"),
+        ("cl", "baseline lo"),
+        ("cu", "baseline hi"),
+        ("el", "forecast lo"),
+        ("eu", "forecast hi"),
     ):
         if key in first:
             print(f"  {label:<13} present")

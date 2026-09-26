@@ -1,8 +1,8 @@
 """Render the HARMONIE-AROME vs AIFS scorecard.
 
 A limited-area physics model against a global data-driven one, both scored against
-the same analysis. Which source is control and which is experiment is an argument,
-not something baked into the data.
+the same analysis. Which source is the baseline and which the forecast source is
+an argument, not something baked into the data.
 
 With no spatial regions and no pressure levels this is the simplest card shape:
 one grouping on each axis, variable by metric, lead time inside the cell.
@@ -24,7 +24,7 @@ PAIRS = {
 }
 
 
-def render(ds: xr.Dataset, name: str, control: str, experiment: str, scheme: str):
+def render(ds: xr.Dataset, name: str, baseline: str, forecast: str, scheme: str):
     """Render one pairwise card in all three formats."""
     leads = ds["lead_time"].values / np.timedelta64(1, "h")
     n_init = ds.attrs.get("n_initialisations", "?")
@@ -34,11 +34,11 @@ def render(ds: xr.Dataset, name: str, control: str, experiment: str, scheme: str
         cell="lead_time",
     )
     kwargs = dict(
-        control=control,
-        experiment=experiment,
+        baseline_source=baseline,
+        forecast_source=forecast,
         scheme=scheme,
         **axes,
-        title=f"{experiment} vs {control}",
+        title=f"{forecast} vs {baseline}",
         subtitle=(
             f"{n_init} initialisations, 2026-09-04 to 09-05, lead times "
             f"+{leads[0]:.0f} h to +{leads[-1]:.0f} h. Verified twice: against the "
@@ -48,15 +48,17 @@ def render(ds: xr.Dataset, name: str, control: str, experiment: str, scheme: str
     )
     outputs = [OUT / f"{name}.{ext}" for ext in ("html", "png", "pdf")]
     written = make_scorecard(ds, outputs, **kwargs)
-    layout = build_layout(ds, control=control, experiment=experiment, **axes)
+    layout = build_layout(
+        ds, baseline_source=baseline, forecast_source=forecast, **axes
+    )
 
     print(f"\n{name}: {layout.stats.n_rows} rows x {layout.stats.n_cols} columns")
     for p in written:
         print(f"  wrote {p.name}  {p.stat().st_size / 1024:.0f} kB")
 
     # `Step.relative` is oriented by polarity: positive always means the
-    # experiment is better, whichever direction of the raw metric that is.
-    print(f"  % better than {control}, by lead time")
+    # forecast source is better, whichever direction of the raw metric that is.
+    print(f"  % better than {baseline}, by lead time")
     print("    " + " " * 26 + "".join(f"{h:>7.0f}h" for h in leads))
     for r, _, cell in layout.iter_cells():
         var = layout.rows[r].key[-1]
@@ -79,8 +81,8 @@ def main() -> None:
     ds = xr.open_zarr(OUT / "verification.zarr")
     names = list(PAIRS) if args.pair == "all" else [args.pair]
     for name in names:
-        control, experiment = PAIRS[name]
-        render(ds, name, control, experiment, args.scheme)
+        baseline, forecast = PAIRS[name]
+        render(ds, name, baseline, forecast, args.scheme)
 
     print("\ncaveats carried in the dataset attributes:")
     for k, v in sorted(ds.attrs.items()):

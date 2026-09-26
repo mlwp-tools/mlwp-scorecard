@@ -32,13 +32,13 @@ def summary():
     return xr.open_zarr(OUT / "verification.zarr")
 
 
-def card(summary, control: str, experiment: str, levels=CONFIDENCE_LEVELS):
+def card(summary, baseline: str, forecast: str, levels=CONFIDENCE_LEVELS):
     from mlwp_scorecards import build_layout
 
     return build_layout(
         summary,
-        control=control,
-        experiment=experiment,
+        baseline_source=baseline,
+        forecast_source=forecast,
         rows=["truth_source", "variable"],
         columns=["metric"],
         cell="lead_time",
@@ -174,12 +174,10 @@ def test_confidence_intervals_bracket_the_mean(summary):
     lay = card(summary, "aifs", "harmonie-arome")
     for _, _, cell in lay.iter_cells():
         for s in cell.steps:
-            if s.control is None or s.control_lower is None:
+            if s.baseline is None or s.baseline_lower is None:
                 continue
-            assert s.control_lower <= s.control <= s.control_upper, cell.cell_id
-            assert (
-                s.experiment_lower <= s.experiment <= s.experiment_upper
-            ), cell.cell_id
+            assert s.baseline_lower <= s.baseline <= s.baseline_upper, cell.cell_id
+            assert s.forecast_lower <= s.forecast <= s.forecast_upper, cell.cell_id
 
 
 def test_intervals_nest_with_the_confidence_level(summary):
@@ -248,7 +246,7 @@ def test_mslp_favours_aifs_at_long_lead(summary):
     assert cell.steps[-1].relative < 0, "AIFS should lead by +36 h"
 
 
-def test_swapping_control_and_experiment_flips_the_card(summary):
+def test_swapping_baseline_and_forecast_source_flips_the_card(summary):
     """Roles are arguments, so the reverse card must be the mirror image."""
     a = card(summary, "aifs", "harmonie-arome")
     b = card(summary, "harmonie-arome", "aifs")
@@ -320,8 +318,8 @@ def test_renders_both_formats(summary, tmp_path):
     outs = make_scorecard(
         summary,
         [tmp_path / "c.html", tmp_path / "c.png"],
-        control="aifs",
-        experiment="harmonie-arome",
+        baseline_source="aifs",
+        forecast_source="harmonie-arome",
         rows=["truth_source", "variable"],
         columns=["metric"],
         cell="lead_time",

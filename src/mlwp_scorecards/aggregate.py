@@ -9,12 +9,14 @@ standard error. That is what happens here.
 
 Two things make the result honest rather than merely computed:
 
-**The resample is drawn once and shared.** Both sources are scored on the same
-weather, so most of their error is common and cancels when the difference is
-taken per case. Within each replicate the two are compared on the same cases, so
-``boot(experiment) - boot(control)`` *is* the paired bootstrap — measured 0.9x to
-3.1x tighter than treating the two as independent, and the only thing that can
-decide significance.
+**The resample is drawn once and shared.** Every forecast source and the
+baseline are scored on the same weather, so most of their error is common and
+cancels when the difference is taken per case. Within each replicate they are
+compared on the same cases, so ``boot(forecast) - boot(baseline)`` *is* the
+paired bootstrap — measured 0.9x to 3.1x tighter than treating the two as
+independent, and the only thing that can decide significance. Sharing one
+resample across several forecast sources also keeps their rows consistent with
+one another.
 
 **Consecutive forecasts share a weather system.** An iid resample over cases
 treats them as independent and badly overstates certainty: on AR(1) synthetic
@@ -35,7 +37,14 @@ import xarray as xr
 
 from .ingest import CASE_DIM, FORECAST_DIM, PreparedCube, ValidationReport
 
-__all__ = ["Aggregated", "aggregate", "resample_indices", "bootstrap_mean"]
+__all__ = [
+    "Aggregated",
+    "aggregate",
+    "resample_indices",
+    "bootstrap_mean",
+    "normalise_sources",
+    "CASE_POLICIES",
+]
 
 #: Boxes per chunk when bootstrapping. The working set is
 #: ``chunk * n_resamples * 8`` bytes per array, so 4000 keeps a full-size card
@@ -50,33 +59,46 @@ BLOCK_TARGET = np.timedelta64(10, "D")
 
 METHODS = ("moving-block", "iid")
 
+#: Which forecast cases a comparison rests on. ``common``: those every selected
+#: source *and* the baseline scored, so rows answer the same question.
+#: ``pairwise``: those each forecast source shares with the baseline, so each row
+#: uses as much data as it can but rows are no longer comparable with each other.
+CASE_POLICIES = ("common", "pairwise")
+
 
 @dataclass(frozen=True, slots=True)
 class Aggregated:
-    """One pair of sources, collapsed over cases and ready to lay out.
+    """Forecast sources against a baseline, collapsed over cases, ready to lay out.
 
     Every array here is derived from the same stacked cube by a reduction along
     ``init_time`` alone, so they share coordinate objects rather than merely
     comparing equal. The layout engine indexes them positionally against one
     another and that is what makes it safe.
+
+    Every array carries a ``forecast_source`` dimension, one entry per forecast
+    source -- :attr:`baseline` included, because under ``cases="pairwise"`` the
+    baseline's mean is taken over a different set of cases for each of them.
     """
 
-    control: xr.DataArray
-    experiment: xr.DataArray
+    baseline: xr.DataArray
+    forecast: xr.DataArray
     #: Each source's own interval, at the widest confidence level. For the
     #: drill-down chart only -- it is far wider than the paired interval below
     #: and cannot decide significance.
-    control_lower: xr.DataArray | None
-    control_upper: xr.DataArray | None
-    experiment_lower: xr.DataArray | None
-    experiment_upper: xr.DataArray | None
+    baseline_lower: xr.DataArray | None
+    baseline_upper: xr.DataArray | None
+    forecast_lower: xr.DataArray | None
+    forecast_upper: xr.DataArray | None
     #: The paired difference interval, one entry per confidence level.
     paired: dict[float, tuple[xr.DataArray, xr.DataArray]]
-    #: Forecast cases behind each cell: those where *both* sources scored, which
-    #: is the sample the interval actually rests on. None when the input supplied
-    #: no count and there are no cases to count.
+    #: Forecast cases behind each cell: those the comparison is paired on (see
+    #: :data:`CASE_POLICIES`), which is the sample the interval actually rests
+    #: on. None when the input supplied no count and there are no cases to count.
     counts: xr.DataArray | None
     confidence_levels: tuple[float, ...]
+    baseline_source: str = ""
+    forecast_sources: tuple[str, ...] = ()
+    cases: str = "common"
     #: How the interval was produced. Carried to the card, because a
     #: significance claim cannot be checked without it.
     method: str = "moving-block"
@@ -89,6 +111,37 @@ class Aggregated:
         return bool(self.paired)
 
 
+def normalise_sources(
+    forecast_source: str | Sequence[str], baseline_source: str | None
+) -> tuple[str, ...]:
+    """Validate the source selection and return the forecast sources as a tuple.
+
+    Raises
+    ------
+    ValueError
+        If no forecast source is given, one is repeated, or the baseline is also
+        one of the forecast sources. The baseline is the reference every row is
+        differenced against, never a row of its own.
+    """
+    sources = (
+        (forecast_source,)
+        if isinstance(forecast_source, str)
+        else tuple(str(s) for s in forecast_source)
+    )
+    if not sources:
+        raise ValueError("forecast_source= names no sources")
+    dupes = sorted({s for s in sources if sources.count(s) > 1})
+    if dupes:
+        raise ValueError(f"forecast_source= repeats {dupes}")
+    if baseline_source is not None and baseline_source in sources:
+        raise ValueError(
+            f"baseline_source={baseline_source!r} is also in forecast_source=; the "
+            f"baseline is what every forecast source is compared against, so it "
+            f"cannot also be one of them"
+        )
+    return sources
+
+
 def resample_indices(
     n_case: int,
     *,
@@ -99,7 +152,7 @@ def resample_indices(
 ) -> np.ndarray:
     """Case indices for each replicate, ``(n_resamples, n_case)``.
 
-    Drawn **once** by the caller and reused for both sources; that sharing is
+    Drawn **once** by the caller and reused for every source; that sharing is
     what makes the difference interval a paired one.
     """
     if method not in METHODS:
@@ -195,8 +248,9 @@ def derive_block_length(cases: np.ndarray, report: ValidationReport) -> int:
 def aggregate(
     cube: PreparedCube,
     *,
-    control: str,
-    experiment: str,
+    forecast_source: str | Sequence[str],
+    baseline_source: str,
+    cases: str = "common",
     subset: Mapping[str, Any] | None = None,
     bootstrap: str = "moving-block",
     block_length: int | None = None,
@@ -204,14 +258,20 @@ def aggregate(
     confidence_levels: Sequence[float] = (0.68, 0.95, 0.997),
     seed: int | np.random.Generator = 0,
 ) -> Aggregated:
-    """Collapse a per-case cube over its forecast cases, for one pair of sources.
+    """Collapse a per-case cube over its forecast cases, against a baseline.
 
     Parameters
     ----------
     cube : PreparedCube
         From :func:`~mlwp_scorecards.ingest.prepare`.
-    control, experiment : str
-        Members of ``forecast_source``. The card colours ``experiment - control``.
+    forecast_source : str or sequence of str
+        Members of ``forecast_source`` to compare with the baseline.
+    baseline_source : str
+        The member every one of them is differenced against: the card colours
+        ``forecast - baseline``.
+    cases : {"common", "pairwise"}, optional
+        Which forecast cases each comparison rests on; see :data:`CASE_POLICIES`.
+        The two agree when there is one forecast source.
     subset : mapping, optional
         Coordinate subsetting, applied **before** the resample rather than after:
         resampling data that is then discarded would be both wasteful and wrong.
@@ -227,6 +287,9 @@ def aggregate(
     """
     report = cube.report
     da = cube.score
+    sources = normalise_sources(forecast_source, baseline_source)
+    if cases not in CASE_POLICIES:
+        raise ValueError(f"cases must be one of {CASE_POLICIES}, got {cases!r}")
 
     if subset:
         sel = {k: (v if isinstance(v, list) else [v]) for k, v in subset.items()}
@@ -234,21 +297,32 @@ def aggregate(
 
     if FORECAST_DIM not in da.dims:
         raise KeyError(f"{FORECAST_DIM!r} is not a dimension of the dataset")
-    sources = [str(s) for s in da.coords[FORECAST_DIM].values]
-    for role, name in (("control", control), ("experiment", experiment)):
-        if name not in sources:
-            raise KeyError(
-                f"{role}={name!r} is not in {FORECAST_DIM} (have: {sources})"
-            )
+    have = [str(s) for s in da.coords[FORECAST_DIM].values]
+    wanted = [("baseline_source", baseline_source)]
+    wanted += [("forecast_source", s) for s in sources]
+    for role, name in wanted:
+        if name not in have:
+            raise KeyError(f"{role}={name!r} is not in {FORECAST_DIM} (have: {have})")
 
-    ctl_da = da.sel({FORECAST_DIM: control}, drop=True)
-    exp_da = da.sel({FORECAST_DIM: experiment}, drop=True)
-    # Pair the sources before anything is averaged: a case either one lacks is
-    # dropped from both. Otherwise each mean is taken over that source's own
-    # cases, the difference compares different weather, and a card can show a
-    # confidently significant difference the paired data does not contain.
-    both = np.isfinite(ctl_da) & np.isfinite(exp_da)
-    ctl_da, exp_da = ctl_da.where(both), exp_da.where(both)
+    fc_da = da.sel({FORECAST_DIM: list(sources)})
+    base_da = da.sel({FORECAST_DIM: baseline_source}, drop=True)
+    # Pair the sources before anything is averaged: a case the baseline or the
+    # forecast source lacks is dropped from both. Otherwise each mean is taken
+    # over that source's own cases, the difference compares different weather,
+    # and a card can show a confidently significant difference the paired data
+    # does not contain. Under "common", a case any one source lacks is dropped
+    # from all of them.
+    ok = np.isfinite(fc_da) & np.isfinite(base_da)
+    if cases == "common":
+        ok = ok.all(FORECAST_DIM)
+    fc_da = fc_da.where(ok)
+    # The baseline gets a forecast_source dimension of its own: under "pairwise"
+    # it is masked differently for each forecast source.
+    base_da, fc_da = xr.broadcast(base_da.where(ok), fc_da)
+    base_da = base_da.transpose(*fc_da.dims)
+    provenance = dict(
+        baseline_source=baseline_source, forecast_sources=sources, cases=cases
+    )
 
     levels = tuple(sorted(float(c) for c in confidence_levels))
     if not all(0.0 < c < 1.0 for c in levels):
@@ -263,17 +337,18 @@ def aggregate(
             f"no {CASE_DIM!r} dimension: values are read as already-collapsed "
             f"means, with no interval and nothing marked significant"
         )
-        empty = xr.full_like(ctl_da, np.nan)
+        empty = xr.full_like(base_da, np.nan)
         return Aggregated(
-            control=ctl_da,
-            experiment=exp_da,
-            control_lower=None,
-            control_upper=None,
-            experiment_lower=None,
-            experiment_upper=None,
+            baseline=base_da,
+            forecast=fc_da,
+            baseline_lower=None,
+            baseline_upper=None,
+            forecast_lower=None,
+            forecast_upper=None,
             paired={},
             counts=empty,
             confidence_levels=(),
+            **provenance,
         )
 
     if isinstance(seed, np.random.Generator):
@@ -281,10 +356,10 @@ def aggregate(
     else:
         rng, seed_out = np.random.default_rng(seed), int(seed)
 
-    cases = da.coords[CASE_DIM].values
-    n_case = len(cases)
+    case_times = da.coords[CASE_DIM].values
+    n_case = len(case_times)
     block = (
-        derive_block_length(cases, report)
+        derive_block_length(case_times, report)
         if block_length is None and bootstrap == "moving-block"
         else max(1, int(block_length or 1))
     )
@@ -298,32 +373,32 @@ def aggregate(
     weights = _weights(idx, n_case)
 
     # Flatten to (series, case) so the bootstrap is one matmul per chunk.
-    ctl_da = ctl_da.transpose(..., CASE_DIM)
-    exp_da = exp_da.transpose(..., CASE_DIM)
-    shape = ctl_da.shape[:-1]
-    dims = ctl_da.dims[:-1]
-    coords = {d: ctl_da.coords[d] for d in dims if d in ctl_da.coords}
-    c_flat = ctl_da.values.reshape(-1, n_case)
-    e_flat = exp_da.values.reshape(-1, n_case)
-    n_series = c_flat.shape[0]
+    base_da = base_da.transpose(..., CASE_DIM)
+    fc_da = fc_da.transpose(..., CASE_DIM)
+    shape = base_da.shape[:-1]
+    dims = base_da.dims[:-1]
+    coords = {d: base_da.coords[d] for d in dims if d in base_da.coords}
+    b_flat = base_da.values.reshape(-1, n_case)
+    f_flat = fc_da.values.reshape(-1, n_case)
+    n_series = b_flat.shape[0]
 
     widest = levels[-1]
-    out = {k: np.empty(n_series) for k in ("c_lo", "c_hi", "e_lo", "e_hi")}
+    out = {k: np.empty(n_series) for k in ("b_lo", "b_hi", "f_lo", "f_hi")}
     paired_flat = {c: (np.empty(n_series), np.empty(n_series)) for c in levels}
 
     for lo in range(0, n_series, CHUNK):
         hi = min(lo + CHUNK, n_series)
-        c_boot = bootstrap_mean(c_flat[lo:hi], weights)
-        e_boot = bootstrap_mean(e_flat[lo:hi], weights)
+        b_boot = bootstrap_mean(b_flat[lo:hi], weights)
+        f_boot = bootstrap_mean(f_flat[lo:hi], weights)
         # The paired difference shares the resample, so this subtraction *is* the
         # paired bootstrap. It is not the same as differencing two independent
         # ones, which would be far wider and quite wrong.
-        d_boot = e_boot - c_boot
+        d_boot = f_boot - b_boot
 
-        cb = _percentile_bounds(c_boot, [widest])[widest]
-        eb = _percentile_bounds(e_boot, [widest])[widest]
-        out["c_lo"][lo:hi], out["c_hi"][lo:hi] = cb
-        out["e_lo"][lo:hi], out["e_hi"][lo:hi] = eb
+        bb = _percentile_bounds(b_boot, [widest])[widest]
+        fb = _percentile_bounds(f_boot, [widest])[widest]
+        out["b_lo"][lo:hi], out["b_hi"][lo:hi] = bb
+        out["f_lo"][lo:hi], out["f_hi"][lo:hi] = fb
         for c, (dlo, dhi) in _percentile_bounds(d_boot, levels).items():
             paired_flat[c][0][lo:hi] = dlo
             paired_flat[c][1][lo:hi] = dhi
@@ -332,19 +407,19 @@ def aggregate(
         return xr.DataArray(flat.reshape(shape), dims=dims, coords=coords)
 
     with np.errstate(invalid="ignore"):
-        mean_c = ctl_da.mean(CASE_DIM, skipna=True)
-        mean_e = exp_da.mean(CASE_DIM, skipna=True)
-    # Cases where *both* sources scored: the sample the interval rests on.
-    counts = np.isfinite(ctl_da) & np.isfinite(exp_da)
-    counts = counts.sum(CASE_DIM)
+        mean_b = base_da.mean(CASE_DIM, skipna=True)
+        mean_f = fc_da.mean(CASE_DIM, skipna=True)
+    # The cases each comparison is paired on: after the masking above, a forecast
+    # value is finite exactly where its pair is.
+    counts = np.isfinite(fc_da).sum(CASE_DIM)
 
     return Aggregated(
-        control=mean_c,
-        experiment=mean_e,
-        control_lower=_wrap(out["c_lo"]),
-        control_upper=_wrap(out["c_hi"]),
-        experiment_lower=_wrap(out["e_lo"]),
-        experiment_upper=_wrap(out["e_hi"]),
+        baseline=mean_b,
+        forecast=mean_f,
+        baseline_lower=_wrap(out["b_lo"]),
+        baseline_upper=_wrap(out["b_hi"]),
+        forecast_lower=_wrap(out["f_lo"]),
+        forecast_upper=_wrap(out["f_hi"]),
         paired={c: (_wrap(v[0]), _wrap(v[1])) for c, v in paired_flat.items()},
         counts=counts,
         confidence_levels=levels,
@@ -352,4 +427,5 @@ def aggregate(
         block_length=block,
         n_resamples=n_resamples,
         seed=seed_out,
+        **provenance,
     )

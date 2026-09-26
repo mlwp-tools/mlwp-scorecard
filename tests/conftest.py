@@ -1,8 +1,8 @@
 """Shared fixtures.
 
 The synthetic data is built in :mod:`synthetic`: a toy gridded reanalysis, scored
-against persistence (control) and persistence-plus-a-random-walk (experiment). The
-expected answer is therefore known in advance — the experiment must be worse, and
+against persistence (baseline) and persistence-plus-a-random-walk (forecast source).
+The expected answer is therefore known in advance — the forecast source must be worse, and
 increasingly so with lead time — which is what makes these tests meaningful rather
 than merely self-consistent.
 """
@@ -35,8 +35,8 @@ def layout(verification):
 
     return build_layout(
         verification,
-        control="persistence",
-        experiment="drifting-persistence",
+        baseline_source="persistence",
+        forecast_source="drifting-persistence",
         rows=ROWS,
         columns=COLUMNS,
         title="test card",

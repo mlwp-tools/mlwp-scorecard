@@ -48,8 +48,8 @@ def main() -> None:
     ds = make_verification_dataset(n_case=60, n_boot=200, drift=0.25)
     layout = build_layout(
         ds,
-        control="persistence",
-        experiment="drifting-persistence",
+        baseline_source="persistence",
+        forecast_source="drifting-persistence",
         rows=["truth_source", "variable", "level"],
         columns=["spatial_region", "metric"],
     )

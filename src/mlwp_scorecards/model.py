@@ -55,12 +55,12 @@ class Step:
     lead_time: float
     value: float | None
     relative: float | None
-    control: float | None
-    experiment: float | None
-    control_lower: float | None
-    control_upper: float | None
-    experiment_lower: float | None
-    experiment_upper: float | None
+    baseline: float | None
+    forecast: float | None
+    baseline_lower: float | None
+    baseline_upper: float | None
+    forecast_lower: float | None
+    forecast_upper: float | None
     #: The *paired* difference interval. Not derivable from the two marginals
     #: above: both sources are scored on the same cases, so their errors are
     #: correlated and this is much tighter. It is what decides significance.
@@ -84,7 +84,7 @@ class Step:
     @property
     def has_intervals(self) -> bool:
         """Whether either source carries a confidence interval."""
-        return self.control_lower is not None or self.experiment_lower is not None
+        return self.baseline_lower is not None or self.forecast_lower is not None
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,6 +99,9 @@ class Cell:
     metric: str
     units: str | None
     steps: tuple[Step, ...]
+    #: The forecast source this cell compares with the baseline. Explicit rather
+    #: than left in a row or column key, so a renderer never has to find it there.
+    forecast_source: str = ""
 
     @property
     def has_data(self) -> bool:
@@ -140,8 +143,10 @@ class Layout:
     stats: LayoutStats
     title: str = ""
     subtitle: str = ""
-    control: str = ""
-    experiment: str = ""
+    baseline_source: str = ""
+    forecast_sources: tuple[str, ...] = ()
+    #: Which forecast cases each comparison rests on: ``common`` or ``pairwise``.
+    cases: str = "common"
     #: Every confidence level the data supplied, ascending.
     confidence_levels: tuple[float, ...] = field(default_factory=tuple)
     #: How the intervals were produced. On the card, not only in a docstring: a
@@ -162,6 +167,14 @@ class Layout:
         reader sees should not be narrower than the evidence for it.
         """
         return max(self.confidence_levels) if self.confidence_levels else None
+
+    @property
+    def forecast_label(self) -> str:
+        """What the legend calls the compared side: the source's name, or, when
+        each row or column is a different source, a phrase saying so."""
+        if len(self.forecast_sources) == 1:
+            return self.forecast_sources[0]
+        return "each forecast source"
 
     # ---- shape -------------------------------------------------------------
     @property

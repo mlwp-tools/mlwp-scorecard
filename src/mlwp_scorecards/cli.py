@@ -28,15 +28,36 @@ def build_parser() -> argparse.ArgumentParser:
         prog="mlwp.make_scorecard",
         description=(
             "Render a weather forecasting scorecard from pre-computed verification "
-            "statistics. Compares two prediction sources scored against a common truth."
+            "statistics. Compares forecast sources with a baseline source, all "
+            "scored against a common truth."
         ),
     )
     p.add_argument(
         "dataset",
         help=f"verification summary ({', '.join(sorted(_INPUT_SUFFIXES))})",
     )
-    p.add_argument("--control", required=True, help="baseline prediction source")
-    p.add_argument("--experiment", required=True, help="prediction source under test")
+    p.add_argument(
+        "--forecast-source",
+        action="append",
+        required=True,
+        metavar="NAME",
+        help="forecast source to compare with the baseline; repeatable",
+    )
+    p.add_argument(
+        "--baseline-source",
+        required=True,
+        metavar="NAME",
+        help="the source every forecast source is compared with",
+    )
+    p.add_argument(
+        "--cases",
+        default="common",
+        choices=("common", "pairwise"),
+        help=(
+            "forecast cases each comparison rests on: those every source scored "
+            "(common, the default), or those each shares with the baseline"
+        ),
+    )
     p.add_argument(
         "-o",
         "--output",
@@ -151,8 +172,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     layout, report = build_layout(
         ds,
-        control=args.control,
-        experiment=args.experiment,
+        forecast_source=args.forecast_source,
+        baseline_source=args.baseline_source,
+        cases=args.cases,
         rows=_split(args.rows),
         columns=_split(args.columns),
         cell=args.cell,

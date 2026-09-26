@@ -9,9 +9,9 @@ and nobody reads thousands of line plots. A scorecard puts them on one page you 
 in a minute, so a net improvement, an isolated regression, and the difference between
 a real effect and sampling noise are all visible at once.
 
-It compares **two forecast sources, each already scored against a common truth
-source**, and colours the *difference between their scores*. "Better" means better
-than the other forecast source, not better than truth.
+It compares **one or more forecast sources with a baseline source, all already
+scored against a common truth source**, and colours the *paired difference between
+their scores*. "Better" means better than the baseline, not better than truth.
 
 This package does no scoring: metrics are computed upstream, where the fields
 are. It takes one score per forecast case and performs the collapse over those
@@ -37,8 +37,8 @@ ds = xr.open_dataset("verification_summary.nc")
 make_scorecard(
     ds,
     ["scorecard.html", "scorecard.png"],
-    control="IFS-HRES",
-    experiment="GraphCast",
+    forecast_source="GraphCast",
+    baseline_source="IFS-HRES",
     title="GraphCast vs IFS HRES",
 )
 ```
@@ -48,22 +48,54 @@ Rows and columns are inferred from the dataset, or named explicitly:
 ```python
 make_scorecard(
     ds, "scorecard.html",
-    control="IFS-HRES", experiment="GraphCast",
+    forecast_source="GraphCast", baseline_source="IFS-HRES",
     rows=["truth_source", "variable", "level"],
     columns=["spatial_region", "metric"],
     cell="lead_time",
 )
 ```
 
-The same file yields another card by naming a different pair, so which source is
-truth, control or experiment is an argument rather than something baked into the data.
+The same file yields another card by naming different sources, so which source is
+truth, baseline or forecast is an argument rather than something baked into the data.
+
+### Several forecast sources against one baseline
+
+Give `forecast_source` a list and it becomes a layout axis — outermost on the rows
+unless you place it — with one block of rows per source, each compared with the
+baseline:
+
+```python
+make_scorecard(
+    ds, "scorecard.html",
+    forecast_source=["GraphCast", "AIFS", "Aurora"], baseline_source="IFS-HRES",
+    rows=["forecast_source", "variable", "level"],
+    columns=["metric"],
+    truth_source="analysis",
+)
+```
+
+Every row is exactly the two-source card for that source: the resample is shared
+by all of them, so the rows are consistent with one another. The baseline may not
+also be one of the forecast sources.
+
+`cases=` says which forecast cases each comparison rests on, and the card says
+which was used:
+
+- `"common"` (the default): only the cases **every** selected source and the
+  baseline scored. Rows are comparable with one another, but a source that runs
+  one cycle a day cuts the case count for all of them.
+- `"pairwise"`: the cases each forecast source shares with the baseline. Each row
+  uses as much data as it can, but the rows no longer rest on the same weather and
+  should not be ranked against one another.
+
+With one forecast source the two are the same.
 
 There is no configuration object to build: coordinate names, source names and output
 paths are all the API has.
 
 ```bash
 mlwp.make_scorecard verification_summary.nc \
-    --control IFS-HRES --experiment GraphCast \
+    --forecast-source GraphCast --baseline-source IFS-HRES \
     -o scorecard.html -o scorecard.png
 ```
 
@@ -127,7 +159,7 @@ it happens upstream, and the dataset above is its output.
 sample: N weather situations drawn from the population of possible ones. **The
 package does this one**, because doing it well requires the per-case numbers:
 
-- the two sources are compared on the *same* cases, so the difference is taken
+- the sources are compared on the *same* cases, so the difference is taken
   per case and one resample is shared between them. Their common error then
   cancels instead of adding — measured 1.0x to 3.1x tighter than treating them as
   independent, and the only thing that can decide significance;
@@ -136,7 +168,8 @@ package does this one**, because doing it well requires the per-case numbers:
 Both choices are arguments, and both are printed on the card:
 
 ```python
-make_scorecard(ds, "scorecard.html", control="IFS-HRES", experiment="GraphCast",
+make_scorecard(ds, "scorecard.html",
+               forecast_source="GraphCast", baseline_source="IFS-HRES",
                bootstrap="moving-block",   # or "iid"
                block_length=None,          # in CASES; derived from the cadence
                n_resamples=2000,
@@ -163,7 +196,8 @@ Data variables:
 ```
 
 ```python
-make_scorecard(ds, "scorecard.html", control="IFS-HRES", experiment="GraphCast")
+make_scorecard(ds, "scorecard.html",
+               forecast_source="GraphCast", baseline_source="IFS-HRES")
 ```
 
 `truth_source`, `level` and `spatial_region` are all absent, so the inferred
@@ -184,12 +218,13 @@ nothing else supplies it.
 
 ### Which names mean something
 
-Four dimension names are reserved. The package consumes them; they never become
-rows or columns.
+Four dimension names are reserved. The package consumes them, and none becomes a
+row or column unless you put it there — which only `forecast_source` allows, and
+only when there are several forecast sources.
 
 | Name | Required | What it does |
 |---|---|---|
-| `forecast_source` | yes | The sources being compared. Collapsed by differencing: the card shows `experiment - control`, both named at call time. |
+| `forecast_source` | yes | The sources being compared, named at call time as `forecast_source=` and `baseline_source=`. The card shows `forecast - baseline`. With one forecast source the dimension is collapsed by differencing; with several it is laid out like any other axis. |
 | `init_time` | no | The forecast cases. Collapsed by the bootstrap, which is where the intervals and the significance come from. Absent, the values are read as already-collapsed means. |
 | `variable`, `metric` | never | **Produced** by splitting the `{metric}.{variable}` names. Supplying either as an input dimension is an error. |
 
@@ -203,7 +238,7 @@ dimension the package has never heard of behaves exactly the same way:
 # season and threshold are not special; they are just axes
 make_scorecard(
     ds, "scorecard.html",
-    control="IFS-HRES", experiment="GraphCast",
+    forecast_source="GraphCast", baseline_source="IFS-HRES",
     rows=["season", "variable"],
     columns=["threshold", "metric"],
 )

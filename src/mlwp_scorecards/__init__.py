@@ -1,7 +1,8 @@
 """Weather forecasting scorecards from pre-computed verification statistics.
 
-A scorecard compares two prediction sources, each already scored against a common
-truth source, and colours the difference between their scores.
+A scorecard compares one or more forecast sources with a baseline source, each
+already scored against a common truth source, and colours the paired difference
+between their scores.
 
 Examples
 --------
@@ -9,7 +10,7 @@ Examples
 >>> from mlwp_scorecards import make_scorecard
 >>> ds = xr.open_dataset("verification_summary.nc")        # doctest: +SKIP
 >>> make_scorecard(ds, ["card.html", "card.png"],          # doctest: +SKIP
-...                control="IFS-HRES", experiment="GraphCast")
+...                forecast_source="GraphCast", baseline_source="IFS-HRES")
 """
 
 from importlib.metadata import version

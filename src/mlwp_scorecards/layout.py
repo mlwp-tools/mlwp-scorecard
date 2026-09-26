@@ -17,7 +17,7 @@ import xarray as xr
 
 from .aggregate import Aggregated
 from .colours import ColourScheme, FixedScaling, Polarity, family_of, polarity_of
-from .ingest import METRIC_DIM, VARIABLE_DIM, PreparedCube
+from .ingest import FORECAST_DIM, METRIC_DIM, VARIABLE_DIM, PreparedCube
 from .model import Cell, HeaderCell, Key, Layout, LayoutStats, Line, Step
 
 __all__ = ["resolve"]
@@ -181,8 +181,6 @@ def _headers_for(
 def resolve(
     cube: PreparedCube,
     *,
-    control: str,
-    experiment: str,
     row_dims: Sequence[str],
     column_dims: Sequence[str],
     cell_dim: str,
@@ -193,34 +191,51 @@ def resolve(
     title: str = "",
     subtitle: str = "",
 ) -> Layout:
-    """Difference two forecast sources and lay the result out.
+    """Difference each forecast source from the baseline and lay the result out.
 
     Parameters
     ----------
     agg : Aggregated
         The collapse over forecast cases, from
         :func:`~mlwp_scorecards.aggregate.aggregate`. Subsetting and the choice
-        of pair happen there, because both must precede the resample.
+        of sources happen there, because both must precede the resample.
 
     Returns
     -------
     Layout
+
+    Raises
+    ------
+    ValueError
+        If there are several forecast sources and ``forecast_source`` is on
+        neither axis: the card would have nowhere to put them.
     """
-    ctl, exp = agg.control, agg.experiment
+    on_axis = FORECAST_DIM in list(row_dims) + list(column_dims)
+    if not on_axis and len(agg.forecast_sources) > 1:
+        raise ValueError(
+            f"{len(agg.forecast_sources)} forecast sources, but {FORECAST_DIM!r} is "
+            f"on neither rows nor columns; add it to one of them"
+        )
+
+    def _placed(da: xr.DataArray | None) -> xr.DataArray | None:
+        # One source and no axis for it: today's two-source card.
+        if da is None or on_axis:
+            return da
+        return da.squeeze(FORECAST_DIM, drop=True)
+
+    ctl, exp = _placed(agg.baseline), _placed(agg.forecast)
     diff = exp - ctl
     with np.errstate(divide="ignore", invalid="ignore"):
         rel = diff / np.abs(ctl)
-    ctl_lo, ctl_hi = agg.control_lower, agg.control_upper
-    exp_lo, exp_hi = agg.experiment_lower, agg.experiment_upper
-    dif = dict(agg.paired)
-    counts = agg.counts
+    ctl_lo, ctl_hi = _placed(agg.baseline_lower), _placed(agg.baseline_upper)
+    exp_lo, exp_hi = _placed(agg.forecast_lower), _placed(agg.forecast_upper)
+    dif = {c: (_placed(lo), _placed(hi)) for c, (lo, hi) in agg.paired.items()}
+    counts = _placed(agg.counts)
     levels = tuple(agg.confidence_levels)
     chart_conf = max(levels) if levels else None
 
     return _lay_out(
         cube=cube,
-        control=control,
-        experiment=experiment,
         row_dims=row_dims,
         column_dims=column_dims,
         cell_dim=cell_dim,
@@ -248,8 +263,6 @@ def resolve(
 def _lay_out(
     *,
     cube: PreparedCube,
-    control: str,
-    experiment: str,
     row_dims: Sequence[str],
     column_dims: Sequence[str],
     cell_dim: str,
@@ -362,6 +375,7 @@ def _lay_out(
             pos = dict(zip(dims, rl.key + cl.key))
             metric = str(pos[METRIC_DIM])
             variable = str(pos[VARIABLE_DIM])
+            source = str(pos.get(FORECAST_DIM, agg.forecast_sources[0]))
             pol = polarity_of(metric, metric_polarity)
             fam = family_of(pol)
 
@@ -375,12 +389,12 @@ def _lay_out(
                             lead_time=lead_times[k],
                             value=None,
                             relative=None,
-                            control=None,
-                            experiment=None,
-                            control_lower=None,
-                            control_upper=None,
-                            experiment_lower=None,
-                            experiment_upper=None,
+                            baseline=None,
+                            forecast=None,
+                            baseline_lower=None,
+                            baseline_upper=None,
+                            forecast_lower=None,
+                            forecast_upper=None,
                             value_lower=None,
                             value_upper=None,
                             n=None,
@@ -443,12 +457,12 @@ def _lay_out(
                         lead_time=lead_times[k],
                         value=float(d_),
                         relative=signed,
-                        control=_at(ctl_v),
-                        experiment=_at(exp_v),
-                        control_lower=_at(clo_v),
-                        control_upper=_at(chi_v),
-                        experiment_lower=_at(elo_v),
-                        experiment_upper=_at(ehi_v),
+                        baseline=_at(ctl_v),
+                        forecast=_at(exp_v),
+                        baseline_lower=_at(clo_v),
+                        baseline_upper=_at(chi_v),
+                        forecast_lower=_at(elo_v),
+                        forecast_upper=_at(ehi_v),
                         value_lower=d_lo,
                         value_upper=d_hi,
                         n=nn,
@@ -468,6 +482,7 @@ def _lay_out(
                 metric=metric,
                 units=cube.units.get((metric, variable)),
                 steps=tuple(steps),
+                forecast_source=source,
             )
 
     stats = LayoutStats(
@@ -493,12 +508,29 @@ def _lay_out(
             if agg.block_length > 1
             else "independent cases"
         )
+        sharing = "both sources" if len(agg.forecast_sources) == 1 else "every source"
         notes.append(
             f"Intervals from a {agg.method} bootstrap over forecast cases "
             f"({block}, {agg.n_resamples} resamples, seed {agg.seed}). The "
             f"difference is paired: it is taken per case before averaging, with "
-            f"one resample shared by both sources, so their common error cancels."
+            f"one resample shared by {sharing}, so their common error cancels."
         )
+    # With one forecast source the two policies coincide, and saying anything
+    # would only add noise to today's card.
+    if len(agg.forecast_sources) > 1:
+        if agg.cases == "common":
+            notes.append(
+                f"Every forecast source is compared with {agg.baseline_source} on "
+                f"the same forecast cases: those all of them scored. Rows and "
+                f"columns can therefore be compared with one another."
+            )
+        else:
+            notes.append(
+                f"Each forecast source is compared with {agg.baseline_source} on "
+                f"the cases the two share, which differ between sources. Each "
+                f"comparison uses as much data as it can, but they do not rest on "
+                f"the same weather and should not be ranked against one another."
+            )
     # The package chooses the resample now, so the caveat has to name what it
     # chose -- and the measured cost of that choice, not a general warning.
     if agg.block_length > 1:
@@ -551,8 +583,9 @@ def _lay_out(
         stats=stats,
         title=title,
         subtitle=subtitle,
-        control=control,
-        experiment=experiment,
+        baseline_source=agg.baseline_source,
+        forecast_sources=agg.forecast_sources,
+        cases=agg.cases,
         confidence_levels=levels,
         resampling=agg.method,
         block_length=agg.block_length,

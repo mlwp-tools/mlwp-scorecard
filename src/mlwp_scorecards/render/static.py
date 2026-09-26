@@ -76,9 +76,10 @@ def render_figure(
     )
 
     foot = (
-        f"{layout.experiment} vs {layout.control}. Each cell is {n_step} lead times, "
-        f"{layout.lead_labels[0]} to {layout.lead_labels[-1]}, earliest on the left; "
-        f"intensity is the difference relative to {layout.control}."
+        f"{layout.forecast_label} vs {layout.baseline_source}. Each cell is {n_step} "
+        f"lead times, {layout.lead_labels[0]} to {layout.lead_labels[-1]}, earliest "
+        f"on the left; intensity is the difference relative to "
+        f"{layout.baseline_source}."
     )
     caveat = (
         f"{layout.stats.n_boxes} simultaneous comparisons, and forecast cases are "

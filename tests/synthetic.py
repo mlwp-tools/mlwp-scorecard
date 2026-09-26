@@ -174,7 +174,7 @@ def make_verification_dataset(
 ) -> xr.Dataset:
     """Build a complete verification dataset from synthetic data.
 
-    Scores persistence (control) and drifting persistence (experiment) against the
+    Scores persistence (baseline) and drifting persistence (forecast) against the
     reanalysis, over three latitude bands and three metrics.
 
     Parameters
@@ -375,5 +375,7 @@ def make_verification_dataset(
 
     ds = xr.Dataset(out)
     ds = ds.expand_dims(truth_source=["analysis"])
-    ds.attrs.update(control="persistence", experiment="drifting-persistence")
+    ds.attrs.update(
+        baseline_source="persistence", forecast_source="drifting-persistence"
+    )
     return ds

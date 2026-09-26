@@ -11,7 +11,7 @@ from typing import Any, Mapping, Sequence
 
 import xarray as xr
 
-from .aggregate import aggregate
+from .aggregate import aggregate, normalise_sources
 from .colours import SCHEMES, ColourScheme, FixedScaling
 from .ingest import (
     CASE_DIM,
@@ -49,6 +49,7 @@ def _infer_axes(
     rows: Sequence[str] | None,
     columns: Sequence[str] | None,
     cell: str,
+    n_sources: int = 1,
 ) -> tuple[list[str], list[str]]:
     """Choose row and column nesting when the caller did not.
 
@@ -58,17 +59,21 @@ def _infer_axes(
     the rendering consumes rather than lays out, and are the same set ``prepare``
     exempts from its unassigned-dimension check; both are built from the
     constants in :mod:`~mlwp_scorecards.ingest` so the two cannot drift apart.
+
+    ``forecast_source`` is consumed by differencing when there is one forecast
+    source, and laid out when there are several -- outermost on the rows unless
+    placed elsewhere, one block of rows per source.
     """
-    available = ({str(d) for d in ds.dims} | {VARIABLE_DIM, METRIC_DIM}) - {
-        cell,
-        FORECAST_DIM,
-        CASE_DIM,
-    }
+    consumed = {cell, CASE_DIM} | ({FORECAST_DIM} if n_sources == 1 else set())
+    available = ({str(d) for d in ds.dims} | {VARIABLE_DIM, METRIC_DIM}) - consumed
 
     if rows is not None and columns is not None:
         return list(rows), list(columns)
 
-    r = [d for d in (rows if rows is not None else DEFAULT_ROWS) if d in available]
+    default_rows = DEFAULT_ROWS
+    if n_sources > 1 and FORECAST_DIM not in (columns or ()):
+        default_rows = (FORECAST_DIM,) + DEFAULT_ROWS
+    r = [d for d in (rows if rows is not None else default_rows) if d in available]
     c = [
         d
         for d in (columns if columns is not None else DEFAULT_COLUMNS)
@@ -90,8 +95,9 @@ def _infer_axes(
 def build_layout(
     data: xr.Dataset,
     *,
-    control: str,
-    experiment: str,
+    forecast_source: str | Sequence[str],
+    baseline_source: str,
+    cases: str = "common",
     rows: Sequence[str] | None = None,
     columns: Sequence[str] | None = None,
     cell: str = "lead_time",
@@ -115,9 +121,18 @@ def build_layout(
     ----------
     data : xr.Dataset
         Verification statistics: one variable per ``{metric}.{variable}`` pair.
-    control, experiment : str
-        Members of ``forecast_source``. The card colours
-        ``experiment - control``.
+    forecast_source : str or sequence of str
+        Members of ``forecast_source`` to show. With several, ``forecast_source``
+        becomes a layout axis: each row (or column) is one of them compared with
+        the baseline.
+    baseline_source : str
+        The member of ``forecast_source`` each is compared with; the card colours
+        ``forecast - baseline``. Must not also be one of ``forecast_source``.
+    cases : {"common", "pairwise"}, optional
+        Which forecast cases each comparison rests on. ``"common"``: only those
+        every selected source and the baseline scored, so rows are comparable with
+        one another. ``"pairwise"``: those each forecast source shares with the
+        baseline. Identical when there is one forecast source.
     rows, columns : sequence of str, optional
         Coordinate names to nest on each axis, outermost first. Inferred when omitted.
     cell : str, optional
@@ -164,7 +179,8 @@ def build_layout(
             else [truth_source]
         )
 
-    row_dims, col_dims = _infer_axes(data, rows, columns, cell)
+    sources = normalise_sources(forecast_source, baseline_source)
+    row_dims, col_dims = _infer_axes(data, rows, columns, cell, len(sources))
 
     cube = prepare(
         data,
@@ -175,8 +191,9 @@ def build_layout(
     )
     agg = aggregate(
         cube,
-        control=control,
-        experiment=experiment,
+        forecast_source=sources,
+        baseline_source=baseline_source,
+        cases=cases,
         subset=subset or None,
         bootstrap=bootstrap,
         block_length=block_length,
@@ -187,8 +204,6 @@ def build_layout(
     layout = resolve(
         cube,
         agg=agg,
-        control=control,
-        experiment=experiment,
         row_dims=row_dims,
         column_dims=col_dims,
         cell_dim=cell,
@@ -236,8 +251,8 @@ def make_scorecard(
     data: xr.Dataset,
     output: str | Path | Sequence[str | Path],
     *,
-    control: str,
-    experiment: str,
+    forecast_source: str | Sequence[str],
+    baseline_source: str,
     dpi: int = 200,
     **kwargs: Any,
 ) -> list[Path]:
@@ -251,8 +266,10 @@ def make_scorecard(
     data : xr.Dataset
         Verification statistics.
     output : path or sequence of paths
-    control, experiment : str
-        Members of the prediction-source coordinate.
+    forecast_source : str or sequence of str
+        The sources to show; see :func:`build_layout`.
+    baseline_source : str
+        The source each is compared with.
     dpi : int, optional
         Raster resolution for PNG output.
     **kwargs
@@ -265,9 +282,15 @@ def make_scorecard(
     Examples
     --------
     >>> make_scorecard(ds, ["card.html", "card.png"],
-    ...                control="IFS-HRES", experiment="GraphCast")  # doctest: +SKIP
+    ...                forecast_source="GraphCast",
+    ...                baseline_source="IFS-HRES")  # doctest: +SKIP
     """
     paths = [output] if isinstance(output, (str, Path)) else list(output)
-    layout = build_layout(data, control=control, experiment=experiment, **kwargs)
+    layout = build_layout(
+        data,
+        forecast_source=forecast_source,
+        baseline_source=baseline_source,
+        **kwargs,
+    )
     assert isinstance(layout, Layout)
     return [render(layout, p, dpi=dpi) for p in paths]

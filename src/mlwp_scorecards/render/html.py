@@ -338,7 +338,8 @@ _JS = r"""
       var haveDiffCI = c.vl && c.vu;
       var f1 = document.createElement('figure');
       var cap1 = document.createElement('figcaption');
-      cap1.textContent = 'Difference: ' + d.experiment + ' minus ' + d.control
+      var src = c.s || d.experiment;
+      cap1.textContent = 'Difference: ' + src + ' minus ' + d.control
         + (c.u ? ' (' + c.u + ')' : '')
         + (haveDiffCI ? ', paired ' + pctLabel(d.confidence) + ' interval' : '');
       f1.append(cap1, chart({
@@ -356,7 +357,7 @@ _JS = r"""
           { y: c.c, lo: c.cl, hi: c.cu, colour: COLOURS.control,
             name: d.control },
           { y: c.e, lo: c.el, hi: c.eu, colour: COLOURS.experiment,
-            name: d.experiment, dash: '5 3' }
+            name: src, dash: '5 3' }
         ]
       }));
       charts.append(f1, f2);
@@ -364,7 +365,7 @@ _JS = r"""
       var note = dlg.querySelector('.note');
       note.replaceChildren();
       note.append(swatch(COLOURS.control), txt(' ' + d.control + '   '));
-      note.append(swatch(COLOURS.experiment, true), txt(' ' + d.experiment));
+      note.append(swatch(COLOURS.experiment, true), txt(' ' + src));
       var extra = document.createElement('div');
       extra.style.marginTop = '6px';
       extra.textContent = haveDiffCI
@@ -671,8 +672,8 @@ def render_html(
         n_lead=len(layout.lead_times),
         first_lead=layout.lead_labels[0],
         last_lead=layout.lead_labels[-1],
-        control=layout.control,
-        experiment=layout.experiment,
+        control=layout.baseline_source,
+        experiment=layout.forecast_label,
         n_significant=s.n_significant,
         n_boxes=s.n_boxes,
         # The border marks a box that clears the *narrowest* level supplied, so

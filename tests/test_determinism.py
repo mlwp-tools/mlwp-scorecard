@@ -14,7 +14,9 @@ import textwrap
 def test_html_is_byte_identical_across_renders(verification, tmp_path):
     from mlwp_scorecards import make_scorecard
 
-    kw = dict(control="persistence", experiment="drifting-persistence", title="t")
+    kw = dict(
+        baseline_source="persistence", forecast_source="drifting-persistence", title="t"
+    )
     a = make_scorecard(verification, tmp_path / "a.html", **kw)[0]
     b = make_scorecard(verification, tmp_path / "b.html", **kw)[0]
     assert a.read_bytes() == b.read_bytes()
@@ -30,8 +32,8 @@ def test_html_is_identical_in_a_fresh_process(tmp_path):
         from synthetic import make_verification_dataset
         from mlwp_scorecards import make_scorecard
         ds = make_verification_dataset(n_case=32, drift=0.25, seed=3)
-        make_scorecard(ds, sys.argv[1], control="persistence",
-                       experiment="drifting-persistence", title="t",
+        make_scorecard(ds, sys.argv[1], baseline_source="persistence",
+                       forecast_source="drifting-persistence", title="t",
                        n_resamples=100)
         """
     )
@@ -50,7 +52,7 @@ def test_html_is_identical_in_a_fresh_process(tmp_path):
 def test_layout_resolution_is_stable(verification):
     from mlwp_scorecards import build_layout
 
-    kw = dict(control="persistence", experiment="drifting-persistence")
+    kw = dict(baseline_source="persistence", forecast_source="drifting-persistence")
     a, b = build_layout(verification, **kw), build_layout(verification, **kw)
     assert [r.key for r in a.rows] == [r.key for r in b.rows]
     assert [c.key for c in a.columns] == [c.key for c in b.columns]

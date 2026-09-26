@@ -27,9 +27,9 @@ def test_renders_both_formats(netcdf, tmp_path):
     rc = main(
         [
             str(netcdf),
-            "--control",
+            "--baseline-source",
             "persistence",
-            "--experiment",
+            "--forecast-source",
             "drifting-persistence",
             "-o",
             str(out_html),
@@ -42,14 +42,32 @@ def test_renders_both_formats(netcdf, tmp_path):
     assert out_png.stat().st_size > 2000
 
 
+def test_forecast_source_is_repeatable(tmp_path):
+    """Several forecast sources give one block of rows each."""
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).parent))
+    from test_sources import _dataset
+
+    p = tmp_path / "v.nc"
+    _dataset().to_netcdf(p)
+    out = tmp_path / "c.html"
+    argv = [str(p), "--baseline-source", "base", "-o", str(out)]
+    for source in ("a", "b", "c"):
+        argv += ["--forecast-source", source]
+    assert main(argv + ["--cases", "pairwise", "--n-resamples", "50"]) == 0
+    assert out.read_text().count('<i class="b') == 3 * 2 * 4  # sources x vars x leads
+
+
 def test_validate_only_writes_nothing(netcdf, tmp_path):
     out = tmp_path / "c.html"
     rc = main(
         [
             str(netcdf),
-            "--control",
+            "--baseline-source",
             "persistence",
-            "--experiment",
+            "--forecast-source",
             "drifting-persistence",
             "-o",
             str(out),
@@ -65,9 +83,9 @@ def test_explicit_axes_are_honoured(netcdf, tmp_path):
     rc = main(
         [
             str(netcdf),
-            "--control",
+            "--baseline-source",
             "persistence",
-            "--experiment",
+            "--forecast-source",
             "drifting-persistence",
             "--rows",
             "truth_source,variable,level",
@@ -86,9 +104,9 @@ def test_unknown_output_format_exits_nonzero(netcdf, tmp_path):
     rc = main(
         [
             str(netcdf),
-            "--control",
+            "--baseline-source",
             "persistence",
-            "--experiment",
+            "--forecast-source",
             "drifting-persistence",
             "-o",
             str(tmp_path / "c.txt"),
@@ -118,9 +136,9 @@ def test_reads_zarr_as_well_as_netcdf(zarr_store, tmp_path):
     rc = main(
         [
             str(zarr_store),
-            "--control",
+            "--baseline-source",
             "persistence",
-            "--experiment",
+            "--forecast-source",
             "drifting-persistence",
             "-o",
             str(out),
@@ -139,9 +157,9 @@ def test_unknown_input_format_exits_nonzero(tmp_path):
     rc = main(
         [
             str(bad),
-            "--control",
+            "--baseline-source",
             "persistence",
-            "--experiment",
+            "--forecast-source",
             "drifting-persistence",
             "-o",
             str(out),

@@ -137,8 +137,8 @@ def test_the_paired_interval_is_tighter_than_treating_the_sources_as_independent
     """
     agg = aggregate(
         _cube(_per_case(rho=0.95)),
-        control="ctl",
-        experiment="exp",
+        baseline_source="ctl",
+        forecast_source="exp",
         n_resamples=500,
         confidence_levels=(0.95,),
         seed=0,
@@ -146,8 +146,8 @@ def test_the_paired_interval_is_tighter_than_treating_the_sources_as_independent
     paired_lo, paired_hi = agg.paired[0.95]
     paired = (paired_hi - paired_lo).values
     naive = 2 * np.hypot(
-        (agg.control_upper - agg.control_lower).values / 2,
-        (agg.experiment_upper - agg.experiment_lower).values / 2,
+        (agg.baseline_upper - agg.baseline_lower).values / 2,
+        (agg.forecast_upper - agg.forecast_lower).values / 2,
     )
     assert (paired < naive).all(), f"paired {paired}, naive {naive}"
     assert (naive / paired).min() > 1.5
@@ -156,8 +156,8 @@ def test_the_paired_interval_is_tighter_than_treating_the_sources_as_independent
 def test_intervals_nest_with_the_confidence_level():
     agg = aggregate(
         _cube(_per_case()),
-        control="ctl",
-        experiment="exp",
+        baseline_source="ctl",
+        forecast_source="exp",
         n_resamples=500,
         confidence_levels=(0.68, 0.95, 0.997),
         seed=0,
@@ -176,9 +176,11 @@ def test_the_mean_is_the_plain_mean_over_cases():
     """No resampling involved: the colour of a box comes from the data, not the
     bootstrap. Only the interval around it is resampled."""
     ds = _per_case()
-    agg = aggregate(_cube(ds), control="ctl", experiment="exp", n_resamples=50, seed=0)
+    agg = aggregate(
+        _cube(ds), baseline_source="ctl", forecast_source="exp", n_resamples=50, seed=0
+    )
     want = ds["rmse.2t"].sel(forecast_source="ctl").mean("init_time")
-    assert np.allclose(agg.control.values.ravel(), want.values.ravel())
+    assert np.allclose(agg.baseline.values.ravel(), want.values.ravel())
 
 
 def test_counts_are_the_cases_where_both_sources_scored():
@@ -187,7 +189,9 @@ def test_counts_are_the_cases_where_both_sources_scored():
     ds = _per_case(n_case=20)
     ds["rmse.2t"][0, :4] = np.nan  # control missing four cases
     ds["rmse.2t"][1, 3:6] = np.nan  # experiment missing three, one overlapping
-    agg = aggregate(_cube(ds), control="ctl", experiment="exp", n_resamples=50, seed=0)
+    agg = aggregate(
+        _cube(ds), baseline_source="ctl", forecast_source="exp", n_resamples=50, seed=0
+    )
     assert set(np.unique(agg.counts.values)) == {20 - 6}
 
 
@@ -203,10 +207,12 @@ def test_the_means_use_only_the_cases_both_sources_scored():
     ds["rmse.2t"][:] = 1.0
     ds["rmse.2t"][0, 20:] = 5.0  # control: bad on the second half
     ds["rmse.2t"][1, 20:] = np.nan  # experiment: missing the second half
-    agg = aggregate(_cube(ds), control="ctl", experiment="exp", n_resamples=200, seed=0)
+    agg = aggregate(
+        _cube(ds), baseline_source="ctl", forecast_source="exp", n_resamples=200, seed=0
+    )
 
-    assert np.allclose(agg.control.values, 1.0)
-    assert np.allclose(agg.experiment.values, 1.0)
+    assert np.allclose(agg.baseline.values, 1.0)
+    assert np.allclose(agg.forecast.values, 1.0)
     for lo, hi in agg.paired.values():
         assert np.allclose(lo.values, 0.0) and np.allclose(hi.values, 0.0)
     assert set(np.unique(agg.counts.values)) == {20}
@@ -220,7 +226,10 @@ def test_the_same_seed_gives_the_same_interval_and_a_different_one_does_not():
     would break intermittently and in a way that looks like a rendering bug."""
     cube = _cube(_per_case())
     kw = dict(
-        control="ctl", experiment="exp", n_resamples=200, confidence_levels=(0.95,)
+        baseline_source="ctl",
+        forecast_source="exp",
+        n_resamples=200,
+        confidence_levels=(0.95,),
     )
     a = aggregate(cube, seed=0, **kw).paired[0.95][0].values
     b = aggregate(cube, seed=0, **kw).paired[0.95][0].values
@@ -233,7 +242,9 @@ def test_the_block_length_is_derived_from_the_cadence_and_recorded():
     """A block length silently chosen for you is not something a reader can
     check, so it is derived from the initialisation cadence and carried out."""
     cube = _cube(_per_case(n_case=120))  # 12-hourly -> 10 days is 20 cases
-    agg = aggregate(cube, control="ctl", experiment="exp", n_resamples=50, seed=0)
+    agg = aggregate(
+        cube, baseline_source="ctl", forecast_source="exp", n_resamples=50, seed=0
+    )
     assert agg.method == "moving-block"
     assert agg.block_length == 20
     assert agg.n_resamples == 50 and agg.seed == 0
@@ -241,7 +252,9 @@ def test_the_block_length_is_derived_from_the_cadence_and_recorded():
 
 def test_too_few_cases_for_blocks_falls_back_to_iid_and_says_so():
     cube = _cube(_per_case(n_case=12))
-    agg = aggregate(cube, control="ctl", experiment="exp", n_resamples=50, seed=0)
+    agg = aggregate(
+        cube, baseline_source="ctl", forecast_source="exp", n_resamples=50, seed=0
+    )
     assert agg.block_length == 1
     assert any("too few for blocks" in w for w in cube.report.warnings), cube.report
 
@@ -250,8 +263,8 @@ def test_a_percentage_confidence_level_is_refused():
     with pytest.raises(ValueError, match="strictly between 0 and 1"):
         aggregate(
             _cube(_per_case()),
-            control="ctl",
-            experiment="exp",
+            baseline_source="ctl",
+            forecast_source="exp",
             confidence_levels=(68, 95),
         )
 
@@ -261,10 +274,10 @@ def test_no_case_dimension_means_the_values_are_already_means():
     ds = _per_case()
     collapsed = ds.mean("init_time", keep_attrs=True)
     cube = _cube(collapsed)
-    agg = aggregate(cube, control="ctl", experiment="exp", seed=0)
+    agg = aggregate(cube, baseline_source="ctl", forecast_source="exp", seed=0)
     assert agg.paired == {}
     assert agg.confidence_levels == ()
-    assert agg.control_lower is None
+    assert agg.baseline_lower is None
     assert any(
         "already-collapsed means" in w for w in cube.report.warnings
     ), cube.report

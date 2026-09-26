@@ -9,13 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Initial development of `mlwp-scorecards`, a package for rendering weather
 forecasting scorecards from pre-computed verification statistics. A scorecard
-compares two forecast sources, each scored against a common truth source, and
-colours the difference between their scores across nested groupings of variable,
-level, region, metric and forecast lead time.
+compares one or more forecast sources with a baseline source, all scored against
+a common truth source, and colours the paired difference between their scores
+across nested groupings of variable, level, region, metric and forecast lead time.
 
 Design and rationale are documented in [`PLAN.md`](PLAN.md).
 
 ### Changed
+
+- **`control=` / `experiment=` are now `baseline_source=` / `forecast_source=`**,
+  in the Python API and the CLI (`--baseline-source`, `--forecast-source`). The
+  names follow the coordinate they select, as `truth_source=` already did, and a
+  baseline is often not a model at all. `Step.control*` / `Step.experiment*`
+  become `Step.baseline*` / `Step.forecast*`, and `Layout.control` /
+  `Layout.experiment` become `Layout.baseline_source` / `Layout.forecast_sources`.
+  There is no alias for the old names.
 
 - **The input is now one score per forecast case**, and the package performs the
   collapse over cases itself: the mean, the per-source bootstrap intervals, the
@@ -58,7 +66,26 @@ Design and rationale are documented in [`PLAN.md`](PLAN.md).
   refused with a message naming the schema, instead of failing later on a
   variable name with no dot in it.
 
+### Added
+
+- **Several forecast sources against one baseline.** `forecast_source=` takes a
+  list, and `forecast_source` then becomes a layout axis, outermost on the rows by
+  default. Each row is exactly the two-source card for that source, because one
+  resample is shared by every pair. The CLI's `--forecast-source` is repeatable.
+- **`cases="common" | "pairwise"`**: which forecast cases each comparison rests
+  on. `"common"` (the default) uses only the cases every selected source scored,
+  so rows are comparable; `"pairwise"` uses what each shares with the baseline.
+  A card with several sources says which it used.
+- `Cell.forecast_source` names the source a cell compares with the baseline.
+
 ### Fixed
+
+- **The difference was not paired when a source was missing cases.** Each
+  source's mean and bootstrap were taken over its own finite cases, while `n`
+  counted only the shared ones, so a card could compare different weather: two
+  sources identical on every shared case, with the baseline bad on the cases the
+  other lacks, showed a difference of −2.0 significant at 99.7% from `n = 20`.
+  Every source is now masked to the shared cases before anything is averaged.
 
 - A paired difference stored for only one ordering of a source pair left the
   reverse card with every significance border silently missing — it rendered

@@ -52,15 +52,15 @@ def test_line_headers_are_never_ragged(layout):
 def test_reordering_rows_reorders_the_nesting(verification):
     a = build_layout(
         verification,
-        control="persistence",
-        experiment="drifting-persistence",
+        baseline_source="persistence",
+        forecast_source="drifting-persistence",
         rows=["truth_source", "variable", "level"],
         columns=["spatial_region", "metric"],
     )
     b = build_layout(
         verification,
-        control="persistence",
-        experiment="drifting-persistence",
+        baseline_source="persistence",
+        forecast_source="drifting-persistence",
         rows=["truth_source", "level", "variable"],
         columns=["spatial_region", "metric"],
     )
@@ -73,8 +73,8 @@ def test_unknown_dimension_is_rejected_clearly(verification):
     with pytest.raises(KeyError, match="not a dimension"):
         build_layout(
             verification,
-            control="persistence",
-            experiment="drifting-persistence",
+            baseline_source="persistence",
+            forecast_source="drifting-persistence",
             rows=["nonsuch"],
             columns=["metric"],
         )
@@ -85,16 +85,18 @@ def test_unassigned_dimension_is_rejected_clearly(verification):
     with pytest.raises(KeyError, match="assigned to neither"):
         build_layout(
             verification,
-            control="persistence",
-            experiment="drifting-persistence",
+            baseline_source="persistence",
+            forecast_source="drifting-persistence",
             rows=["variable"],
             columns=["metric"],
         )
 
 
 def test_unknown_source_is_rejected_clearly(verification):
-    with pytest.raises(KeyError, match="experiment="):
-        build_layout(verification, control="persistence", experiment="nonsuch")
+    with pytest.raises(KeyError, match="forecast_source="):
+        build_layout(
+            verification, baseline_source="persistence", forecast_source="nonsuch"
+        )
 
 
 @pytest.mark.parametrize("unit", ["h", "s", "ms", "us", "ns"])
@@ -124,7 +126,7 @@ def test_lead_times_are_labelled_the_same_at_every_time_resolution(unit):
             )
         }
     )
-    layout = build_layout(ds, control="ctl", experiment="exp")
+    layout = build_layout(ds, baseline_source="ctl", forecast_source="exp")
 
     assert layout.lead_labels == ("T+6", "T+12", "T+18", "T+24")
     assert layout.lead_times == (6.0, 12.0, 18.0, 24.0)

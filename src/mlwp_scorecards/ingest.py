@@ -248,7 +248,8 @@ def prepare(
     # collapse it without saying so, which is exactly the kind of quiet wrongness
     # a decision artefact must not have. The two exempt names are the ones the
     # rendering consumes rather than lays out: `forecast_source` is collapsed by
-    # differencing, `init_time` by the bootstrap.
+    # differencing (or laid out, when it is named above, for several forecast
+    # sources), `init_time` by the bootstrap.
     unassigned = present - set(wanted) - {CASE_DIM, FORECAST_DIM}
     if unassigned:
         # Not "or subset them away": `select=` is applied inside `resolve`, after

@@ -13,9 +13,10 @@ Guidance for agents and contributors working in this repository.
   That reverses an earlier rule ("no statistics"), deliberately — pairing the two
   sources against the same weather has to happen before the averaging, so the
   package needs one score per case and must do the averaging itself.
-- A scorecard compares **two forecast sources** against a **common truth source**
-  and colours the *difference* between their scores. "Better" means better than the
-  other model, not better than truth.
+- A scorecard compares **one or more forecast sources** with a **baseline source**,
+  all scored against a **common truth source**, and colours each one's *paired
+  difference* from the baseline. "Better" means better than the baseline, not
+  better than truth. The baseline is never also one of the forecast sources.
 
 ## Interfaces
 

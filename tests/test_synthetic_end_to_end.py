@@ -94,8 +94,8 @@ def test_renders_html_and_static(verification, tmp_path):
     outs = make_scorecard(
         verification,
         [tmp_path / "c.html", tmp_path / "c.png", tmp_path / "c.pdf"],
-        control="persistence",
-        experiment="drifting-persistence",
+        baseline_source="persistence",
+        forecast_source="drifting-persistence",
         title="t",
     )
     assert [p.name for p in outs] == ["c.html", "c.png", "c.pdf"]
@@ -108,8 +108,8 @@ def test_html_has_no_external_requests(verification, tmp_path):
     p = make_scorecard(
         verification,
         tmp_path / "c.html",
-        control="persistence",
-        experiment="drifting-persistence",
+        baseline_source="persistence",
+        forecast_source="drifting-persistence",
     )[0]
     text = p.read_text()
     assert not re.search(r'(?:src|href)\s*=\s*["\']https?://', text)
@@ -122,8 +122,8 @@ def test_html_box_count_matches_the_layout(layout, verification, tmp_path):
         tmp_path / "c.html",
         rows=layout.row_dims,
         columns=layout.column_dims,
-        control="persistence",
-        experiment="drifting-persistence",
+        baseline_source="persistence",
+        forecast_source="drifting-persistence",
     )[0]
     assert p.read_text().count('<i class="b') == layout.stats.n_boxes
 
@@ -138,12 +138,14 @@ def test_unknown_metric_refuses_to_guess(verification, tmp_path):
         }
     )
     with pytest.raises(KeyError, match="unknown metric"):
-        build_layout(ds, control="persistence", experiment="drifting-persistence")
+        build_layout(
+            ds, baseline_source="persistence", forecast_source="drifting-persistence"
+        )
 
     lay = build_layout(
         ds,
-        control="persistence",
-        experiment="drifting-persistence",
+        baseline_source="persistence",
+        forecast_source="drifting-persistence",
         metric_polarity={"wibble": "lower_is_better"},
     )
     assert lay.stats.n_cells_present > 0

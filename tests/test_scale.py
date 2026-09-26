@@ -76,7 +76,8 @@ def test_full_size_card_renders_quickly(tmp_path):
     t0 = time.perf_counter()
     html, png = make_scorecard(
         ds,
-        [tmp_path / "b.html", tmp_path / "b.png"],
+        html_path=tmp_path / "b.html",
+        image_path=tmp_path / "b.png",
         baseline_source="ctl",
         forecast_source="exp",
         rows=["truth_source", "variable", "level"],
@@ -104,7 +105,7 @@ def test_full_size_html_box_count(tmp_path):
     )
     p = make_scorecard(
         ds,
-        tmp_path / "b.html",
+        html_path=tmp_path / "b.html",
         baseline_source="ctl",
         forecast_source="exp",
         rows=["truth_source", "variable", "level"],

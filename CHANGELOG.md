@@ -24,6 +24,12 @@ Design and rationale are documented in [`PLAN.md`](PLAN.md).
   become `Step.baseline*` / `Step.forecast*`, and `Layout.control` /
   `Layout.experiment` become `Layout.baseline_source` / `Layout.forecast_sources`.
   There is no alias for the old names.
+- **Outputs are named arguments.** `make_scorecard(ds, "card.html", ...)` becomes
+  `make_scorecard(ds, html_path="card.html", image_path=["card.png", "card.pdf"],
+  ...)`, and everything after `data` is keyword-only. At least one output is
+  required, and a suffix contradicting its argument (`html_path="card.png"`) is
+  refused before anything is computed. The CLI's `-o/--output` becomes
+  `--html-path` and a repeatable `--image-path`; `--validate-only` needs neither.
 
 - **The input is now one score per forecast case**, and the package performs the
   collapse over cases itself: the mean, the per-source bootstrap intervals, the

@@ -36,9 +36,10 @@ ds = xr.open_dataset("verification_summary.nc")
 
 make_scorecard(
     ds,
-    ["scorecard.html", "scorecard.png"],
     forecast_source="GraphCast",
     baseline_source="IFS-HRES",
+    html_path="scorecard.html",
+    image_path="scorecard.png",
     title="GraphCast vs IFS HRES",
 )
 ```
@@ -47,7 +48,7 @@ Rows and columns are inferred from the dataset, or named explicitly:
 
 ```python
 make_scorecard(
-    ds, "scorecard.html",
+    ds, html_path="scorecard.html",
     forecast_source="GraphCast", baseline_source="IFS-HRES",
     rows=["truth_source", "variable", "level"],
     columns=["spatial_region", "metric"],
@@ -66,7 +67,7 @@ baseline:
 
 ```python
 make_scorecard(
-    ds, "scorecard.html",
+    ds, html_path="scorecard.html",
     forecast_source=["GraphCast", "AIFS", "Aurora"], baseline_source="IFS-HRES",
     rows=["forecast_source", "variable", "level"],
     columns=["metric"],
@@ -96,11 +97,14 @@ paths are all the API has.
 ```bash
 mlwp.make_scorecard verification_summary.nc \
     --forecast-source GraphCast --baseline-source IFS-HRES \
-    -o scorecard.html -o scorecard.png
+    --html-path scorecard.html --image-path scorecard.png
 ```
 
-Output format follows the suffix: `.html` for the interactive page, `.png`, `.pdf`
-or `.svg` for the static figure.
+`html_path=` is the interactive page and must end in `.html`. `image_path=` is
+the static figure, and takes one path or several; each one's format follows its
+suffix (`.png`, `.pdf`, `.svg`, ...), so `image_path=["card.png", "card.pdf"]`
+writes both. At least one of the two is required, and a suffix that contradicts
+its argument is refused before anything is computed.
 
 The HTML page is self-contained — no CDN, no analytics, no webfonts, so it works
 offline and from `file://`. Hover a box for its value, use the checkboxes to filter
@@ -168,7 +172,7 @@ package does this one**, because doing it well requires the per-case numbers:
 Both choices are arguments, and both are printed on the card:
 
 ```python
-make_scorecard(ds, "scorecard.html",
+make_scorecard(ds, html_path="scorecard.html",
                forecast_source="GraphCast", baseline_source="IFS-HRES",
                bootstrap="moving-block",   # or "iid"
                block_length=None,          # in CASES; derived from the cadence
@@ -196,7 +200,7 @@ Data variables:
 ```
 
 ```python
-make_scorecard(ds, "scorecard.html",
+make_scorecard(ds, html_path="scorecard.html",
                forecast_source="GraphCast", baseline_source="IFS-HRES")
 ```
 
@@ -237,7 +241,7 @@ dimension the package has never heard of behaves exactly the same way:
 ```python
 # season and threshold are not special; they are just axes
 make_scorecard(
-    ds, "scorecard.html",
+    ds, html_path="scorecard.html",
     forecast_source="GraphCast", baseline_source="IFS-HRES",
     rows=["season", "variable"],
     columns=["threshold", "metric"],

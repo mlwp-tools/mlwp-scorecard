@@ -9,8 +9,9 @@ Examples
 >>> import xarray as xr
 >>> from mlwp_scorecards import make_scorecard
 >>> ds = xr.open_dataset("verification_summary.nc")        # doctest: +SKIP
->>> make_scorecard(ds, ["card.html", "card.png"],          # doctest: +SKIP
-...                forecast_source="GraphCast", baseline_source="IFS-HRES")
+>>> make_scorecard(ds, forecast_source="GraphCast",       # doctest: +SKIP
+...                baseline_source="IFS-HRES",
+...                html_path="card.html", image_path="card.png")
 """
 
 from importlib.metadata import version

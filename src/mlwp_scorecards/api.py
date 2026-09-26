@@ -42,6 +42,7 @@ DEFAULT_ROWS = ("truth_source", VARIABLE_DIM, "level")
 DEFAULT_COLUMNS = ("spatial_region", "region", METRIC_DIM)
 
 _STATIC_SUFFIXES = {".png", ".pdf", ".svg", ".eps", ".jpg", ".jpeg", ".tif", ".tiff"}
+_HTML_SUFFIXES = {".html", ".htm"}
 
 
 def _infer_axes(
@@ -233,7 +234,7 @@ def render(
     )
     path = Path(path)
     suffix = path.suffix.lower()
-    if suffix in {".html", ".htm"}:
+    if suffix in _HTML_SUFFIXES:
         from .render.html import render_html
 
         return render_html(layout, path, scheme=sch)
@@ -247,45 +248,91 @@ def render(
     )
 
 
+def _output_paths(
+    html_path: str | Path | None,
+    image_path: str | Path | Sequence[str | Path] | None,
+) -> list[Path]:
+    """Check the requested outputs before any work is done, and order them.
+
+    A suffix that contradicts the argument it was passed to is refused rather than
+    re-guessed: ``html_path="card.png"`` is far more likely a slip than a request
+    for a PNG, and silently writing one would hide it.
+    """
+    if html_path is None and image_path is None:
+        raise ValueError("nothing to write: pass html_path=, image_path=, or both")
+    paths = []
+    if html_path is not None:
+        path = Path(html_path)
+        if path.suffix.lower() not in _HTML_SUFFIXES:
+            raise ValueError(f"html_path={str(html_path)!r} does not end in .html")
+        paths.append(path)
+    if image_path is None:
+        images = []
+    elif isinstance(image_path, (str, Path)):
+        images = [image_path]
+    else:
+        images = list(image_path)
+    for img in images:
+        path = Path(img)
+        if path.suffix.lower() not in _STATIC_SUFFIXES:
+            raise ValueError(
+                f"image_path={str(img)!r}: expected one of "
+                f"{', '.join(sorted(_STATIC_SUFFIXES))}"
+            )
+        paths.append(path)
+    return paths
+
+
 def make_scorecard(
     data: xr.Dataset,
-    output: str | Path | Sequence[str | Path],
     *,
     forecast_source: str | Sequence[str],
     baseline_source: str,
+    html_path: str | Path | None = None,
+    image_path: str | Path | Sequence[str | Path] | None = None,
     dpi: int = 200,
     **kwargs: Any,
 ) -> list[Path]:
-    """Build a scorecard and write it to one or more files.
-
-    Output format follows each path's suffix: ``.html`` for the interactive page,
-    ``.png``/``.pdf``/``.svg`` for the static figure.
+    """Build a scorecard and write the interactive page, static figures, or both.
 
     Parameters
     ----------
     data : xr.Dataset
         Verification statistics.
-    output : path or sequence of paths
     forecast_source : str or sequence of str
         The sources to show; see :func:`build_layout`.
     baseline_source : str
         The source each is compared with.
+    html_path : path, optional
+        Where to write the self-contained interactive page. Must end in ``.html``.
+    image_path : path or sequence of paths, optional
+        Where to write the static figure. The format follows each suffix --
+        ``.png``, ``.pdf``, ``.svg`` and so on -- so several paths give several
+        formats of the same card.
     dpi : int, optional
-        Raster resolution for PNG output.
+        Raster resolution for ``image_path``; ignored by the HTML page.
     **kwargs
         Forwarded to :func:`build_layout`.
 
     Returns
     -------
     list of Path
+        The files written: the page first, then the figures in the order given.
+
+    Raises
+    ------
+    ValueError
+        If neither ``html_path`` nor ``image_path`` is given, or a suffix
+        contradicts the argument it was passed to. Checked before anything is
+        computed.
 
     Examples
     --------
-    >>> make_scorecard(ds, ["card.html", "card.png"],
-    ...                forecast_source="GraphCast",
-    ...                baseline_source="IFS-HRES")  # doctest: +SKIP
+    >>> make_scorecard(ds, forecast_source="GraphCast", baseline_source="IFS-HRES",
+    ...                html_path="card.html",
+    ...                image_path=["card.png", "card.pdf"])  # doctest: +SKIP
     """
-    paths = [output] if isinstance(output, (str, Path)) else list(output)
+    paths = _output_paths(html_path, image_path)
     layout = build_layout(
         data,
         forecast_source=forecast_source,

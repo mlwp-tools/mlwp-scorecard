@@ -29,7 +29,7 @@ def page(verification, tmp_path_factory) -> str:
     out = tmp_path_factory.mktemp("drill") / "card.html"
     make_scorecard(
         verification,
-        out,
+        html_path=out,
         baseline_source="persistence",
         forecast_source="drifting-persistence",
         title="t",
@@ -140,7 +140,7 @@ def test_drilldown_actually_draws(verification, tmp_path):
     out = tmp_path / "card.html"
     make_scorecard(
         verification,
-        out,
+        html_path=out,
         baseline_source="persistence",
         forecast_source="drifting-persistence",
         title="t",

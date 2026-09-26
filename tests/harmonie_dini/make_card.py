@@ -46,8 +46,12 @@ def render(ds: xr.Dataset, name: str, baseline: str, forecast: str, scheme: str)
             f"{ds.attrs.get('n_stations', '?')} DMI stations, which are neutral."
         ),
     )
-    outputs = [OUT / f"{name}.{ext}" for ext in ("html", "png", "pdf")]
-    written = make_scorecard(ds, outputs, **kwargs)
+    written = make_scorecard(
+        ds,
+        html_path=OUT / f"{name}.html",
+        image_path=[OUT / f"{name}.png", OUT / f"{name}.pdf"],
+        **kwargs,
+    )
     layout = build_layout(
         ds, baseline_source=baseline, forecast_source=forecast, **axes
     )

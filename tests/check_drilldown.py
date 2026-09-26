@@ -35,7 +35,9 @@ def main() -> None:
         subtitle="synthetic reanalysis - click any cell for the full series",
     )
     layout = build_layout(ds, **kwargs)
-    written = make_scorecard(ds, [OUT / "card.html", OUT / "card.png"], **kwargs)
+    written = make_scorecard(
+        ds, html_path=OUT / "card.html", image_path=OUT / "card.png", **kwargs
+    )
     page = written[0].read_text()
 
     print(f"page {len(page) / 1024:.0f} kB")

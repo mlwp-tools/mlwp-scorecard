@@ -216,7 +216,8 @@ def _payload(page: str) -> dict:
 def test_renders_with_each_cell_naming_its_source(tmp_path):
     html, png = make_scorecard(
         _dataset(),
-        [tmp_path / "c.html", tmp_path / "c.png"],
+        html_path=tmp_path / "c.html",
+        image_path=tmp_path / "c.png",
         forecast_source=["a", "b"],
         **KW,
     )
@@ -229,5 +230,7 @@ def test_renders_with_each_cell_naming_its_source(tmp_path):
 
 
 def test_a_single_source_payload_does_not_repeat_the_source_per_cell(tmp_path):
-    (html,) = make_scorecard(_dataset(), tmp_path / "c.html", forecast_source="a", **KW)
+    (html,) = make_scorecard(
+        _dataset(), html_path=tmp_path / "c.html", forecast_source="a", **KW
+    )
     assert all("s" not in cell for cell in _payload(html.read_text())["cells"])

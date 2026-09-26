@@ -31,9 +31,9 @@ def test_renders_both_formats(netcdf, tmp_path):
             "persistence",
             "--forecast-source",
             "drifting-persistence",
-            "-o",
+            "--html-path",
             str(out_html),
-            "-o",
+            "--image-path",
             str(out_png),
         ]
     )
@@ -53,11 +53,25 @@ def test_forecast_source_is_repeatable(tmp_path):
     p = tmp_path / "v.nc"
     _dataset().to_netcdf(p)
     out = tmp_path / "c.html"
-    argv = [str(p), "--baseline-source", "base", "-o", str(out)]
+    argv = [str(p), "--baseline-source", "base", "--html-path", str(out)]
     for source in ("a", "b", "c"):
         argv += ["--forecast-source", source]
     assert main(argv + ["--cases", "pairwise", "--n-resamples", "50"]) == 0
     assert out.read_text().count('<i class="b') == 3 * 2 * 4  # sources x vars x leads
+
+
+def test_validate_only_needs_no_output(netcdf):
+    rc = main(
+        [
+            str(netcdf),
+            "--baseline-source",
+            "persistence",
+            "--forecast-source",
+            "drifting-persistence",
+            "--validate-only",
+        ]
+    )
+    assert rc == 0
 
 
 def test_validate_only_writes_nothing(netcdf, tmp_path):
@@ -69,7 +83,7 @@ def test_validate_only_writes_nothing(netcdf, tmp_path):
             "persistence",
             "--forecast-source",
             "drifting-persistence",
-            "-o",
+            "--html-path",
             str(out),
             "--validate-only",
         ]
@@ -91,7 +105,7 @@ def test_explicit_axes_are_honoured(netcdf, tmp_path):
             "truth_source,variable,level",
             "--columns",
             "metric,spatial_region",
-            "-o",
+            "--html-path",
             str(out),
         ]
     )
@@ -99,7 +113,13 @@ def test_explicit_axes_are_honoured(netcdf, tmp_path):
     assert out.exists()
 
 
-def test_unknown_output_format_exits_nonzero(netcdf, tmp_path):
+@pytest.mark.parametrize(
+    "flag, name",
+    [("--image-path", "c.txt"), ("--image-path", "c.html"), ("--html-path", "c.png")],
+)
+def test_an_output_suffix_that_contradicts_its_flag_exits_nonzero(
+    netcdf, tmp_path, flag, name
+):
     """A usage error should be a clear message and an exit code, not a traceback."""
     rc = main(
         [
@@ -108,12 +128,25 @@ def test_unknown_output_format_exits_nonzero(netcdf, tmp_path):
             "persistence",
             "--forecast-source",
             "drifting-persistence",
-            "-o",
-            str(tmp_path / "c.txt"),
+            flag,
+            str(tmp_path / name),
         ]
     )
     assert rc == 1
-    assert not (tmp_path / "c.txt").exists()
+    assert not (tmp_path / name).exists()
+
+
+def test_no_output_at_all_exits_nonzero(netcdf):
+    rc = main(
+        [
+            str(netcdf),
+            "--baseline-source",
+            "persistence",
+            "--forecast-source",
+            "drifting-persistence",
+        ]
+    )
+    assert rc == 1
 
 
 @pytest.fixture(scope="module")
@@ -140,7 +173,7 @@ def test_reads_zarr_as_well_as_netcdf(zarr_store, tmp_path):
             "persistence",
             "--forecast-source",
             "drifting-persistence",
-            "-o",
+            "--html-path",
             str(out),
         ]
     )
@@ -161,7 +194,7 @@ def test_unknown_input_format_exits_nonzero(tmp_path):
             "persistence",
             "--forecast-source",
             "drifting-persistence",
-            "-o",
+            "--html-path",
             str(out),
         ]
     )

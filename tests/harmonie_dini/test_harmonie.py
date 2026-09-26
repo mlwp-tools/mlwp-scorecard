@@ -317,7 +317,8 @@ def test_renders_both_formats(summary, tmp_path):
 
     outs = make_scorecard(
         summary,
-        [tmp_path / "c.html", tmp_path / "c.png"],
+        html_path=tmp_path / "c.html",
+        image_path=tmp_path / "c.png",
         baseline_source="aifs",
         forecast_source="harmonie-arome",
         rows=["truth_source", "variable"],

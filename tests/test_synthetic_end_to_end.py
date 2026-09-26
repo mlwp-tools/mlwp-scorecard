@@ -93,7 +93,8 @@ def test_renders_html_and_static(verification, tmp_path):
     """Both backends produce a file from the same layout."""
     outs = make_scorecard(
         verification,
-        [tmp_path / "c.html", tmp_path / "c.png", tmp_path / "c.pdf"],
+        html_path=tmp_path / "c.html",
+        image_path=[tmp_path / "c.png", tmp_path / "c.pdf"],
         baseline_source="persistence",
         forecast_source="drifting-persistence",
         title="t",
@@ -103,11 +104,31 @@ def test_renders_html_and_static(verification, tmp_path):
         assert p.stat().st_size > 2000, p
 
 
+@pytest.mark.parametrize(
+    "outputs, match",
+    [
+        ({}, "nothing to write"),
+        ({"html_path": "c.png"}, "does not end in .html"),
+        ({"image_path": "c.html"}, "expected one of"),
+        ({"html_path": "c.html", "image_path": ["c.png", "c.txt"]}, "expected one of"),
+    ],
+)
+def test_outputs_are_checked_before_anything_is_computed(outputs, match):
+    """An empty dataset would fail validation; the output check must come first,
+    so a mistyped suffix never costs a full bootstrap to discover."""
+    import xarray as xr
+
+    with pytest.raises(ValueError, match=match):
+        make_scorecard(
+            xr.Dataset(), baseline_source="a", forecast_source="b", **outputs
+        )
+
+
 def test_html_has_no_external_requests(verification, tmp_path):
     """No CDN, no analytics, no webfonts: the page must work offline."""
     p = make_scorecard(
         verification,
-        tmp_path / "c.html",
+        html_path=tmp_path / "c.html",
         baseline_source="persistence",
         forecast_source="drifting-persistence",
     )[0]
@@ -119,7 +140,7 @@ def test_html_has_no_external_requests(verification, tmp_path):
 def test_html_box_count_matches_the_layout(layout, verification, tmp_path):
     p = make_scorecard(
         verification,
-        tmp_path / "c.html",
+        html_path=tmp_path / "c.html",
         rows=layout.row_dims,
         columns=layout.column_dims,
         baseline_source="persistence",

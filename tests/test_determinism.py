@@ -17,8 +17,8 @@ def test_html_is_byte_identical_across_renders(verification, tmp_path):
     kw = dict(
         baseline_source="persistence", forecast_source="drifting-persistence", title="t"
     )
-    a = make_scorecard(verification, tmp_path / "a.html", **kw)[0]
-    b = make_scorecard(verification, tmp_path / "b.html", **kw)[0]
+    a = make_scorecard(verification, html_path=tmp_path / "a.html", **kw)[0]
+    b = make_scorecard(verification, html_path=tmp_path / "b.html", **kw)[0]
     assert a.read_bytes() == b.read_bytes()
 
 
@@ -32,7 +32,7 @@ def test_html_is_identical_in_a_fresh_process(tmp_path):
         from synthetic import make_verification_dataset
         from mlwp_scorecards import make_scorecard
         ds = make_verification_dataset(n_case=32, drift=0.25, seed=3)
-        make_scorecard(ds, sys.argv[1], baseline_source="persistence",
+        make_scorecard(ds, html_path=sys.argv[1], baseline_source="persistence",
                        forecast_source="drifting-persistence", title="t",
                        n_resamples=100)
         """

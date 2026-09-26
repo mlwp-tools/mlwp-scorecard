@@ -9,7 +9,7 @@ from pathlib import Path
 import xarray as xr
 from loguru import logger
 
-from .api import build_layout, render
+from .api import _output_paths, build_layout, render
 
 #: The only input formats. Anything else is refused by name rather than handed
 #: to ``xr.open_dataset`` to be sniffed: a mistyped path or a CSV should say so,
@@ -59,12 +59,16 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
-        "-o",
-        "--output",
-        action="append",
-        required=True,
+        "--html-path",
         metavar="PATH",
-        help="output file; repeatable. .html, .png, .pdf or .svg",
+        help="write the interactive page here (.html)",
+    )
+    p.add_argument(
+        "--image-path",
+        action="append",
+        metavar="PATH",
+        help="write the static figure here; repeatable. Format from the suffix: "
+        ".png, .pdf, .svg, ...",
     )
     p.add_argument("--rows", help="comma-separated coordinates to nest on the rows")
     p.add_argument(
@@ -147,13 +151,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     """
     args = build_parser().parse_args(argv)
 
-    from .api import _STATIC_SUFFIXES
-
-    known = _STATIC_SUFFIXES | {".html", ".htm"}
-    bad = [o for o in args.output if Path(o).suffix.lower() not in known]
-    if bad:
-        logger.error(f"cannot render {bad}: expected one of {', '.join(sorted(known))}")
-        return 1
+    # Checked before the dataset is even opened: a mistyped suffix should not cost
+    # a full bootstrap first. Validating writes nothing, so it needs no output.
+    outputs = []
+    if not args.validate_only:
+        try:
+            outputs = _output_paths(args.html_path, args.image_path)
+        except ValueError as e:
+            logger.error(str(e))
+            return 1
 
     path = Path(args.dataset)
     suffix = path.suffix.lower()
@@ -210,7 +216,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.validate_only:
         return 0
 
-    for out in args.output:
+    for out in outputs:
         logger.info(f"wrote {render(layout, out, dpi=args.dpi)}")
     return 0
 

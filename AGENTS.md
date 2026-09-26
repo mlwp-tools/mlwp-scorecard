@@ -41,7 +41,7 @@ Guidance for agents and contributors working in this repository.
 - Colour, scaling and metric polarity: `src/mlwp_scorecards/colours.py`
 - Renderers: `src/mlwp_scorecards/render/html.py`, `render/static.py`
 - Synthetic test data: `tests/synthetic.py`
-- Notes on other scorecard tools: `docs/prior-work/` (`harp.md`, `ecmwf-scorecard.md`, `brightband/`)
+- Notes on other scorecard tools: `docs/prior-work/README.md` (overview and comparison; links to each note)
 
 ## Development expectations
 

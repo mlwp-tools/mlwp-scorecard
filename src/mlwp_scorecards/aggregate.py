@@ -42,7 +42,7 @@ __all__ = [
     "aggregate",
     "resample_indices",
     "bootstrap_mean",
-    "normalise_sources",
+    "resolve_sources",
     "CASE_POLICIES",
 ]
 
@@ -111,35 +111,74 @@ class Aggregated:
         return bool(self.paired)
 
 
-def normalise_sources(
-    forecast_source: str | Sequence[str], baseline_source: str | None
+def resolve_sources(
+    predictions_from: str | Sequence[Any],
+    relative_to: str | None,
+    available: Sequence[str],
 ) -> tuple[str, ...]:
-    """Validate the source selection and return the forecast sources as a tuple.
+    """Expand and validate the forecast sources to show.
+
+    ``...`` stands for every source not otherwise named, in the order of the
+    ``forecast_source`` coordinate, so ``["IFS-HRES", ...]`` is IFS-HRES first and
+    then all the rest. The baseline is left out of that expansion, since it is
+    what every forecast source is compared against rather than one of them.
+
+    Parameters
+    ----------
+    predictions_from : str or sequence of str and at most one ``...``
+    relative_to : str or None
+        The baseline.
+    available : sequence of str
+        The members of ``forecast_source``, in coordinate order.
+
+    Returns
+    -------
+    tuple of str
 
     Raises
     ------
+    KeyError
+        If a named source is not in ``forecast_source``.
     ValueError
-        If no forecast source is given, one is repeated, or the baseline is also
-        one of the forecast sources. The baseline is the reference every row is
-        differenced against, never a row of its own.
+        If ``...`` appears more than once, a source is repeated, the baseline is
+        also named as a forecast source, or nothing is left to show.
     """
-    sources = (
-        (forecast_source,)
-        if isinstance(forecast_source, str)
-        else tuple(str(s) for s in forecast_source)
+    have = [str(s) for s in available]
+    items = (
+        [predictions_from]
+        if isinstance(predictions_from, str)
+        else list(predictions_from)
     )
-    if not sources:
-        raise ValueError("forecast_source= names no sources")
-    dupes = sorted({s for s in sources if sources.count(s) > 1})
-    if dupes:
-        raise ValueError(f"forecast_source= repeats {dupes}")
-    if baseline_source is not None and baseline_source in sources:
-        raise ValueError(
-            f"baseline_source={baseline_source!r} is also in forecast_source=; the "
-            f"baseline is what every forecast source is compared against, so it "
-            f"cannot also be one of them"
+    if sum(1 for s in items if s is Ellipsis) > 1:
+        raise ValueError("predictions_from= may contain '...' at most once")
+    named = [str(s) for s in items if s is not Ellipsis]
+
+    if relative_to is not None and relative_to not in have:
+        raise KeyError(
+            f"relative_to={relative_to!r} is not in {FORECAST_DIM} (have: {have})"
         )
-    return sources
+    for name in named:
+        if name not in have:
+            raise KeyError(
+                f"predictions_from={name!r} is not in {FORECAST_DIM} (have: {have})"
+            )
+    dupes = sorted({s for s in named if named.count(s) > 1})
+    if dupes:
+        raise ValueError(f"predictions_from= repeats {dupes}")
+    if relative_to is not None and relative_to in named:
+        raise ValueError(
+            f"relative_to={relative_to!r} is also in predictions_from=; the baseline "
+            f"is what every forecast source is compared against, so it cannot also "
+            f"be one of them"
+        )
+
+    rest = [s for s in have if s not in named and s != relative_to]
+    sources: list[str] = []
+    for s in items:
+        sources.extend(rest if s is Ellipsis else [str(s)])
+    if not sources:
+        raise ValueError("predictions_from= leaves no forecast source to show")
+    return tuple(sources)
 
 
 def resample_indices(
@@ -265,7 +304,8 @@ def aggregate(
     cube : PreparedCube
         From :func:`~mlwp_scorecards.ingest.prepare`.
     forecast_source : str or sequence of str
-        Members of ``forecast_source`` to compare with the baseline.
+        Members of ``forecast_source`` to compare with the baseline; ``...`` is
+        expanded as in :func:`resolve_sources`.
     baseline_source : str
         The member every one of them is differenced against: the card colours
         ``forecast - baseline``.
@@ -287,7 +327,6 @@ def aggregate(
     """
     report = cube.report
     da = cube.score
-    sources = normalise_sources(forecast_source, baseline_source)
     if cases not in CASE_POLICIES:
         raise ValueError(f"cases must be one of {CASE_POLICIES}, got {cases!r}")
 
@@ -297,12 +336,9 @@ def aggregate(
 
     if FORECAST_DIM not in da.dims:
         raise KeyError(f"{FORECAST_DIM!r} is not a dimension of the dataset")
-    have = [str(s) for s in da.coords[FORECAST_DIM].values]
-    wanted = [("baseline_source", baseline_source)]
-    wanted += [("forecast_source", s) for s in sources]
-    for role, name in wanted:
-        if name not in have:
-            raise KeyError(f"{role}={name!r} is not in {FORECAST_DIM} (have: {have})")
+    sources = resolve_sources(
+        forecast_source, baseline_source, da.coords[FORECAST_DIM].values
+    )
 
     fc_da = da.sel({FORECAST_DIM: list(sources)})
     base_da = da.sel({FORECAST_DIM: baseline_source}, drop=True)

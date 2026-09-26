@@ -29,7 +29,7 @@ AXES = dict(
 def main() -> None:
     OUT.mkdir(exist_ok=True)
     ds = _big_dataset()
-    layout = build_layout(ds, baseline_source="ctl", forecast_source="exp", **AXES)
+    layout = build_layout(ds, relative_to="ctl", predictions_from=["exp"], **AXES)
     s = layout.stats
     print(
         f"{s.n_rows} rows x {s.n_cols} columns, {s.n_boxes} boxes, "

@@ -36,8 +36,8 @@ ds = xr.open_dataset("verification_summary.nc")
 
 make_scorecard(
     ds,
-    forecast_source="GraphCast",
-    baseline_source="IFS-HRES",
+    predictions_from=["GraphCast"],
+    relative_to="IFS-HRES",
     html_path="scorecard.html",
     image_path="scorecard.png",
     title="GraphCast vs IFS HRES",
@@ -49,7 +49,7 @@ Rows and columns are inferred from the dataset, or named explicitly:
 ```python
 make_scorecard(
     ds, html_path="scorecard.html",
-    forecast_source="GraphCast", baseline_source="IFS-HRES",
+    predictions_from=["GraphCast"], relative_to="IFS-HRES",
     rows=["truth_source", "variable", "level"],
     columns=["spatial_region", "metric"],
     cell="lead_time",
@@ -61,23 +61,30 @@ truth, baseline or forecast is an argument rather than something baked into the 
 
 ### Several forecast sources against one baseline
 
-Give `forecast_source` a list and it becomes a layout axis — outermost on the rows
-unless you place it — with one block of rows per source, each compared with the
-baseline:
+Name several sources in `predictions_from` and `forecast_source` becomes a layout
+axis — outermost on the rows unless you place it — with one block of rows per
+source, each compared with the `relative_to` baseline:
 
 ```python
 make_scorecard(
     ds, html_path="scorecard.html",
-    forecast_source=["GraphCast", "AIFS", "Aurora"], baseline_source="IFS-HRES",
+    predictions_from=["GraphCast", "AIFS", "Aurora"], relative_to="IFS-HRES",
     rows=["forecast_source", "variable", "level"],
     columns=["metric"],
     truth_source="analysis",
 )
 ```
 
+`...` stands for every source not otherwise named, in the order of the
+`forecast_source` coordinate, and never includes the baseline. So
+`predictions_from=["GraphCast", ...]` is GraphCast first and then all the rest,
+and leaving `predictions_from` out is the same as `[...]`: every source but the
+baseline.
+
 Every row is exactly the two-source card for that source: the resample is shared
 by all of them, so the rows are consistent with one another. The baseline may not
-also be one of the forecast sources.
+also be named in `predictions_from`. `relative_to` is required for now; a card of
+absolute scores with no baseline is planned.
 
 `cases=` says which forecast cases each comparison rests on, and the card says
 which was used:
@@ -96,7 +103,7 @@ paths are all the API has.
 
 ```bash
 mlwp.make_scorecard verification_summary.nc \
-    --forecast-source GraphCast --baseline-source IFS-HRES \
+    --predictions-from GraphCast --relative-to IFS-HRES \
     --html-path scorecard.html --image-path scorecard.png
 ```
 
@@ -173,7 +180,7 @@ Both choices are arguments, and both are printed on the card:
 
 ```python
 make_scorecard(ds, html_path="scorecard.html",
-               forecast_source="GraphCast", baseline_source="IFS-HRES",
+               predictions_from=["GraphCast"], relative_to="IFS-HRES",
                bootstrap="moving-block",   # or "iid"
                block_length=None,          # in CASES; derived from the cadence
                n_resamples=2000,
@@ -201,7 +208,7 @@ Data variables:
 
 ```python
 make_scorecard(ds, html_path="scorecard.html",
-               forecast_source="GraphCast", baseline_source="IFS-HRES")
+               predictions_from=["GraphCast"], relative_to="IFS-HRES")
 ```
 
 `truth_source`, `level` and `spatial_region` are all absent, so the inferred
@@ -228,7 +235,7 @@ only when there are several forecast sources.
 
 | Name | Required | What it does |
 |---|---|---|
-| `forecast_source` | yes | The sources being compared, named at call time as `forecast_source=` and `baseline_source=`. The card shows `forecast - baseline`. With one forecast source the dimension is collapsed by differencing; with several it is laid out like any other axis. |
+| `forecast_source` | yes | The sources being compared, named at call time as `predictions_from=` and `relative_to=`. The card shows `forecast - baseline`. With one forecast source the dimension is collapsed by differencing; with several it is laid out like any other axis. |
 | `init_time` | no | The forecast cases. Collapsed by the bootstrap, which is where the intervals and the significance come from. Absent, the values are read as already-collapsed means. |
 | `variable`, `metric` | never | **Produced** by splitting the `{metric}.{variable}` names. Supplying either as an input dimension is an error. |
 
@@ -242,7 +249,7 @@ dimension the package has never heard of behaves exactly the same way:
 # season and threshold are not special; they are just axes
 make_scorecard(
     ds, html_path="scorecard.html",
-    forecast_source="GraphCast", baseline_source="IFS-HRES",
+    predictions_from=["GraphCast"], relative_to="IFS-HRES",
     rows=["season", "variable"],
     columns=["threshold", "metric"],
 )

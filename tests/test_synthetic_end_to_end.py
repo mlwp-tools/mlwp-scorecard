@@ -95,8 +95,8 @@ def test_renders_html_and_static(verification, tmp_path):
         verification,
         html_path=tmp_path / "c.html",
         image_path=[tmp_path / "c.png", tmp_path / "c.pdf"],
-        baseline_source="persistence",
-        forecast_source="drifting-persistence",
+        relative_to="persistence",
+        predictions_from=["drifting-persistence"],
         title="t",
     )
     assert [p.name for p in outs] == ["c.html", "c.png", "c.pdf"]
@@ -119,9 +119,7 @@ def test_outputs_are_checked_before_anything_is_computed(outputs, match):
     import xarray as xr
 
     with pytest.raises(ValueError, match=match):
-        make_scorecard(
-            xr.Dataset(), baseline_source="a", forecast_source="b", **outputs
-        )
+        make_scorecard(xr.Dataset(), relative_to="a", predictions_from=["b"], **outputs)
 
 
 def test_html_has_no_external_requests(verification, tmp_path):
@@ -129,8 +127,8 @@ def test_html_has_no_external_requests(verification, tmp_path):
     p = make_scorecard(
         verification,
         html_path=tmp_path / "c.html",
-        baseline_source="persistence",
-        forecast_source="drifting-persistence",
+        relative_to="persistence",
+        predictions_from=["drifting-persistence"],
     )[0]
     text = p.read_text()
     assert not re.search(r'(?:src|href)\s*=\s*["\']https?://', text)
@@ -143,8 +141,8 @@ def test_html_box_count_matches_the_layout(layout, verification, tmp_path):
         html_path=tmp_path / "c.html",
         rows=layout.row_dims,
         columns=layout.column_dims,
-        baseline_source="persistence",
-        forecast_source="drifting-persistence",
+        relative_to="persistence",
+        predictions_from=["drifting-persistence"],
     )[0]
     assert p.read_text().count('<i class="b') == layout.stats.n_boxes
 
@@ -160,13 +158,13 @@ def test_unknown_metric_refuses_to_guess(verification, tmp_path):
     )
     with pytest.raises(KeyError, match="unknown metric"):
         build_layout(
-            ds, baseline_source="persistence", forecast_source="drifting-persistence"
+            ds, relative_to="persistence", predictions_from=["drifting-persistence"]
         )
 
     lay = build_layout(
         ds,
-        baseline_source="persistence",
-        forecast_source="drifting-persistence",
+        relative_to="persistence",
+        predictions_from=["drifting-persistence"],
         metric_polarity={"wibble": "lower_is_better"},
     )
     assert lay.stats.n_cells_present > 0

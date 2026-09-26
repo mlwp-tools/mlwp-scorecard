@@ -11,7 +11,7 @@ from typing import Any, Mapping, Sequence
 
 import xarray as xr
 
-from .aggregate import aggregate, normalise_sources
+from .aggregate import aggregate, resolve_sources
 from .colours import SCHEMES, ColourScheme, FixedScaling
 from .ingest import (
     CASE_DIM,
@@ -96,8 +96,8 @@ def _infer_axes(
 def build_layout(
     data: xr.Dataset,
     *,
-    forecast_source: str | Sequence[str],
-    baseline_source: str,
+    predictions_from: str | Sequence[Any] = (...,),
+    relative_to: str | None = None,
     cases: str = "common",
     rows: Sequence[str] | None = None,
     columns: Sequence[str] | None = None,
@@ -122,13 +122,18 @@ def build_layout(
     ----------
     data : xr.Dataset
         Verification statistics: one variable per ``{metric}.{variable}`` pair.
-    forecast_source : str or sequence of str
-        Members of ``forecast_source`` to show. With several, ``forecast_source``
-        becomes a layout axis: each row (or column) is one of them compared with
-        the baseline.
-    baseline_source : str
+    predictions_from : str or sequence, optional
+        Members of ``forecast_source`` to show, in order. ``...`` stands for every
+        source not otherwise named, in coordinate order, so ``["GraphCast", ...]``
+        puts GraphCast first and then all the rest; the default, ``(...,)``, is
+        every source but the baseline. With several, ``forecast_source`` becomes
+        a layout axis: each row (or column) is one of them compared with the
+        baseline.
+    relative_to : str
         The member of ``forecast_source`` each is compared with; the card colours
-        ``forecast - baseline``. Must not also be one of ``forecast_source``.
+        ``forecast - baseline``. Left out of any ``...``, and an error to name in
+        ``predictions_from`` as well. ``None`` will mean a card of absolute scores
+        with no baseline, which is not implemented yet and raises.
     cases : {"common", "pairwise"}, optional
         Which forecast cases each comparison rests on. ``"common"``: only those
         every selected source and the baseline scored, so rows are comparable with
@@ -169,7 +174,23 @@ def build_layout(
     Returns
     -------
     Layout, or (Layout, ValidationReport)
+
+    Raises
+    ------
+    NotImplementedError
+        If ``relative_to`` is None: the absolute-score card is not built yet.
     """
+    if relative_to is None:
+        raise NotImplementedError(
+            "a card of absolute scores (relative_to=None) is not implemented yet; "
+            "name the baseline with relative_to="
+        )
+    if FORECAST_DIM not in data.dims:
+        raise KeyError(f"{FORECAST_DIM!r} is not a dimension of the dataset")
+    sources = resolve_sources(
+        predictions_from, relative_to, data.coords[FORECAST_DIM].values
+    )
+
     sch = SCHEMES[scheme] if isinstance(scheme, str) else scheme
 
     subset: dict[str, Any] = dict(select or {})
@@ -180,7 +201,6 @@ def build_layout(
             else [truth_source]
         )
 
-    sources = normalise_sources(forecast_source, baseline_source)
     row_dims, col_dims = _infer_axes(data, rows, columns, cell, len(sources))
 
     cube = prepare(
@@ -193,7 +213,7 @@ def build_layout(
     agg = aggregate(
         cube,
         forecast_source=sources,
-        baseline_source=baseline_source,
+        baseline_source=relative_to,
         cases=cases,
         subset=subset or None,
         bootstrap=bootstrap,
@@ -286,8 +306,8 @@ def _output_paths(
 def make_scorecard(
     data: xr.Dataset,
     *,
-    forecast_source: str | Sequence[str],
-    baseline_source: str,
+    predictions_from: str | Sequence[Any] = (...,),
+    relative_to: str | None = None,
     html_path: str | Path | None = None,
     image_path: str | Path | Sequence[str | Path] | None = None,
     dpi: int = 200,
@@ -299,9 +319,10 @@ def make_scorecard(
     ----------
     data : xr.Dataset
         Verification statistics.
-    forecast_source : str or sequence of str
-        The sources to show; see :func:`build_layout`.
-    baseline_source : str
+    predictions_from : str or sequence, optional
+        The sources to show, with ``...`` for all the rest; see
+        :func:`build_layout`.
+    relative_to : str
         The source each is compared with.
     html_path : path, optional
         Where to write the self-contained interactive page. Must end in ``.html``.
@@ -328,15 +349,15 @@ def make_scorecard(
 
     Examples
     --------
-    >>> make_scorecard(ds, forecast_source="GraphCast", baseline_source="IFS-HRES",
+    >>> make_scorecard(ds, predictions_from=["GraphCast"], relative_to="IFS-HRES",
     ...                html_path="card.html",
     ...                image_path=["card.png", "card.pdf"])  # doctest: +SKIP
     """
     paths = _output_paths(html_path, image_path)
     layout = build_layout(
         data,
-        forecast_source=forecast_source,
-        baseline_source=baseline_source,
+        predictions_from=predictions_from,
+        relative_to=relative_to,
         **kwargs,
     )
     assert isinstance(layout, Layout)

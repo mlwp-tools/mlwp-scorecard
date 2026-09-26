@@ -27,9 +27,9 @@ def test_renders_both_formats(netcdf, tmp_path):
     rc = main(
         [
             str(netcdf),
-            "--baseline-source",
+            "--relative-to",
             "persistence",
-            "--forecast-source",
+            "--predictions-from",
             "drifting-persistence",
             "--html-path",
             str(out_html),
@@ -53,20 +53,36 @@ def test_forecast_source_is_repeatable(tmp_path):
     p = tmp_path / "v.nc"
     _dataset().to_netcdf(p)
     out = tmp_path / "c.html"
-    argv = [str(p), "--baseline-source", "base", "--html-path", str(out)]
+    argv = [str(p), "--relative-to", "base", "--html-path", str(out)]
     for source in ("a", "b", "c"):
-        argv += ["--forecast-source", source]
+        argv += ["--predictions-from", source]
     assert main(argv + ["--cases", "pairwise", "--n-resamples", "50"]) == 0
     assert out.read_text().count('<i class="b') == 3 * 2 * 4  # sources x vars x leads
+
+
+def test_predictions_from_accepts_an_ellipsis_and_defaults_to_all(tmp_path):
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).parent))
+    from test_sources import _dataset
+
+    p = tmp_path / "v.nc"
+    _dataset().to_netcdf(p)
+    common = [str(p), "--relative-to", "base", "--n-resamples", "50"]
+    for extra in (["--predictions-from", "c", "--predictions-from", "..."], []):
+        out = tmp_path / f"c{len(extra)}.html"
+        assert main(common + extra + ["--html-path", str(out)]) == 0
+        assert out.read_text().count('<i class="b') == 3 * 2 * 4
 
 
 def test_validate_only_needs_no_output(netcdf):
     rc = main(
         [
             str(netcdf),
-            "--baseline-source",
+            "--relative-to",
             "persistence",
-            "--forecast-source",
+            "--predictions-from",
             "drifting-persistence",
             "--validate-only",
         ]
@@ -79,9 +95,9 @@ def test_validate_only_writes_nothing(netcdf, tmp_path):
     rc = main(
         [
             str(netcdf),
-            "--baseline-source",
+            "--relative-to",
             "persistence",
-            "--forecast-source",
+            "--predictions-from",
             "drifting-persistence",
             "--html-path",
             str(out),
@@ -97,9 +113,9 @@ def test_explicit_axes_are_honoured(netcdf, tmp_path):
     rc = main(
         [
             str(netcdf),
-            "--baseline-source",
+            "--relative-to",
             "persistence",
-            "--forecast-source",
+            "--predictions-from",
             "drifting-persistence",
             "--rows",
             "truth_source,variable,level",
@@ -124,9 +140,9 @@ def test_an_output_suffix_that_contradicts_its_flag_exits_nonzero(
     rc = main(
         [
             str(netcdf),
-            "--baseline-source",
+            "--relative-to",
             "persistence",
-            "--forecast-source",
+            "--predictions-from",
             "drifting-persistence",
             flag,
             str(tmp_path / name),
@@ -140,9 +156,9 @@ def test_no_output_at_all_exits_nonzero(netcdf):
     rc = main(
         [
             str(netcdf),
-            "--baseline-source",
+            "--relative-to",
             "persistence",
-            "--forecast-source",
+            "--predictions-from",
             "drifting-persistence",
         ]
     )
@@ -169,9 +185,9 @@ def test_reads_zarr_as_well_as_netcdf(zarr_store, tmp_path):
     rc = main(
         [
             str(zarr_store),
-            "--baseline-source",
+            "--relative-to",
             "persistence",
-            "--forecast-source",
+            "--predictions-from",
             "drifting-persistence",
             "--html-path",
             str(out),
@@ -190,9 +206,9 @@ def test_unknown_input_format_exits_nonzero(tmp_path):
     rc = main(
         [
             str(bad),
-            "--baseline-source",
+            "--relative-to",
             "persistence",
-            "--forecast-source",
+            "--predictions-from",
             "drifting-persistence",
             "--html-path",
             str(out),

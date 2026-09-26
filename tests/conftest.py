@@ -35,8 +35,8 @@ def layout(verification):
 
     return build_layout(
         verification,
-        baseline_source="persistence",
-        forecast_source="drifting-persistence",
+        relative_to="persistence",
+        predictions_from=["drifting-persistence"],
         rows=ROWS,
         columns=COLUMNS,
         title="test card",

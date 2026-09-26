@@ -17,13 +17,17 @@ Design and rationale are documented in [`PLAN.md`](PLAN.md).
 
 ### Changed
 
-- **`control=` / `experiment=` are now `baseline_source=` / `forecast_source=`**,
-  in the Python API and the CLI (`--baseline-source`, `--forecast-source`). The
-  names follow the coordinate they select, as `truth_source=` already did, and a
-  baseline is often not a model at all. `Step.control*` / `Step.experiment*`
-  become `Step.baseline*` / `Step.forecast*`, and `Layout.control` /
-  `Layout.experiment` become `Layout.baseline_source` / `Layout.forecast_sources`.
-  There is no alias for the old names.
+- **`control=` / `experiment=` are now `relative_to=` / `predictions_from=`**, in
+  the Python API and the CLI (`--relative-to`, and a repeatable
+  `--predictions-from`). `predictions_from` takes a list in which `...` stands for
+  every source not otherwise named, in coordinate order and never including the
+  baseline, so `["GraphCast", ...]` is GraphCast first and then the rest; left
+  out, it is every source but the baseline. A baseline is often not a model at
+  all, hence "relative to" rather than "control". `relative_to=None` is reserved
+  for a card of absolute scores and raises `NotImplementedError` for now.
+  `Step.control*` / `Step.experiment*` become `Step.baseline*` / `Step.forecast*`,
+  and `Layout.control` / `Layout.experiment` become `Layout.baseline_source` /
+  `Layout.forecast_sources`. There is no alias for the old names.
 - **Outputs are named arguments.** `make_scorecard(ds, "card.html", ...)` becomes
   `make_scorecard(ds, html_path="card.html", image_path=["card.png", "card.pdf"],
   ...)`, and everything after `data` is keyword-only. At least one output is
@@ -74,10 +78,10 @@ Design and rationale are documented in [`PLAN.md`](PLAN.md).
 
 ### Added
 
-- **Several forecast sources against one baseline.** `forecast_source=` takes a
-  list, and `forecast_source` then becomes a layout axis, outermost on the rows by
-  default. Each row is exactly the two-source card for that source, because one
-  resample is shared by every pair. The CLI's `--forecast-source` is repeatable.
+- **Several forecast sources against one baseline.** With more than one source in
+  `predictions_from`, `forecast_source` becomes a layout axis, outermost on the
+  rows by default. Each row is exactly the two-source card for that source,
+  because one resample is shared by every pair.
 - **`cases="common" | "pairwise"`**: which forecast cases each comparison rests
   on. `"common"` (the default) uses only the cases every selected source scored,
   so rows are comparable; `"pairwise"` uses what each shares with the baseline.

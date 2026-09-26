@@ -28,8 +28,8 @@ def main() -> None:
     def card(truth: str):
         return build_layout(
             ds,
-            baseline_source="aifs",
-            forecast_source="harmonie-arome",
+            relative_to="aifs",
+            predictions_from=["harmonie-arome"],
             rows=["truth_source", "variable"],
             columns=["metric"],
             truth_source=truth,

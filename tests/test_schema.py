@@ -50,8 +50,8 @@ def _card(ds, **kwargs):
     kwargs.setdefault("n_resamples", 300)
     return build_layout(
         ds,
-        baseline_source="ctl",
-        forecast_source="exp",
+        relative_to="ctl",
+        predictions_from=["exp"],
         rows=["truth_source", "variable"],
         columns=["metric"],
         **kwargs,
@@ -142,8 +142,8 @@ def test_a_variable_may_omit_a_dimension_that_does_not_apply_to_it():
     )
     lay = build_layout(
         ds,
-        baseline_source="ctl",
-        forecast_source="exp",
+        relative_to="ctl",
+        predictions_from=["exp"],
         rows=["truth_source", "variable", "level"],
         columns=["metric"],
         n_resamples=100,
@@ -187,8 +187,8 @@ def test_an_unreserved_dimension_is_just_an_axis():
     """
     lay = build_layout(
         _seasonal(),
-        baseline_source="ctl",
-        forecast_source="exp",
+        relative_to="ctl",
+        predictions_from=["exp"],
         rows=["season", "variable"],
         columns=["threshold", "metric"],
         n_resamples=100,
@@ -203,8 +203,8 @@ def test_an_unplaced_dimension_is_an_error_naming_a_remedy_that_works():
     with pytest.raises(KeyError, match=r"ds\.sel\(season=\.\.\.\)") as excinfo:
         build_layout(
             ds,
-            baseline_source="ctl",
-            forecast_source="exp",
+            relative_to="ctl",
+            predictions_from=["exp"],
             rows=["variable"],
             columns=["metric"],
         )
@@ -212,8 +212,8 @@ def test_an_unplaced_dimension_is_an_error_naming_a_remedy_that_works():
 
     lay = build_layout(
         ds.sel(season="DJF", threshold=1.0),
-        baseline_source="ctl",
-        forecast_source="exp",
+        relative_to="ctl",
+        predictions_from=["exp"],
         rows=["variable"],
         columns=["metric"],
         n_resamples=100,
@@ -232,7 +232,7 @@ def test_inference_places_unknown_dimensions_on_the_columns_in_order():
     """Documented behaviour, and it has to be deterministic: `test_determinism`
     renders the same card in a fresh process and demands identical bytes."""
     lay = build_layout(
-        _seasonal(), baseline_source="ctl", forecast_source="exp", n_resamples=100
+        _seasonal(), relative_to="ctl", predictions_from=["exp"], n_resamples=100
     )
     assert lay.row_dims == ("variable",)
     assert lay.column_dims == ("metric", "season", "threshold")
@@ -280,8 +280,8 @@ def test_swapping_baseline_and_forecast_source_negates_the_card():
     kw = dict(
         rows=["truth_source", "variable"], columns=["metric"], n_resamples=300, seed=0
     )
-    a = build_layout(ds, baseline_source="ctl", forecast_source="exp", **kw)
-    b = build_layout(ds, baseline_source="exp", forecast_source="ctl", **kw)
+    a = build_layout(ds, relative_to="ctl", predictions_from=["exp"], **kw)
+    b = build_layout(ds, relative_to="exp", predictions_from=["ctl"], **kw)
     for sa, sb in zip(
         a.sel(truth_source="analysis", variable="2t", metric="rmse").steps,
         b.sel(truth_source="analysis", variable="2t", metric="rmse").steps,
@@ -333,7 +333,7 @@ def test_the_minimal_readme_example_renders_as_documented():
 
     ds = _dataset(**{"rmse.2t": series(1.2, "K"), "rmse.msl": series(80.0, "Pa")})
     lay = build_layout(
-        ds, baseline_source="IFS-HRES", forecast_source="GraphCast", n_resamples=200
+        ds, relative_to="IFS-HRES", predictions_from=["GraphCast"], n_resamples=200
     )
     assert lay.row_dims == ("variable",)
     assert lay.column_dims == ("metric",)

@@ -37,17 +37,19 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"verification summary ({', '.join(sorted(_INPUT_SUFFIXES))})",
     )
     p.add_argument(
-        "--forecast-source",
+        "--predictions-from",
         action="append",
-        required=True,
         metavar="NAME",
-        help="forecast source to compare with the baseline; repeatable",
+        help=(
+            "forecast source to show; repeatable, in order. '...' stands for every "
+            "source not otherwise named (default: all but the baseline)"
+        ),
     )
     p.add_argument(
-        "--baseline-source",
+        "--relative-to",
         required=True,
         metavar="NAME",
-        help="the source every forecast source is compared with",
+        help="the baseline every forecast source is compared with",
     )
     p.add_argument(
         "--cases",
@@ -178,8 +180,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     layout, report = build_layout(
         ds,
-        forecast_source=args.forecast_source,
-        baseline_source=args.baseline_source,
+        predictions_from=[
+            ... if s == "..." else s for s in (args.predictions_from or ["..."])
+        ],
+        relative_to=args.relative_to,
         cases=args.cases,
         rows=_split(args.rows),
         columns=_split(args.columns),

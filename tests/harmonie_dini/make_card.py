@@ -34,8 +34,8 @@ def render(ds: xr.Dataset, name: str, baseline: str, forecast: str, scheme: str)
         cell="lead_time",
     )
     kwargs = dict(
-        baseline_source=baseline,
-        forecast_source=forecast,
+        relative_to=baseline,
+        predictions_from=[forecast],
         scheme=scheme,
         **axes,
         title=f"{forecast} vs {baseline}",
@@ -52,9 +52,7 @@ def render(ds: xr.Dataset, name: str, baseline: str, forecast: str, scheme: str)
         image_path=[OUT / f"{name}.png", OUT / f"{name}.pdf"],
         **kwargs,
     )
-    layout = build_layout(
-        ds, baseline_source=baseline, forecast_source=forecast, **axes
-    )
+    layout = build_layout(ds, relative_to=baseline, predictions_from=[forecast], **axes)
 
     print(f"\n{name}: {layout.stats.n_rows} rows x {layout.stats.n_cols} columns")
     for p in written:

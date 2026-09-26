@@ -28,3 +28,6 @@ tmp/
 
 # macOS
 .DS_Store
+
+# Local analysis of third-party scorecards (downloaded sources and scripts)
+docs/prior-work/brightband/

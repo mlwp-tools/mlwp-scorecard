@@ -263,9 +263,15 @@ def build_layout(
         If ``relative_to`` is None: the absolute-score card is not built yet.
     """
     if relative_to is None:
+        options = (
+            [str(s) for s in data.coords[FORECAST_DIM].values]
+            if FORECAST_DIM in data.coords
+            else []
+        )
         raise NotImplementedError(
             "a card of absolute scores (relative_to=None) is not implemented yet; "
             "name the baseline with relative_to= (--relative-to on the command line)"
+            + (f", one of: {', '.join(options)}" if options else "")
         )
     # Applied to the dataset before anything is inferred, so a dropped dimension
     # needs no place on the card. Only the caller's own rows/columns count as

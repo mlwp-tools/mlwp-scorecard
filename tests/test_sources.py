@@ -144,8 +144,9 @@ def test_an_unknown_source_is_refused_naming_the_argument():
 
 def test_no_baseline_is_not_implemented_yet():
     """The absolute-score card is planned, not built: it must say so, not guess."""
-    with pytest.raises(NotImplementedError, match="relative_to=None"):
+    with pytest.raises(NotImplementedError, match="relative_to=None") as excinfo:
         _card(_dataset(), ["a"], relative_to=None)
+    assert "one of: base, a, b, c" in str(excinfo.value), "should list the options"
 
 
 # --------------------------------------------------------------------------- #

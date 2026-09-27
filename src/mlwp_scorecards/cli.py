@@ -53,9 +53,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--relative-to",
-        required=True,
         metavar="NAME",
-        help="the baseline every forecast source is compared with",
+        help=(
+            "the baseline every forecast source is compared with. Leaving it out "
+            "will mean a card of absolute scores, which is not implemented yet"
+        ),
     )
     p.add_argument(
         "--cases",
@@ -274,7 +276,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         layout, report = _build(ds, args, select, polarity)
-    except (KeyError, ValueError) as e:
+    except (KeyError, ValueError, NotImplementedError) as e:
         logger.error(e.args[0] if e.args else str(e))
         return 1
     for w in report.warnings:

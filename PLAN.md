@@ -1030,7 +1030,7 @@ Re-exported from `__init__.py`: `make_scorecard`, `build_layout`, `render`, `Lay
 `select=dict(forecast_source=["GraphCast", ...], truth_source="analysis", ...)`: one
 rule for every coordinate, described under *API changes of 2026-09-27*, item 7.
 
-CLI `mlwp.make_scorecard DATASET --relative-to NAME [--select DIM=V1,V2 ...]
+CLI `mlwp.make_scorecard DATASET [--relative-to NAME] [--select DIM=V1,V2 ...]
 [--html-path PATH] [--image-path PATH ...]`, argparse + `@logger.catch`; exit 1 when
 `report.has_fails()`, an output path is refused, or a selection is malformed.
 

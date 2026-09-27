@@ -135,6 +135,14 @@ def test_a_malformed_select_exits_nonzero(netcdf, tmp_path, select):
     assert not out.exists()
 
 
+def test_no_baseline_is_a_clear_error_not_a_traceback(netcdf, tmp_path):
+    """--relative-to is optional, matching the Python default of None, which will
+    mean an absolute-score card. Until that exists it must say so and exit 1."""
+    out = tmp_path / "c.html"
+    assert main([str(netcdf), "--html-path", str(out)]) == 1
+    assert not out.exists()
+
+
 def test_selecting_a_dimension_the_dataset_lacks_exits_nonzero(netcdf, tmp_path):
     out = tmp_path / "c.html"
     argv = [str(netcdf), "--relative-to", "persistence", "--html-path", str(out)]

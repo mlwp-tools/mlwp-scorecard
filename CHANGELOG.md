@@ -100,6 +100,15 @@ Design and rationale are documented in [`PLAN.md`](PLAN.md).
 
 ### Fixed
 
+- **A string dimension only some variables have** no longer shows the text "nan"
+  where it does not apply. Padding used NaN, which a fixed-width string coordinate
+  (what a netCDF round trip gives) turns into `'nan'`; it now pads with None for
+  non-numeric coordinates, the not-applicable marker the layout already expects.
+- **Such dimensions keep their order.** Combining the variables sorted the union of
+  the coordinate's values, so rows no longer followed the dataset's order or a
+  `select=` list's. Each is now built in first-appearance order, with the
+  not-applicable entry last.
+
 - **The difference was not paired when a source was missing cases.** Each
   source's mean and bootstrap were taken over its own finite cases, while `n`
   counted only the shared ones, so a card could compare different weather: two

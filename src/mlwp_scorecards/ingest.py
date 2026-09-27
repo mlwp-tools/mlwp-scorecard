@@ -16,7 +16,7 @@ grid, so downstream code sees one array.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Iterable, Sequence
+from typing import Any, Sequence
 
 import numpy as np
 import xarray as xr
@@ -126,15 +126,50 @@ class PreparedCube:
         return tuple(self.score.dims)
 
 
-def _pad_optional(da: xr.DataArray, optional: Iterable[str]) -> xr.DataArray:
-    """Give a variable a single-NaN coordinate for each optional dim it lacks.
+def _optional_index(ds: xr.Dataset, scores: Sequence[str], dim: str) -> np.ndarray:
+    """The full coordinate of an optional dimension, not-applicable entry last.
 
-    ``msl`` gains ``level = [nan]`` and so becomes one row, rather than being
-    broadcast across every pressure level as NaN.
+    Values are in order of first appearance across the variables, never sorted:
+    rows follow the dataset's order, and so a ``select=`` list's order. The
+    not-applicable entry goes last. It is NaN on a numeric coordinate and None on
+    any other: NaN on a fixed-width string coordinate becomes the text ``'nan'``,
+    which is neither blank on the card nor recognised as not-applicable.
     """
-    for dim in optional:
-        if dim not in da.dims:
-            da = da.expand_dims({dim: [np.nan]})
+    seen: list[Any] = []
+    kinds = set()
+    for s in scores:
+        if dim in ds[s].dims:
+            coord = ds[s][dim].values
+            kinds.add(coord.dtype.kind)
+            for v in coord:
+                if v not in seen:
+                    seen.append(v)
+    if kinds <= set("iufc"):
+        return np.array([*seen, np.nan], dtype=float)
+    return np.array([*seen, None], dtype=object)
+
+
+def _pad_optional(da: xr.DataArray, full: dict[str, np.ndarray]) -> xr.DataArray:
+    """Put a variable on the full coordinate of every optional dimension.
+
+    A dimension it lacks becomes one not-applicable entry -- ``msl`` gains
+    ``level = [nan]`` and so becomes one row, rather than being broadcast across
+    every pressure level as NaN. Every variable ends up with the *same* index, so
+    the concat that follows has nothing to align, and so nothing to sort.
+    """
+    for dim, index in full.items():
+        if dim in da.dims:
+            # The not-applicable label is absent here, so it fills with NaN.
+            da = da.reindex({dim: index})
+        else:
+            # Built directly rather than reindexed: a None label cannot be matched
+            # by `reindex`, which would silently empty the variable.
+            last = xr.DataArray(
+                np.arange(len(index)) == len(index) - 1,
+                dims=dim,
+                coords={dim: index},
+            )
+            da = da.expand_dims({dim: index}).where(last)
     return da
 
 
@@ -265,14 +300,16 @@ def prepare(
     # Dimensions carried by some variables but not others are optional and get a
     # single NaN element on the variables that lack them -- computed over ALL such
     # dimensions, not just the ones on the layout, so the concat below always aligns.
-    all_var_dims = {str(d) for s in scores for d in ds[s].dims}
+    # First-appearance order, never a set, for the same reason as above.
+    all_var_dims = list(dict.fromkeys(str(d) for s in scores for d in ds[s].dims))
     optional = [d for d in all_var_dims if any(d not in ds[s].dims for s in scores)]
+    full = {d: _optional_index(ds, scores, d) for d in optional}
 
     units: dict[tuple[str, str], str | None] = {}
     padded: dict[tuple[str, str], xr.DataArray] = {}
     template_for: dict[str, xr.DataArray] = {}
     for s in scores:
-        da = _pad_optional(ds[s], optional)
+        da = _pad_optional(ds[s], full)
         units[parsed[s]] = da.attrs.get("units")
         padded[parsed[s]] = da.rename(None)
         template_for.setdefault(parsed[s][1], padded[parsed[s]])

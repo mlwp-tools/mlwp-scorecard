@@ -156,6 +156,67 @@ def test_a_variable_may_omit_a_dimension_that_does_not_apply_to_it():
     assert [r.key[-1] for r in lay.rows if r.key[1] == "msl"] == [None]
 
 
+def _ragged_strings():
+    """`band` is a string dimension only `2t` has, in non-alphabetical order.
+
+    A fixed-width string array, as a netCDF round trip gives: that is the dtype on
+    which NaN padding silently became the text 'nan'. (A list of str gives an
+    object coordinate, where NaN survives, and hid the bug.)
+    """
+    bands = np.array(["below-500m", "above-500m"])
+    t2 = _score(1.2, units="K").expand_dims(band=len(bands)).assign_coords(band=bands)
+    assert t2["band"].dtype.kind == "U"
+    return _dataset(
+        **{
+            "rmse.2t": t2,
+            "rmse.msl": _score(90.0, units="Pa"),
+        }
+    )
+
+
+def test_a_string_dimension_a_variable_lacks_is_blank_not_nan():
+    """The not-applicable marker must be None for a string coordinate too.
+
+    Padding with NaN turned into the text 'nan' on a string coordinate, which is
+    neither blank on the card nor recognised as not-applicable.
+    """
+    lay = build_layout(
+        _ragged_strings(),
+        relative_to="ctl",
+        rows=["truth_source", "variable", "band"],
+        columns=["metric"],
+        n_resamples=50,
+    )
+    msl = [r for r in lay.rows if r.key[1] == "msl"]
+    assert [r.key[-1] for r in msl] == [None]
+    assert msl[0].headers[-1].is_na and msl[0].headers[-1].label == ""
+    labels = {h.label for depth in lay.row_headers for h in depth}
+    assert "nan" not in labels
+
+
+def test_a_dimension_only_some_variables_have_keeps_its_order():
+    """Combining the variables must not sort the coordinate: rows follow the
+    dataset's order, and so a select= list's order."""
+    kw = dict(
+        relative_to="ctl",
+        rows=["truth_source", "variable", "band"],
+        columns=["metric"],
+        n_resamples=50,
+    )
+    lay = build_layout(_ragged_strings(), **kw)
+    assert [r.key[-1] for r in lay.rows if r.key[1] == "2t"] == [
+        "below-500m",
+        "above-500m",
+    ]
+    flipped = build_layout(
+        _ragged_strings(), select=dict(band=["above-500m", "below-500m"]), **kw
+    )
+    assert [r.key[-1] for r in flipped.rows if r.key[1] == "2t"] == [
+        "above-500m",
+        "below-500m",
+    ]
+
+
 # --------------------------------------------------------------------------- #
 # reserved names vs. everything else
 # --------------------------------------------------------------------------- #

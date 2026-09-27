@@ -212,6 +212,21 @@ def render_figure(
             cx = x0 + c * cw
             cy = y0 + r * g.row_h
             if cell is None:
+                if layout.show_values:
+                    # Exactly where its boxes would be, so an empty cell reads as
+                    # the same size as its neighbours: with wide value boxes, a
+                    # tile filling the whole cell looks conspicuously larger.
+                    ax.add_patch(
+                        Rectangle(
+                            (cx + g.cell_pad, cy + (g.row_h - g.box_h) / 2),
+                            cw - 2 * g.cell_pad,
+                            g.box_h,
+                            facecolor=scheme.missing,
+                            edgecolor="none",
+                            zorder=1,
+                        )
+                    )
+                    continue
                 ax.add_patch(
                     Rectangle(
                         (cx, cy),

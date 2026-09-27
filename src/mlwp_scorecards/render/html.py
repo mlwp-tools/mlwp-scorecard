@@ -527,6 +527,7 @@ td.c { line-height: 15px; }
 td.c > i { min-width: 30px; padding: 0 3px; font: 9.5px/13px ui-monospace, Menlo,
   Consolas, monospace; font-style: normal; text-align: center; color: var(--t, #16191d); }
 tr.base th { color: #5b6470; font-style: italic; }
+td.c.empty { background-clip: content-box; }
 """
 
 

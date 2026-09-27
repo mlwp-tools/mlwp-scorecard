@@ -135,6 +135,24 @@ def test_a_malformed_select_exits_nonzero(netcdf, tmp_path, select):
     assert not out.exists()
 
 
+def test_open_opens_every_file_written_and_nothing_when_validating(
+    netcdf, tmp_path, monkeypatch
+):
+    import mlwp_scorecards.cli as cli
+
+    opened = []
+    monkeypatch.setattr(cli, "_open", opened.append)
+    html, png = tmp_path / "c.html", tmp_path / "c.png"
+    argv = [str(netcdf), "--colour-relative-to", "persistence", "--open"]
+    argv += ["--n-resamples", "50"]
+    assert main(argv + ["--html-path", str(html), "--image-path", str(png)]) == 0
+    assert opened == [html, png]
+
+    opened.clear()
+    assert main(argv + ["--validate-only"]) == 0
+    assert opened == []
+
+
 def test_neither_a_baseline_nor_values_is_a_clear_error(netcdf, tmp_path):
     """Both are optional, but a card with neither would have nothing on it."""
     out = tmp_path / "c.html"

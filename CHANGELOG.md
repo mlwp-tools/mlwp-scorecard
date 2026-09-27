@@ -98,6 +98,7 @@ Design and rationale are documented in [`PLAN.md`](PLAN.md).
   a baseline nor values is an error naming the available sources.
 - `Step.text`, `Step.has_data`, `Cell.is_baseline`, `Layout.show_values`,
   `Layout.coloured`.
+- The CLI's **`--open`** opens each file written in the system's default viewer.
 
 - **Several forecast sources against one baseline.** With more than one source
   selected, `forecast_source` becomes a layout axis, outermost on the

@@ -157,7 +157,8 @@ mlwp.make_scorecard verification_summary.nc \
 ```
 
 `--show-values` prints values; leave out `--colour-relative-to` with it for a card
-of absolute scores. `--select DIM=V1,V2` is repeatable and follows the same rule: no comma is a single
+of absolute scores. `--open` opens each file written in the system's default
+viewer. `--select DIM=V1,V2` is repeatable and follows the same rule: no comma is a single
 value, commas make a list (`--select forecast_source=GraphCast,...`), and a
 trailing comma makes a list of one (`--select spatial_region=europe,`). Values
 are read as the coordinate's type, so `--select level=500` selects 500.0.

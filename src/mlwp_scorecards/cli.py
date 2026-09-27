@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import os
+import subprocess
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -147,7 +150,22 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="report problems and exit without rendering",
     )
+    p.add_argument(
+        "--open",
+        action="store_true",
+        help="open each file written, in the system's default viewer",
+    )
     return p
+
+
+def _open(path: Path) -> None:
+    """Open a file in the system's default viewer, without waiting for it."""
+    if sys.platform == "darwin":
+        subprocess.Popen(["open", str(path)])
+    elif sys.platform == "win32":  # pragma: no cover
+        os.startfile(path)  # noqa: S606
+    else:
+        subprocess.Popen(["xdg-open", str(path)])
 
 
 def _split(value: str | None) -> list[str] | None:
@@ -304,8 +322,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.validate_only:
         return 0
 
+    written = []
     for out in outputs:
-        logger.info(f"wrote {render(layout, out, dpi=args.dpi)}")
+        written.append(render(layout, out, dpi=args.dpi))
+        logger.info(f"wrote {written[-1]}")
+    if args.open:
+        for path in written:
+            _open(path)
     return 0
 
 

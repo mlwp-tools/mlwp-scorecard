@@ -28,7 +28,7 @@ def main() -> None:
     ds = make_verification_dataset(n_case=80, n_boot=200, drift=0.25)
     kwargs = dict(
         relative_to="persistence",
-        predictions_from=["drifting-persistence"],
+        select=dict(forecast_source=["drifting-persistence"]),
         rows=["truth_source", "variable", "level"],
         columns=["spatial_region", "metric"],
         title="drifting-persistence vs persistence",

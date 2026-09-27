@@ -51,7 +51,7 @@ def _card(ds, **kwargs):
     return build_layout(
         ds,
         relative_to="ctl",
-        predictions_from=["exp"],
+        select=dict(forecast_source=["exp"]),
         rows=["truth_source", "variable"],
         columns=["metric"],
         **kwargs,
@@ -143,7 +143,7 @@ def test_a_variable_may_omit_a_dimension_that_does_not_apply_to_it():
     lay = build_layout(
         ds,
         relative_to="ctl",
-        predictions_from=["exp"],
+        select=dict(forecast_source=["exp"]),
         rows=["truth_source", "variable", "level"],
         columns=["metric"],
         n_resamples=100,
@@ -188,7 +188,7 @@ def test_an_unreserved_dimension_is_just_an_axis():
     lay = build_layout(
         _seasonal(),
         relative_to="ctl",
-        predictions_from=["exp"],
+        select=dict(forecast_source=["exp"]),
         rows=["season", "variable"],
         columns=["threshold", "metric"],
         n_resamples=100,
@@ -204,15 +204,17 @@ def test_an_unplaced_dimension_is_an_error_naming_a_remedy_that_works():
         build_layout(
             ds,
             relative_to="ctl",
-            predictions_from=["exp"],
+            select=dict(forecast_source=["exp"]),
             rows=["variable"],
             columns=["metric"],
         )
     assert "season" in str(excinfo.value) and "threshold" in str(excinfo.value)
 
+    assert "select=dict(season=...)" in str(excinfo.value)
+
+    # `exp` is the only source besides the baseline, so it is the default selection
     kw = dict(
         relative_to="ctl",
-        predictions_from=["exp"],
         rows=["variable"],
         columns=["metric"],
         n_resamples=100,
@@ -222,7 +224,7 @@ def test_an_unplaced_dimension_is_an_error_naming_a_remedy_that_works():
     assert [r.key for r in by_sel.rows] == [("tp",)]
 
     # both remedies the message names must work, and must agree
-    by_select = build_layout(ds, select={"season": "DJF", "threshold": 1.0}, **kw)
+    by_select = build_layout(ds, select=dict(season="DJF", threshold=1.0), **kw)
     assert by_select.row_dims == by_sel.row_dims
     assert by_select.column_dims == by_sel.column_dims
     got = by_select.sel(variable="tp", metric="rmse").steps
@@ -237,18 +239,16 @@ def test_a_list_in_select_keeps_the_dimension():
         build_layout(
             ds,
             relative_to="ctl",
-            predictions_from=["exp"],
             rows=["variable"],
             columns=["metric"],
-            select={"season": ["DJF"], "threshold": 1.0},
+            select=dict(season=["DJF"], threshold=1.0),
         )
     lay = build_layout(
         ds,
         relative_to="ctl",
-        predictions_from=["exp"],
         rows=["season", "variable"],
         columns=["metric"],
-        select={"season": ["DJF"], "threshold": 1.0},
+        select=dict(season=["DJF"], threshold=1.0),
         n_resamples=100,
     )
     assert [r.key for r in lay.rows] == [("DJF", "tp")]
@@ -256,12 +256,7 @@ def test_a_list_in_select_keeps_the_dimension():
 
 def test_select_on_a_name_that_is_not_a_dimension_is_refused():
     with pytest.raises(KeyError, match="not dimensions"):
-        build_layout(
-            _seasonal(),
-            relative_to="ctl",
-            predictions_from=["exp"],
-            select={"nonsuch": 1},
-        )
+        build_layout(_seasonal(), relative_to="ctl", select=dict(nonsuch=1))
 
 
 def test_init_time_and_forecast_source_need_no_home_on_an_axis():
@@ -275,7 +270,10 @@ def test_inference_places_unknown_dimensions_on_the_columns_in_order():
     """Documented behaviour, and it has to be deterministic: `test_determinism`
     renders the same card in a fresh process and demands identical bytes."""
     lay = build_layout(
-        _seasonal(), relative_to="ctl", predictions_from=["exp"], n_resamples=100
+        _seasonal(),
+        relative_to="ctl",
+        select=dict(forecast_source=["exp"]),
+        n_resamples=100,
     )
     assert lay.row_dims == ("variable",)
     assert lay.column_dims == ("metric", "season", "threshold")
@@ -323,8 +321,8 @@ def test_swapping_baseline_and_forecast_source_negates_the_card():
     kw = dict(
         rows=["truth_source", "variable"], columns=["metric"], n_resamples=300, seed=0
     )
-    a = build_layout(ds, relative_to="ctl", predictions_from=["exp"], **kw)
-    b = build_layout(ds, relative_to="exp", predictions_from=["ctl"], **kw)
+    a = build_layout(ds, relative_to="ctl", select=dict(forecast_source=["exp"]), **kw)
+    b = build_layout(ds, relative_to="exp", select=dict(forecast_source=["ctl"]), **kw)
     for sa, sb in zip(
         a.sel(truth_source="analysis", variable="2t", metric="rmse").steps,
         b.sel(truth_source="analysis", variable="2t", metric="rmse").steps,
@@ -376,7 +374,10 @@ def test_the_minimal_readme_example_renders_as_documented():
 
     ds = _dataset(**{"rmse.2t": series(1.2, "K"), "rmse.msl": series(80.0, "Pa")})
     lay = build_layout(
-        ds, relative_to="IFS-HRES", predictions_from=["GraphCast"], n_resamples=200
+        ds,
+        relative_to="IFS-HRES",
+        select=dict(forecast_source=["GraphCast"]),
+        n_resamples=200,
     )
     assert lay.row_dims == ("variable",)
     assert lay.column_dims == ("metric",)

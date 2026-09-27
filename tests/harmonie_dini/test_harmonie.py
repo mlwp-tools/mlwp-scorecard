@@ -38,7 +38,7 @@ def card(summary, baseline: str, forecast: str, levels=CONFIDENCE_LEVELS):
     return build_layout(
         summary,
         relative_to=baseline,
-        predictions_from=[forecast],
+        select=dict(forecast_source=[forecast]),
         rows=["truth_source", "variable"],
         columns=["metric"],
         cell="lead_time",
@@ -320,7 +320,7 @@ def test_renders_both_formats(summary, tmp_path):
         html_path=tmp_path / "c.html",
         image_path=tmp_path / "c.png",
         relative_to="aifs",
-        predictions_from=["harmonie-arome"],
+        select=dict(forecast_source=["harmonie-arome"]),
         rows=["truth_source", "variable"],
         columns=["metric"],
         cell="lead_time",

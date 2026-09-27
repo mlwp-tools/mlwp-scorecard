@@ -29,8 +29,8 @@ def test_renders_both_formats(netcdf, tmp_path):
             str(netcdf),
             "--relative-to",
             "persistence",
-            "--predictions-from",
-            "drifting-persistence",
+            "--select",
+            "forecast_source=drifting-persistence",
             "--html-path",
             str(out_html),
             "--image-path",
@@ -42,38 +42,104 @@ def test_renders_both_formats(netcdf, tmp_path):
     assert out_png.stat().st_size > 2000
 
 
-def test_forecast_source_is_repeatable(tmp_path):
-    """Several forecast sources give one block of rows each."""
+@pytest.fixture(scope="module")
+def four_sources(tmp_path_factory):
     import sys
     from pathlib import Path
 
     sys.path.insert(0, str(Path(__file__).parent))
     from test_sources import _dataset
 
-    p = tmp_path / "v.nc"
+    p = tmp_path_factory.mktemp("cli") / "four.nc"
     _dataset().to_netcdf(p)
+    return p
+
+
+@pytest.mark.parametrize(
+    "select",
+    [
+        ["--select", "forecast_source=a,b,c"],
+        ["--select", "forecast_source=c,..."],
+        [],  # the default: every source but the baseline
+    ],
+)
+def test_several_forecast_sources_give_a_block_of_rows_each(
+    four_sources, tmp_path, select
+):
     out = tmp_path / "c.html"
-    argv = [str(p), "--relative-to", "base", "--html-path", str(out)]
-    for source in ("a", "b", "c"):
-        argv += ["--predictions-from", source]
-    assert main(argv + ["--cases", "pairwise", "--n-resamples", "50"]) == 0
+    argv = [str(four_sources), "--relative-to", "base", "--html-path", str(out)]
+    assert main(argv + select + ["--cases", "pairwise", "--n-resamples", "50"]) == 0
     assert out.read_text().count('<i class="b') == 3 * 2 * 4  # sources x vars x leads
 
 
-def test_predictions_from_accepts_an_ellipsis_and_defaults_to_all(tmp_path):
-    import sys
-    from pathlib import Path
+def _boxes(netcdf, tmp_path, *select, rows="truth_source,variable,level"):
+    out = tmp_path / "c.html"
+    argv = [str(netcdf), "--relative-to", "persistence", "--html-path", str(out)]
+    argv += ["--rows", rows, "--columns", "spatial_region,metric"]
+    for s in select:
+        argv += ["--select", s]
+    assert main(argv + ["--n-resamples", "50"]) == 0
+    return out.read_text().count('<i class="b')
 
-    sys.path.insert(0, str(Path(__file__).parent))
-    from test_sources import _dataset
 
-    p = tmp_path / "v.nc"
-    _dataset().to_netcdf(p)
-    common = [str(p), "--relative-to", "base", "--n-resamples", "50"]
-    for extra in (["--predictions-from", "c", "--predictions-from", "..."], []):
-        out = tmp_path / f"c{len(extra)}.html"
-        assert main(common + extra + ["--html-path", str(out)]) == 0
-        assert out.read_text().count('<i class="b') == 3 * 2 * 4
+def test_select_values_are_cast_to_the_coordinate_type(netcdf, tmp_path):
+    """`level=500` must reach xarray as 500.0, not the string '500'."""
+    every = _boxes(netcdf, tmp_path)
+    one_level = _boxes(netcdf, tmp_path, "level=500", "variable=z,t")
+    assert 0 < one_level < every
+
+
+def test_select_parsing():
+    """No comma is one value; commas a list; a trailing comma a list of one."""
+    import numpy as np
+    import xarray as xr
+
+    from mlwp_scorecards.cli import _parse_select
+
+    ds = xr.Dataset(
+        coords=dict(
+            level=[500.0, 850.0],
+            region=["europe", "n.hem"],
+            init_time=np.array(["2024-01-01", "2024-01-02"], dtype="datetime64[ns]"),
+        )
+    )
+    got = _parse_select(
+        [
+            "level=500",
+            "region=europe,",
+            "forecast_source=c, ...",
+            "init_time=2024-01-02",
+            "variable=2t",
+        ],
+        ds,
+    )
+    assert got == {
+        "level": 500.0,
+        "region": ["europe"],
+        "forecast_source": ["c", ...],
+        "init_time": np.datetime64("2024-01-02"),
+        "variable": "2t",
+    }
+    assert isinstance(got["level"], float)
+
+
+@pytest.mark.parametrize(
+    "select", [["nope"], ["=1"], ["level="], ["level=abc"], ["level=1", "level=2"]]
+)
+def test_a_malformed_select_exits_nonzero(netcdf, tmp_path, select):
+    out = tmp_path / "c.html"
+    argv = [str(netcdf), "--relative-to", "persistence", "--html-path", str(out)]
+    for s in select:
+        argv += ["--select", s]
+    assert main(argv) == 1
+    assert not out.exists()
+
+
+def test_selecting_a_dimension_the_dataset_lacks_exits_nonzero(netcdf, tmp_path):
+    out = tmp_path / "c.html"
+    argv = [str(netcdf), "--relative-to", "persistence", "--html-path", str(out)]
+    assert main(argv + ["--select", "nonsuch=1"]) == 1
+    assert not out.exists()
 
 
 def test_validate_only_needs_no_output(netcdf):
@@ -82,8 +148,8 @@ def test_validate_only_needs_no_output(netcdf):
             str(netcdf),
             "--relative-to",
             "persistence",
-            "--predictions-from",
-            "drifting-persistence",
+            "--select",
+            "forecast_source=drifting-persistence",
             "--validate-only",
         ]
     )
@@ -97,8 +163,8 @@ def test_validate_only_writes_nothing(netcdf, tmp_path):
             str(netcdf),
             "--relative-to",
             "persistence",
-            "--predictions-from",
-            "drifting-persistence",
+            "--select",
+            "forecast_source=drifting-persistence",
             "--html-path",
             str(out),
             "--validate-only",
@@ -115,8 +181,8 @@ def test_explicit_axes_are_honoured(netcdf, tmp_path):
             str(netcdf),
             "--relative-to",
             "persistence",
-            "--predictions-from",
-            "drifting-persistence",
+            "--select",
+            "forecast_source=drifting-persistence",
             "--rows",
             "truth_source,variable,level",
             "--columns",
@@ -142,8 +208,8 @@ def test_an_output_suffix_that_contradicts_its_flag_exits_nonzero(
             str(netcdf),
             "--relative-to",
             "persistence",
-            "--predictions-from",
-            "drifting-persistence",
+            "--select",
+            "forecast_source=drifting-persistence",
             flag,
             str(tmp_path / name),
         ]
@@ -158,8 +224,8 @@ def test_no_output_at_all_exits_nonzero(netcdf):
             str(netcdf),
             "--relative-to",
             "persistence",
-            "--predictions-from",
-            "drifting-persistence",
+            "--select",
+            "forecast_source=drifting-persistence",
         ]
     )
     assert rc == 1
@@ -187,8 +253,8 @@ def test_reads_zarr_as_well_as_netcdf(zarr_store, tmp_path):
             str(zarr_store),
             "--relative-to",
             "persistence",
-            "--predictions-from",
-            "drifting-persistence",
+            "--select",
+            "forecast_source=drifting-persistence",
             "--html-path",
             str(out),
         ]
@@ -208,8 +274,8 @@ def test_unknown_input_format_exits_nonzero(tmp_path):
             str(bad),
             "--relative-to",
             "persistence",
-            "--predictions-from",
-            "drifting-persistence",
+            "--select",
+            "forecast_source=drifting-persistence",
             "--html-path",
             str(out),
         ]

@@ -259,7 +259,7 @@ def prepare(
         raise KeyError(
             f"dimension(s) {sorted(unassigned)} are assigned to neither rows, "
             f"columns nor cell; name them in rows=[...] or columns=[...], or pick "
-            f"one value: select={{{first!r}: ...}} or ds.sel({first}=...)"
+            f"one value: select=dict({first}=...) or ds.sel({first}=...)"
         )
 
     # Dimensions carried by some variables but not others are optional and get a

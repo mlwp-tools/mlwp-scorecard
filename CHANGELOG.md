@@ -17,27 +17,33 @@ Design and rationale are documented in [`PLAN.md`](PLAN.md).
 
 ### Changed
 
-- **`control=` / `experiment=` are now `relative_to=` / `predictions_from=`**, in
-  the Python API and the CLI (`--relative-to`, and a repeatable
-  `--predictions-from`). `predictions_from` takes a list in which `...` stands for
-  every source not otherwise named, in coordinate order and never including the
-  baseline, so `["GraphCast", ...]` is GraphCast first and then the rest; left
-  out, it is every source but the baseline. A baseline is often not a model at
-  all, hence "relative to" rather than "control". `relative_to=None` is reserved
-  for a card of absolute scores and raises `NotImplementedError` for now.
-  `Step.control*` / `Step.experiment*` become `Step.baseline*` / `Step.forecast*`,
-  and `Layout.control` / `Layout.experiment` become `Layout.baseline_source` /
+- **`control=` / `experiment=` are gone.** The baseline is `relative_to=`
+  (`--relative-to`); the sources compared with it are a selection like any other,
+  `select=dict(forecast_source=["GraphCast", ...])`, and default to every source
+  but the baseline. A baseline is often not a model at all, hence "relative to"
+  rather than "control". `relative_to=None` is reserved for a card of absolute
+  scores and raises `NotImplementedError` for now. `Step.control*` /
+  `Step.experiment*` become `Step.baseline*` / `Step.forecast*`, and
+  `Layout.control` / `Layout.experiment` become `Layout.baseline_source` /
   `Layout.forecast_sources`. There is no alias for the old names.
+- **All selection goes through `select=`**, with one rule for every coordinate:
+  a single value picks that member and drops the dimension, unless the dimension
+  is named in `rows=`, `columns=` or `cell=`, where it is kept one entry long; a
+  list keeps the dimension, subset **in the order given** (which is the order it
+  is drawn in), with at most one `...` for every other value; a slice keeps it, as
+  `ds.sel` would. In `forecast_source` a `...` never includes the baseline, and
+  naming the baseline is an error. `variable` and `metric` can be selected and
+  ordered the same way. The `truth_source=` argument is gone:
+  `select=dict(truth_source="analysis")` replaces it. On the CLI, `--truth-source`
+  becomes a repeatable `--select DIM=V1,V2` (a trailing comma makes a list of one;
+  values are read as the coordinate's type). A `select=` key that is not a
+  dimension is an error.
 - **Outputs are named arguments.** `make_scorecard(ds, "card.html", ...)` becomes
   `make_scorecard(ds, html_path="card.html", image_path=["card.png", "card.pdf"],
   ...)`, and everything after `data` is keyword-only. At least one output is
   required, and a suffix contradicting its argument (`html_path="card.png"`) is
   refused before anything is computed. The CLI's `-o/--output` becomes
   `--html-path` and a repeatable `--image-path`; `--validate-only` needs neither.
-- **A single value in `select=` drops that dimension**, like `ds.sel(...)`, so it
-  needs no place on the card: `select={"spatial_region": "europe"}`. A list keeps
-  the dimension, as every selector did before. A `select=` key that is not a
-  dimension is now an error.
 
 - **The input is now one score per forecast case**, and the package performs the
   collapse over cases itself: the mean, the per-source bootstrap intervals, the
@@ -82,8 +88,8 @@ Design and rationale are documented in [`PLAN.md`](PLAN.md).
 
 ### Added
 
-- **Several forecast sources against one baseline.** With more than one source in
-  `predictions_from`, `forecast_source` becomes a layout axis, outermost on the
+- **Several forecast sources against one baseline.** With more than one source
+  selected, `forecast_source` becomes a layout axis, outermost on the
   rows by default. Each row is exactly the two-source card for that source,
   because one resample is shared by every pair.
 - **`cases="common" | "pairwise"`**: which forecast cases each comparison rests

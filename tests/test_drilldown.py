@@ -31,7 +31,7 @@ def page(verification, tmp_path_factory) -> str:
         verification,
         html_path=out,
         relative_to="persistence",
-        predictions_from=["drifting-persistence"],
+        select=dict(forecast_source=["drifting-persistence"]),
         title="t",
     )
     return out.read_text()
@@ -101,7 +101,7 @@ def test_detail_can_be_switched_off(verification, tmp_path):
     layout = build_layout(
         verification,
         relative_to="persistence",
-        predictions_from=["drifting-persistence"],
+        select=dict(forecast_source=["drifting-persistence"]),
     )
     with_ = render_html(layout, tmp_path / "a.html", scheme=SCHEMES["cvd"])
     without = render_html(
@@ -142,7 +142,7 @@ def test_drilldown_actually_draws(verification, tmp_path):
         verification,
         html_path=out,
         relative_to="persistence",
-        predictions_from=["drifting-persistence"],
+        select=dict(forecast_source=["drifting-persistence"]),
         title="t",
     )
     r = subprocess.run(["node", str(HARNESS), str(out)], capture_output=True, text=True)

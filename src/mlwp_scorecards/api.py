@@ -12,7 +12,7 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 import xarray as xr
 
-from .aggregate import aggregate, resolve_sources
+from .aggregate import aggregate, expand_selection, resolve_sources
 from .colours import SCHEMES, ColourScheme, FixedScaling
 from .ingest import (
     CASE_DIM,
@@ -21,6 +21,7 @@ from .ingest import (
     VARIABLE_DIM,
     ValidationReport,
     prepare,
+    split_name,
 )
 from .layout import resolve
 from .model import Layout
@@ -48,8 +49,78 @@ _HTML_SUFFIXES = {".html", ".htm"}
 
 def _is_many(value: Any) -> bool:
     """Whether a ``select=`` value picks several members (keeping the dimension)
-    rather than one (dropping it)."""
-    return isinstance(value, (list, tuple, slice, np.ndarray))
+    rather than one (which drops it, unless the dimension was placed)."""
+    return value is Ellipsis or isinstance(value, (list, tuple, np.ndarray))
+
+
+def _select_names(data: xr.Dataset, dim: str, value: Any) -> xr.Dataset:
+    """Select along ``variable`` or ``metric``, which are halves of the data-variable
+    names rather than dimensions of the input.
+
+    Both are always on an axis, so a single value keeps them at length one. Order
+    follows the selection, because :func:`~mlwp_scorecards.ingest.prepare` orders
+    each by first appearance among the data variables.
+    """
+    half = 0 if dim == METRIC_DIM else 1
+    names = [str(n) for n in data.data_vars]
+    parts = {n: split_name(n)[half] for n in names}
+    available = list(dict.fromkeys(parts[n] for n in names))
+    if value is Ellipsis or not _is_many(value):
+        values = [value]
+    else:
+        values = list(value)
+    chosen = expand_selection(dim, values, available)
+    ordered = [n for v in chosen for n in names if parts[n] == v]
+    return data[ordered]
+
+
+def _apply_selection(
+    data: xr.Dataset,
+    select: Mapping[str, Any] | None,
+    relative_to: str | None,
+    placed: set[str],
+) -> tuple[xr.Dataset, tuple[str, ...]]:
+    """Apply ``select=`` to the dataset, before any layout is inferred.
+
+    One rule for every key: a single value picks that member and drops the
+    dimension -- unless the caller placed the dimension on ``rows``, ``columns`` or
+    ``cell``, where it is kept at length one; a list keeps the dimension, subset in
+    the order given, with ``...`` for the rest; a slice keeps it, as ``ds.sel``
+    would. ``forecast_source`` differs only in that the baseline always stays in
+    the data and is never part of a ``...``.
+
+    Returns
+    -------
+    data : xr.Dataset
+    sources : tuple of str
+        The forecast sources to show, in order.
+    """
+    chosen = dict(select or {})
+    source_sel = chosen.pop(FORECAST_DIM, ...)
+    dims = {str(d) for d in data.dims}
+    unknown = sorted(set(chosen) - dims - {VARIABLE_DIM, METRIC_DIM})
+    if unknown:
+        raise KeyError(
+            f"select= names {unknown}, which are not dimensions of the dataset "
+            f"(have: {sorted(dims | {VARIABLE_DIM, METRIC_DIM})})"
+        )
+    for dim, value in chosen.items():
+        if dim in (VARIABLE_DIM, METRIC_DIM):
+            data = _select_names(data, dim, value)
+        elif isinstance(value, slice):
+            data = data.sel({dim: value})
+        elif _is_many(value):
+            values = [value] if value is Ellipsis else list(value)
+            data = data.sel({dim: expand_selection(dim, values, data[dim].values)})
+        elif dim in placed:
+            data = data.sel({dim: [value]})
+        else:
+            data = data.sel({dim: value}, drop=True)
+
+    if FORECAST_DIM not in data.dims:
+        raise KeyError(f"{FORECAST_DIM!r} is not a dimension of the dataset")
+    sources = resolve_sources(source_sel, relative_to, data.coords[FORECAST_DIM].values)
+    return data, sources
 
 
 def _infer_axes(
@@ -103,14 +174,12 @@ def _infer_axes(
 def build_layout(
     data: xr.Dataset,
     *,
-    predictions_from: str | Sequence[Any] = (...,),
     relative_to: str | None = None,
+    select: Mapping[str, Any] | None = None,
     cases: str = "common",
     rows: Sequence[str] | None = None,
     columns: Sequence[str] | None = None,
     cell: str = "lead_time",
-    truth_source: str | Sequence[str] | None = None,
-    select: Mapping[str, Any] | None = None,
     metric_polarity: Mapping[str, str] | None = None,
     scheme: str | ColourScheme = "cvd",
     title: str = "",
@@ -129,18 +198,28 @@ def build_layout(
     ----------
     data : xr.Dataset
         Verification statistics: one variable per ``{metric}.{variable}`` pair.
-    predictions_from : str or sequence, optional
-        Members of ``forecast_source`` to show, in order. ``...`` stands for every
-        source not otherwise named, in coordinate order, so ``["GraphCast", ...]``
-        puts GraphCast first and then all the rest; the default, ``(...,)``, is
-        every source but the baseline. With several, ``forecast_source`` becomes
-        a layout axis: each row (or column) is one of them compared with the
-        baseline.
     relative_to : str
-        The member of ``forecast_source`` each is compared with; the card colours
-        ``forecast - baseline``. Left out of any ``...``, and an error to name in
-        ``predictions_from`` as well. ``None`` will mean a card of absolute scores
-        with no baseline, which is not implemented yet and raises.
+        The member of ``forecast_source`` every forecast source is compared with;
+        the card colours ``forecast - baseline``. ``None`` will mean a card of
+        absolute scores with no baseline, which is not implemented yet and raises.
+    select : mapping, optional
+        Selection along coordinates, one rule for every key, e.g.
+        ``select=dict(forecast_source=["GraphCast", ...], truth_source="analysis",
+        spatial_region=["europe", "n.hem"])``:
+
+        - a **single value** picks that member and drops the dimension, unless
+          the dimension is named in ``rows``, ``columns`` or ``cell``, where it is
+          kept at length one;
+        - a **list** keeps the dimension, subset **in the order given** -- which
+          is the order it is drawn in -- with at most one ``...`` for every other
+          value, in coordinate order;
+        - a **slice** keeps the dimension, as ``ds.sel`` would.
+
+        ``forecast_source`` defaults to every source but the baseline, and a
+        ``...`` in it never includes the baseline; naming the baseline there is
+        an error. With several forecast sources, ``forecast_source`` becomes a
+        layout axis. ``variable`` and ``metric`` may be selected too, and always
+        stay on an axis.
     cases : {"common", "pairwise"}, optional
         Which forecast cases each comparison rests on. ``"common"``: only those
         every selected source and the baseline scored, so rows are comparable with
@@ -150,13 +229,6 @@ def build_layout(
         Coordinate names to nest on each axis, outermost first. Inferred when omitted.
     cell : str, optional
         Coordinate drawn inside each cell, normally ``"lead_time"``.
-    truth_source : str or sequence of str, optional
-        Restrict to these truth sources.
-    select : mapping, optional
-        Further coordinate subsetting. A single value picks that member and drops
-        the dimension, so it needs no place on the card:
-        ``select={"spatial_region": "europe"}``. A list or slice keeps the
-        dimension, subset, and it still has to be on ``rows`` or ``columns``.
     metric_polarity : mapping, optional
         Polarity for metrics not in the built-in table, e.g.
         ``{"my_score": "higher_is_better"}``.
@@ -195,35 +267,14 @@ def build_layout(
             "a card of absolute scores (relative_to=None) is not implemented yet; "
             "name the baseline with relative_to="
         )
-    if FORECAST_DIM not in data.dims:
-        raise KeyError(f"{FORECAST_DIM!r} is not a dimension of the dataset")
-    sources = resolve_sources(
-        predictions_from, relative_to, data.coords[FORECAST_DIM].values
-    )
+    # Applied to the dataset before anything is inferred, so a dropped dimension
+    # needs no place on the card. Only the caller's own rows/columns count as
+    # placing a dimension: inferred axes have not been chosen yet, and could not
+    # decide this without the selection deciding them in turn.
+    placed = set(rows or ()) | set(columns or ()) | {cell}
+    data, sources = _apply_selection(data, select, relative_to, placed)
 
     sch = SCHEMES[scheme] if isinstance(scheme, str) else scheme
-
-    # A single value picks one member and drops the dimension -- it is taken
-    # before the axes are inferred, so it needs no home on the card. A list keeps
-    # the dimension, subset, and still has to be placed.
-    scalars = {k: v for k, v in (select or {}).items() if not _is_many(v)}
-    subset: dict[str, Any] = {
-        k: list(v) if isinstance(v, tuple) else v
-        for k, v in (select or {}).items()
-        if _is_many(v)
-    }
-    if scalars:
-        missing = sorted(set(scalars) - {str(d) for d in data.dims})
-        if missing:
-            raise KeyError(f"select= names {missing}, which are not dimensions")
-        data = data.sel(scalars, drop=True)
-    if truth_source is not None:
-        subset["truth_source"] = (
-            list(truth_source)
-            if isinstance(truth_source, (list, tuple))
-            else [truth_source]
-        )
-
     row_dims, col_dims = _infer_axes(data, rows, columns, cell, len(sources))
 
     cube = prepare(
@@ -238,7 +289,6 @@ def build_layout(
         forecast_source=sources,
         baseline_source=relative_to,
         cases=cases,
-        subset=subset or None,
         bootstrap=bootstrap,
         block_length=block_length,
         n_resamples=n_resamples,
@@ -329,8 +379,8 @@ def _output_paths(
 def make_scorecard(
     data: xr.Dataset,
     *,
-    predictions_from: str | Sequence[Any] = (...,),
     relative_to: str | None = None,
+    select: Mapping[str, Any] | None = None,
     html_path: str | Path | None = None,
     image_path: str | Path | Sequence[str | Path] | None = None,
     dpi: int = 200,
@@ -342,11 +392,11 @@ def make_scorecard(
     ----------
     data : xr.Dataset
         Verification statistics.
-    predictions_from : str or sequence, optional
-        The sources to show, with ``...`` for all the rest; see
-        :func:`build_layout`.
     relative_to : str
         The source each is compared with.
+    select : mapping, optional
+        Selection along coordinates, including which forecast sources to show;
+        see :func:`build_layout`.
     html_path : path, optional
         Where to write the self-contained interactive page. Must end in ``.html``.
     image_path : path or sequence of paths, optional
@@ -372,16 +422,12 @@ def make_scorecard(
 
     Examples
     --------
-    >>> make_scorecard(ds, predictions_from=["GraphCast"], relative_to="IFS-HRES",
+    >>> make_scorecard(ds, relative_to="IFS-HRES",
+    ...                select=dict(forecast_source=["GraphCast", ...]),
     ...                html_path="card.html",
     ...                image_path=["card.png", "card.pdf"])  # doctest: +SKIP
     """
     paths = _output_paths(html_path, image_path)
-    layout = build_layout(
-        data,
-        predictions_from=predictions_from,
-        relative_to=relative_to,
-        **kwargs,
-    )
+    layout = build_layout(data, relative_to=relative_to, select=select, **kwargs)
     assert isinstance(layout, Layout)
     return [render(layout, p, dpi=dpi) for p in paths]

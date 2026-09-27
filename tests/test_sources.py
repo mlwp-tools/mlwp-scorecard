@@ -56,7 +56,7 @@ KW = dict(relative_to="base", n_resamples=300, seed=0)
 def _card(ds, sources, **kw):
     return build_layout(
         ds,
-        predictions_from=sources,
+        select=dict(forecast_source=sources),
         rows=["forecast_source", "variable"],
         columns=["metric"],
         **{**KW, **kw},
@@ -73,7 +73,7 @@ def test_each_row_is_exactly_the_two_source_card_for_that_source():
     for source in ("a", "b", "c"):
         single = build_layout(
             ds,
-            predictions_from=[source],
+            select=dict(forecast_source=[source]),
             rows=["variable"],
             columns=["metric"],
             **KW,
@@ -99,14 +99,14 @@ def test_rows_follow_the_order_the_sources_were_given_in():
 
 
 def test_several_sources_are_placed_outermost_on_the_rows_by_default():
-    lay = build_layout(_dataset(), predictions_from=["a", "b"], **KW)
+    lay = build_layout(_dataset(), select=dict(forecast_source=["a", "b"]), **KW)
     assert lay.row_dims[0] == "forecast_source"
     assert lay.forecast_sources == ("a", "b")
     assert lay.baseline_source == "base"
 
 
 def test_one_source_is_consumed_as_before_not_laid_out():
-    lay = build_layout(_dataset(), predictions_from=["a"], **KW)
+    lay = build_layout(_dataset(), select=dict(forecast_source=["a"]), **KW)
     assert "forecast_source" not in lay.row_dims + lay.column_dims
     assert all(cell.forecast_source == "a" for _, _, cell in lay.iter_cells())
 
@@ -114,7 +114,7 @@ def test_one_source_is_consumed_as_before_not_laid_out():
 def test_sources_may_go_on_the_columns():
     lay = build_layout(
         _dataset(),
-        predictions_from=["a", "b"],
+        select=dict(forecast_source=["a", "b"]),
         rows=["variable"],
         columns=["forecast_source", "metric"],
         **KW,
@@ -126,7 +126,7 @@ def test_sources_may_go_on_the_columns():
 # what is refused
 # --------------------------------------------------------------------------- #
 def test_the_baseline_cannot_also_be_a_forecast_source():
-    with pytest.raises(ValueError, match="also in predictions_from"):
+    with pytest.raises(ValueError, match="also named in"):
         _card(_dataset(), ["a", "base"])
 
 
@@ -136,7 +136,7 @@ def test_a_repeated_forecast_source_is_refused():
 
 
 def test_an_unknown_source_is_refused_naming_the_argument():
-    with pytest.raises(KeyError, match="predictions_from='nonsuch'"):
+    with pytest.raises(KeyError, match="'nonsuch' is not in forecast_source"):
         _card(_dataset(), ["a", "nonsuch"])
     with pytest.raises(KeyError, match="relative_to='nonsuch'"):
         _card(_dataset(), ["a"], relative_to="nonsuch")
@@ -193,7 +193,7 @@ def test_several_sources_with_no_axis_for_them_is_refused():
     with pytest.raises(ValueError, match="on neither rows nor columns"):
         build_layout(
             _dataset(),
-            predictions_from=["a", "b"],
+            select=dict(forecast_source=["a", "b"]),
             rows=["variable"],
             columns=["metric"],
             **KW,
@@ -253,7 +253,7 @@ def test_the_case_policy_is_stated_on_a_card_with_several_sources():
     pairwise = _card(_with_gaps(), ["a", "b"], cases="pairwise")
     assert any("same forecast cases" in n for n in common.notes)
     assert any("should not be ranked" in n for n in pairwise.notes)
-    single = build_layout(_with_gaps(), predictions_from=["b"], **KW)
+    single = build_layout(_with_gaps(), select=dict(forecast_source=["b"]), **KW)
     assert not any("forecast cases: those all" in n for n in single.notes)
 
 
@@ -271,7 +271,7 @@ def test_renders_with_each_cell_naming_its_source(tmp_path):
         _dataset(),
         html_path=tmp_path / "c.html",
         image_path=tmp_path / "c.png",
-        predictions_from=["a", "b"],
+        select=dict(forecast_source=["a", "b"]),
         **KW,
     )
     assert png.stat().st_size > 2000
@@ -284,6 +284,9 @@ def test_renders_with_each_cell_naming_its_source(tmp_path):
 
 def test_a_single_source_payload_does_not_repeat_the_source_per_cell(tmp_path):
     (html,) = make_scorecard(
-        _dataset(), html_path=tmp_path / "c.html", predictions_from=["a"], **KW
+        _dataset(),
+        html_path=tmp_path / "c.html",
+        select=dict(forecast_source=["a"]),
+        **KW,
     )
     assert all("s" not in cell for cell in _payload(html.read_text())["cells"])

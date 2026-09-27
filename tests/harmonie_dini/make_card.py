@@ -35,7 +35,7 @@ def render(ds: xr.Dataset, name: str, baseline: str, forecast: str, scheme: str)
     )
     kwargs = dict(
         relative_to=baseline,
-        predictions_from=[forecast],
+        select=dict(forecast_source=[forecast]),
         scheme=scheme,
         **axes,
         title=f"{forecast} vs {baseline}",
@@ -52,7 +52,9 @@ def render(ds: xr.Dataset, name: str, baseline: str, forecast: str, scheme: str)
         image_path=[OUT / f"{name}.png", OUT / f"{name}.pdf"],
         **kwargs,
     )
-    layout = build_layout(ds, relative_to=baseline, predictions_from=[forecast], **axes)
+    layout = build_layout(
+        ds, relative_to=baseline, select=dict(forecast_source=[forecast]), **axes
+    )
 
     print(f"\n{name}: {layout.stats.n_rows} rows x {layout.stats.n_cols} columns")
     for p in written:

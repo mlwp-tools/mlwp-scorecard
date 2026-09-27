@@ -5,7 +5,10 @@ from __future__ import annotations
 import argparse
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
+import numpy as np
+import pandas as pd
 import xarray as xr
 from loguru import logger
 
@@ -37,12 +40,15 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"verification summary ({', '.join(sorted(_INPUT_SUFFIXES))})",
     )
     p.add_argument(
-        "--predictions-from",
+        "--select",
         action="append",
-        metavar="NAME",
+        metavar="DIM=V1,V2",
         help=(
-            "forecast source to show; repeatable, in order. '...' stands for every "
-            "source not otherwise named (default: all but the baseline)"
+            "select along a coordinate; repeatable. One value picks it and drops the "
+            "dimension (unless it is in --rows/--columns); several, comma-separated, "
+            "keep it in that order, with '...' for the rest; a trailing comma makes "
+            "a one-value list. e.g. --select forecast_source=GraphCast,... "
+            "--select level=500 --select spatial_region=europe,n.hem"
         ),
     )
     p.add_argument(
@@ -78,11 +84,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--cell", default="lead_time", help="coordinate drawn inside each cell"
-    )
-    p.add_argument(
-        "--truth-source",
-        action="append",
-        help="restrict to this truth source; repeatable",
     )
     p.add_argument(
         "--metric-polarity",
@@ -142,6 +143,92 @@ def _split(value: str | None) -> list[str] | None:
     return [v.strip() for v in value.split(",") if v.strip()] if value else None
 
 
+def _cast(ds: xr.Dataset, dim: str, token: str) -> Any:
+    """A command-line string as a value of the ``dim`` coordinate.
+
+    Selection compares against the coordinate's own values, so ``level=500`` has to
+    arrive as a number and ``init_time=2024-01-01`` as a date, not as strings.
+    """
+    if token == "...":
+        return ...
+    if dim not in ds.coords:  # `variable` and `metric` are names, not coordinates
+        return token
+    kind = ds[dim].dtype.kind
+    if kind in "iu":
+        return int(token)
+    if kind == "f":
+        return float(token)
+    if kind == "M":
+        return np.datetime64(token)
+    if kind == "m":
+        return pd.Timedelta(token).to_timedelta64()
+    return token
+
+
+def _parse_select(items: Sequence[str], ds: xr.Dataset) -> dict[str, Any]:
+    """``DIM=V1,V2`` items as a ``select=`` mapping.
+
+    No comma is a single value; commas make a list, and a trailing comma makes a
+    list of one, which keeps the dimension where a single value would drop it.
+
+    Raises
+    ------
+    ValueError
+        If an item is not ``DIM=VALUE``, names a dimension twice, or a value does
+        not parse as the coordinate's type.
+    """
+    out: dict[str, Any] = {}
+    for item in items:
+        dim, eq, raw = item.partition("=")
+        dim = dim.strip()
+        if not eq or not dim or not raw.strip():
+            raise ValueError(f"--select {item!r}: expected DIM=VALUE[,VALUE...]")
+        if dim in out:
+            raise ValueError(f"--select names {dim!r} twice")
+        try:
+            if "," in raw:
+                tokens = [t.strip() for t in raw.split(",") if t.strip()]
+                out[dim] = [_cast(ds, dim, t) for t in tokens]
+            else:
+                out[dim] = _cast(ds, dim, raw.strip())
+        except ValueError as e:
+            raise ValueError(f"--select {item!r}: {e}") from None
+    return out
+
+
+def _build(
+    ds: xr.Dataset,
+    args: argparse.Namespace,
+    select: dict[str, Any],
+    polarity: dict[str, str],
+):
+    """Call :func:`build_layout` with the parsed command line."""
+    return build_layout(
+        ds,
+        relative_to=args.relative_to,
+        select=select or None,
+        cases=args.cases,
+        rows=_split(args.rows),
+        columns=_split(args.columns),
+        cell=args.cell,
+        bootstrap=args.bootstrap,
+        block_length=args.block_length,
+        n_resamples=args.n_resamples,
+        seed=args.seed,
+        **(
+            {"confidence_levels": tuple(args.confidence_level)}
+            if args.confidence_level
+            else {}
+        ),
+        metric_polarity=polarity or None,
+        scheme=args.scheme,
+        title=args.title,
+        subtitle=args.subtitle,
+        strict=args.strict,
+        return_validation_report=True,
+    )
+
+
 @logger.catch
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the CLI.
@@ -178,33 +265,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         name, _, pol = item.partition("=")
         polarity[name] = pol
 
-    layout, report = build_layout(
-        ds,
-        predictions_from=[
-            ... if s == "..." else s for s in (args.predictions_from or ["..."])
-        ],
-        relative_to=args.relative_to,
-        cases=args.cases,
-        rows=_split(args.rows),
-        columns=_split(args.columns),
-        cell=args.cell,
-        bootstrap=args.bootstrap,
-        block_length=args.block_length,
-        n_resamples=args.n_resamples,
-        seed=args.seed,
-        **(
-            {"confidence_levels": tuple(args.confidence_level)}
-            if args.confidence_level
-            else {}
-        ),
-        truth_source=args.truth_source,
-        metric_polarity=polarity or None,
-        scheme=args.scheme,
-        title=args.title,
-        subtitle=args.subtitle,
-        strict=args.strict,
-        return_validation_report=True,
-    )
+    # A bad selection is a usage error: say so and exit, rather than a traceback.
+    try:
+        select = _parse_select(args.select or [], ds)
+    except ValueError as e:
+        logger.error(str(e))
+        return 1
+
+    try:
+        layout, report = _build(ds, args, select, polarity)
+    except (KeyError, ValueError) as e:
+        logger.error(e.args[0] if e.args else str(e))
+        return 1
     for w in report.warnings:
         logger.warning(w)
     if report.has_fails():

@@ -36,8 +36,8 @@ ds = xr.open_dataset("verification_summary.nc")
 
 make_scorecard(
     ds,
-    predictions_from=["GraphCast"],
     relative_to="IFS-HRES",
+    select=dict(forecast_source=["GraphCast"]),
     html_path="scorecard.html",
     image_path="scorecard.png",
     title="GraphCast vs IFS HRES",
@@ -49,7 +49,7 @@ Rows and columns are inferred from the dataset, or named explicitly:
 ```python
 make_scorecard(
     ds, html_path="scorecard.html",
-    predictions_from=["GraphCast"], relative_to="IFS-HRES",
+    relative_to="IFS-HRES", select=dict(forecast_source=["GraphCast"]),
     rows=["truth_source", "variable", "level"],
     columns=["spatial_region", "metric"],
     cell="lead_time",
@@ -58,33 +58,57 @@ make_scorecard(
 
 The same file yields another card by naming different sources, so which source is
 truth, baseline or forecast is an argument rather than something baked into the data.
+`relative_to` is required for now; a card of absolute scores with no baseline is
+planned.
+
+### Selecting
+
+Every choice of *which* values appear, and in what order, goes through `select=`,
+one rule for every coordinate:
+
+```python
+select=dict(
+    forecast_source=["GraphCast", ...],   # a list: kept, in this order; ... = the rest
+    truth_source="observations",          # one value: picked, and the axis dropped
+    spatial_region=["europe", "n.hem"],   # rows and columns follow the order given
+    init_time=slice("2024-01-01", "2024-03-31"),   # a slice: as ds.sel would
+)
+```
+
+- A **single value** picks that member and drops the dimension — unless you
+  named the dimension in `rows=`, `columns=` or `cell=`, where it is kept one
+  entry long. So `rows=["truth_source", ...]` with `truth_source="analysis"` still
+  gives a one-row truth block.
+- A **list** keeps the dimension, subset, **in the order given**, which is the
+  order it is drawn in. `...` stands for every value not otherwise named, in
+  coordinate order, at most once.
+- A **slice** keeps the dimension, as `ds.sel` would.
+- `variable` and `metric` can be selected and ordered too; they always stay on an
+  axis.
+
+`forecast_source` follows the same rule, with one difference: the baseline is left
+out of every `...` automatically, and naming it explicitly is an error. Leaving
+`forecast_source` out is the same as `[...]` — every source but the baseline.
 
 ### Several forecast sources against one baseline
 
-Name several sources in `predictions_from` and `forecast_source` becomes a layout
-axis — outermost on the rows unless you place it — with one block of rows per
-source, each compared with the `relative_to` baseline:
+Select several sources and `forecast_source` becomes a layout axis — outermost on
+the rows unless you place it — with one block of rows per source, each compared
+with the `relative_to` baseline:
 
 ```python
 make_scorecard(
     ds, html_path="scorecard.html",
-    predictions_from=["GraphCast", "AIFS", "Aurora"], relative_to="IFS-HRES",
+    relative_to="IFS-HRES",
+    select=dict(forecast_source=["GraphCast", "AIFS", "Aurora"],
+                truth_source="analysis"),
     rows=["forecast_source", "variable", "level"],
     columns=["metric"],
-    truth_source="analysis",
 )
 ```
 
-`...` stands for every source not otherwise named, in the order of the
-`forecast_source` coordinate, and never includes the baseline. So
-`predictions_from=["GraphCast", ...]` is GraphCast first and then all the rest,
-and leaving `predictions_from` out is the same as `[...]`: every source but the
-baseline.
-
 Every row is exactly the two-source card for that source: the resample is shared
-by all of them, so the rows are consistent with one another. The baseline may not
-also be named in `predictions_from`. `relative_to` is required for now; a card of
-absolute scores with no baseline is planned.
+by all of them, so the rows are consistent with one another.
 
 `cases=` says which forecast cases each comparison rests on, and the card says
 which was used:
@@ -103,9 +127,14 @@ paths are all the API has.
 
 ```bash
 mlwp.make_scorecard verification_summary.nc \
-    --predictions-from GraphCast --relative-to IFS-HRES \
+    --relative-to IFS-HRES --select forecast_source=GraphCast \
     --html-path scorecard.html --image-path scorecard.png
 ```
+
+`--select DIM=V1,V2` is repeatable and follows the same rule: no comma is a single
+value, commas make a list (`--select forecast_source=GraphCast,...`), and a
+trailing comma makes a list of one (`--select spatial_region=europe,`). Values
+are read as the coordinate's type, so `--select level=500` selects 500.0.
 
 `html_path=` is the interactive page and must end in `.html`. `image_path=` is
 the static figure, and takes one path or several; each one's format follows its
@@ -180,7 +209,7 @@ Both choices are arguments, and both are printed on the card:
 
 ```python
 make_scorecard(ds, html_path="scorecard.html",
-               predictions_from=["GraphCast"], relative_to="IFS-HRES",
+               relative_to="IFS-HRES", select=dict(forecast_source=["GraphCast"]),
                bootstrap="moving-block",   # or "iid"
                block_length=None,          # in CASES; derived from the cadence
                n_resamples=2000,
@@ -207,9 +236,11 @@ Data variables:
 ```
 
 ```python
-make_scorecard(ds, html_path="scorecard.html",
-               predictions_from=["GraphCast"], relative_to="IFS-HRES")
+make_scorecard(ds, html_path="scorecard.html", relative_to="IFS-HRES")
 ```
+
+With only two sources, every source but the baseline is GraphCast, so no `select=`
+is needed.
 
 `truth_source`, `level` and `spatial_region` are all absent, so the inferred
 layout is `rows=["variable"]`, `columns=["metric"]` — two rows and one column.
@@ -235,21 +266,20 @@ only when there are several forecast sources.
 
 | Name | Required | What it does |
 |---|---|---|
-| `forecast_source` | yes | The sources being compared, named at call time as `predictions_from=` and `relative_to=`. The card shows `forecast - baseline`. With one forecast source the dimension is collapsed by differencing; with several it is laid out like any other axis. |
+| `forecast_source` | yes | The sources being compared: the baseline named at call time by `relative_to=`, the others chosen with `select=dict(forecast_source=[...])` (every other source by default). The card shows `forecast - baseline`. With one forecast source the dimension is collapsed by differencing; with several it is laid out like any other axis. |
 | `init_time` | no | The forecast cases. Collapsed by the bootstrap, which is where the intervals and the significance come from. Absent, the values are read as already-collapsed means. |
 | `variable`, `metric` | never | **Produced** by splitting the `{metric}.{variable}` names. Supplying either as an input dimension is an error. |
 
 Everything else is yours. `truth_source`, `level` and `spatial_region` are
 conventions, not rules — they get a sensible default position because they are
-what verification datasets usually carry, and `truth_source` additionally gets a
-`truth_source=` filter argument for convenience. But nothing requires them, and a
+what verification datasets usually carry. But nothing requires them, and a
 dimension the package has never heard of behaves exactly the same way:
 
 ```python
 # season and threshold are not special; they are just axes
 make_scorecard(
     ds, html_path="scorecard.html",
-    predictions_from=["GraphCast"], relative_to="IFS-HRES",
+    relative_to="IFS-HRES",
     rows=["season", "variable"],
     columns=["threshold", "metric"],
 )
@@ -261,13 +291,12 @@ that quietly averaged over your thresholds would look entirely normal and be
 wrong. If you do not want a dimension on the card, pick one value:
 
 ```python
-make_scorecard(ds, select={"season": "DJF"}, ...)   # drops the dimension
-make_scorecard(ds.sel(season="DJF"), ...)           # the same
+make_scorecard(ds, select=dict(season="DJF"), ...)   # drops the dimension
+make_scorecard(ds.sel(season="DJF"), ...)            # the same
 ```
 
-A single value in `select=` drops the dimension; a list keeps it, subset, and so
-it still needs a place on the card: `select={"season": ["DJF", "JJA"]}` with
-`season` on the rows.
+A list keeps the dimension, subset, so it still needs a place on the card:
+`select=dict(season=["DJF", "JJA"])` with `season` on the rows (see *Selecting*).
 
 When `rows` and `columns` are omitted they are inferred: the conventional names
 above take their usual positions, and anything left over is appended to the

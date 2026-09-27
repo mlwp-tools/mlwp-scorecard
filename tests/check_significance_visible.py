@@ -49,7 +49,7 @@ def main() -> None:
     layout = build_layout(
         ds,
         relative_to="persistence",
-        predictions_from=["drifting-persistence"],
+        select=dict(forecast_source=["drifting-persistence"]),
         rows=["truth_source", "variable", "level"],
         columns=["spatial_region", "metric"],
     )

@@ -30,7 +30,7 @@ from __future__ import annotations
 import math
 import warnings
 from dataclasses import dataclass
-from typing import Any, Mapping, Sequence
+from typing import Any, Sequence
 
 import numpy as np
 import xarray as xr
@@ -43,6 +43,7 @@ __all__ = [
     "resample_indices",
     "bootstrap_mean",
     "resolve_sources",
+    "expand_selection",
     "CASE_POLICIES",
 ]
 
@@ -111,21 +112,90 @@ class Aggregated:
         return bool(self.paired)
 
 
+def _same(a: Any, b: Any) -> bool:
+    """Coordinate-value equality that tolerates types that cannot be compared."""
+    try:
+        return bool(a == b)
+    except (TypeError, ValueError):
+        return False
+
+
+def expand_selection(
+    dim: str,
+    values: Sequence[Any],
+    available: Sequence[Any],
+    *,
+    exclude: Sequence[Any] = (),
+) -> list[Any]:
+    """Expand one ``select=`` list along ``dim``, keeping the order given.
+
+    ``...`` stands for every value of the coordinate not otherwise named (and not
+    in ``exclude``), in coordinate order, so ``["europe", ...]`` is Europe first
+    and then all the rest.
+
+    Parameters
+    ----------
+    dim : str
+        The dimension, for error messages.
+    values : sequence
+        The values asked for, with at most one ``...``.
+    available : sequence
+        The coordinate's values, in coordinate order.
+    exclude : sequence, optional
+        Values an ``...`` never expands to.
+
+    Returns
+    -------
+    list
+
+    Raises
+    ------
+    KeyError
+        If a value is not on the coordinate.
+    ValueError
+        If ``...`` appears more than once or a value is repeated.
+    """
+    items = list(values)
+    if sum(1 for v in items if v is Ellipsis) > 1:
+        raise ValueError(f"select=dict({dim}=...) may contain '...' at most once")
+    named = [v for v in items if v is not Ellipsis]
+    have = list(available)
+    shown = [str(h) for h in have]
+    for v in named:
+        if not any(_same(v, h) for h in have):
+            raise KeyError(
+                f"select=dict({dim}=...): {v!r} is not in {dim} (have: {shown})"
+            )
+    dupes = sorted({str(v) for i, v in enumerate(named) if v in named[:i]})
+    if dupes:
+        raise ValueError(f"select=dict({dim}=...) repeats {dupes}")
+    rest = [
+        h
+        for h in have
+        if not any(_same(h, v) for v in named) and not any(_same(h, e) for e in exclude)
+    ]
+    out: list[Any] = []
+    for v in items:
+        out.extend(rest if v is Ellipsis else [v])
+    return out
+
+
 def resolve_sources(
-    predictions_from: str | Sequence[Any],
+    forecast_source: Any,
     relative_to: str | None,
     available: Sequence[str],
 ) -> tuple[str, ...]:
     """Expand and validate the forecast sources to show.
 
     ``...`` stands for every source not otherwise named, in the order of the
-    ``forecast_source`` coordinate, so ``["IFS-HRES", ...]`` is IFS-HRES first and
-    then all the rest. The baseline is left out of that expansion, since it is
-    what every forecast source is compared against rather than one of them.
+    ``forecast_source`` coordinate, so ``["GraphCast", ...]`` is GraphCast first
+    and then all the rest. The baseline is left out of that expansion
+    automatically, since it is what every forecast source is compared against
+    rather than one of them; naming it explicitly is an error.
 
     Parameters
     ----------
-    predictions_from : str or sequence of str and at most one ``...``
+    forecast_source : str, ``...``, or sequence of str and at most one ``...``
     relative_to : str or None
         The baseline.
     available : sequence of str
@@ -144,41 +214,31 @@ def resolve_sources(
         also named as a forecast source, or nothing is left to show.
     """
     have = [str(s) for s in available]
-    items = (
-        [predictions_from]
-        if isinstance(predictions_from, str)
-        else list(predictions_from)
-    )
-    if sum(1 for s in items if s is Ellipsis) > 1:
-        raise ValueError("predictions_from= may contain '...' at most once")
-    named = [str(s) for s in items if s is not Ellipsis]
+    if isinstance(forecast_source, slice):
+        raise ValueError(
+            f"select=dict({FORECAST_DIM}=...) takes source names, not a slice"
+        )
+    if isinstance(forecast_source, str) or forecast_source is Ellipsis:
+        items = [forecast_source]
+    else:
+        items = list(forecast_source)
 
     if relative_to is not None and relative_to not in have:
         raise KeyError(
             f"relative_to={relative_to!r} is not in {FORECAST_DIM} (have: {have})"
         )
-    for name in named:
-        if name not in have:
-            raise KeyError(
-                f"predictions_from={name!r} is not in {FORECAST_DIM} (have: {have})"
-            )
-    dupes = sorted({s for s in named if named.count(s) > 1})
-    if dupes:
-        raise ValueError(f"predictions_from= repeats {dupes}")
-    if relative_to is not None and relative_to in named:
+    if relative_to is not None and relative_to in items:
         raise ValueError(
-            f"relative_to={relative_to!r} is also in predictions_from=; the baseline "
-            f"is what every forecast source is compared against, so it cannot also "
-            f"be one of them"
+            f"relative_to={relative_to!r} is also named in "
+            f"select=dict({FORECAST_DIM}=...); the baseline is what every forecast "
+            f"source is compared against, so it cannot also be one of them"
         )
-
-    rest = [s for s in have if s not in named and s != relative_to]
-    sources: list[str] = []
-    for s in items:
-        sources.extend(rest if s is Ellipsis else [str(s)])
+    sources = expand_selection(FORECAST_DIM, items, have, exclude=[relative_to])
     if not sources:
-        raise ValueError("predictions_from= leaves no forecast source to show")
-    return tuple(sources)
+        raise ValueError(
+            f"select=dict({FORECAST_DIM}=...) leaves no forecast source to show"
+        )
+    return tuple(str(s) for s in sources)
 
 
 def resample_indices(
@@ -290,7 +350,6 @@ def aggregate(
     forecast_source: str | Sequence[str],
     baseline_source: str,
     cases: str = "common",
-    subset: Mapping[str, Any] | None = None,
     bootstrap: str = "moving-block",
     block_length: int | None = None,
     n_resamples: int = 2000,
@@ -312,9 +371,6 @@ def aggregate(
     cases : {"common", "pairwise"}, optional
         Which forecast cases each comparison rests on; see :data:`CASE_POLICIES`.
         The two agree when there is one forecast source.
-    subset : mapping, optional
-        Coordinate subsetting, applied **before** the resample rather than after:
-        resampling data that is then discarded would be both wasteful and wrong.
     bootstrap : {"moving-block", "iid"}, optional
     block_length : int, optional
         In forecast **cases**, not hours. Derived from the initialisation cadence
@@ -330,12 +386,8 @@ def aggregate(
     if cases not in CASE_POLICIES:
         raise ValueError(f"cases must be one of {CASE_POLICIES}, got {cases!r}")
 
-    if subset:
-        # Always several members -- a list or a slice -- so the dimension stays.
-        # A single value is applied by the caller, before layout, and drops it.
-        sel = {k: ([v] if np.isscalar(v) else v) for k, v in subset.items()}
-        da = da.sel({k: v for k, v in sel.items() if k in da.dims})
-
+    # Coordinate selection has already happened, on the dataset, before the cube
+    # was built: resampling data that is then discarded would be wasteful and wrong.
     if FORECAST_DIM not in da.dims:
         raise KeyError(f"{FORECAST_DIM!r} is not a dimension of the dataset")
     sources = resolve_sources(

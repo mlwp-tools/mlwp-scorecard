@@ -1006,14 +1006,14 @@ half-pixel edges.
 
 ```python
 make_scorecard(data, *,
-               predictions_from=(...,), relative_to=None,     # sources; ... = all the rest
+               relative_to=None, select=None,                 # baseline; every selection
                html_path=None, image_path=None, dpi=200,      # at least one output
                **build_layout_kwargs) -> list[Path]
 
 build_layout(data, *,
-             predictions_from=(...,), relative_to=None, cases="common",
+             relative_to=None, select=None, cases="common",
              rows=None, columns=None, cell="lead_time",
-             truth_source=None, select=None, metric_polarity=None,
+             metric_polarity=None,
              scheme="cvd", title="", subtitle="",
              bootstrap="moving-block", block_length=None, n_resamples=2000,
              confidence_levels=(0.68, 0.95, 0.997), seed=0,
@@ -1027,9 +1027,12 @@ Re-exported from `__init__.py`: `make_scorecard`, `build_layout`, `render`, `Lay
 `Cell`, `Line`, `Step`, `Polarity`, `SCHEMES`, `ValidationReport`, `DEFAULT_ROWS`,
 `DEFAULT_COLUMNS`.
 
-CLI `mlwp.make_scorecard DATASET --relative-to NAME [--predictions-from NAME|... ...]
+`select=dict(forecast_source=["GraphCast", ...], truth_source="analysis", ...)`: one
+rule for every coordinate, described under *API changes of 2026-09-27*, item 7.
+
+CLI `mlwp.make_scorecard DATASET --relative-to NAME [--select DIM=V1,V2 ...]
 [--html-path PATH] [--image-path PATH ...]`, argparse + `@logger.catch`; exit 1 when
-`report.has_fails()` or an output path is refused.
+`report.has_fails()`, an output path is refused, or a selection is malformed.
 
 ---
 
@@ -1146,16 +1149,22 @@ the card from "one experiment against one control" to "one or more forecast sour
 optionally against a baseline". A single source against a baseline still produces
 the same card: PNG byte-identical, HTML differing only in the drill-down JS.
 
-**Status:** items 0–4 and 6 are implemented. Item 5 (values in cells, and the
+**Status:** items 0–4, 6 and 7 are implemented. Item 5 (values in cells, and the
 absolute card) still needs a visual design: a cell is a row of up to 15 small
 per-lead-time boxes, with no room for a number in each as things stand. Until then
 `relative_to=None` raises `NotImplementedError`.
 
 The argument names changed during implementation. Item 1 was first built as
-`forecast_source=` / `baseline_source=`, then renamed to **`predictions_from=` /
-`relative_to=`**, and item 4's outputs are **`html_path=` / `image_path=`**. The
-dimension names stay fixed (the `*_DIM` constants); making them configurable was
-considered and rejected, for the reason AGENTS.md gives.
+`forecast_source=` / `baseline_source=`, then renamed to `predictions_from=` /
+`relative_to=`. Item 7 then folded `predictions_from=` and `truth_source=` into
+`select=`, because both were only selections along a coordinate, leaving
+**`relative_to=`** as the one source argument. Item 4's outputs are
+**`html_path=` / `image_path=`**. The dimension names stay fixed (the `*_DIM`
+constants); making them configurable was considered and rejected, for the reason
+AGENTS.md gives. Selecting through arbitrary keyword arguments
+(`make_scorecard(..., level=500)`) was considered and rejected too: a typo in a
+real parameter would silently become a selection, and a dimension named like a
+parameter could not be selected.
 
 ### 0. Fixed: the difference was not paired when cases were missing
 
@@ -1174,23 +1183,23 @@ Fix: mask every source to the shared case set (item 3) **before** the means and
 the bootstrap, not only when counting. Test:
 `test_the_means_use_only_the_cases_both_sources_scored`.
 
-### 1. Sources: `predictions_from` and `relative_to`
+### 1. Sources: `relative_to` and `select=dict(forecast_source=...)`
 
 `control` / `experiment` are replaced by:
 
 ```python
-predictions_from: str | Sequence[str | EllipsisType] = (...,)   # the sources shown, in order
-relative_to: str | None = None                                  # the baseline
+relative_to: str | None = None                          # the baseline
+select=dict(forecast_source=["GraphCast", ...])         # the sources shown, in order
 ```
 
 - **`...`** stands for every source not otherwise named, in the order of the
-  `forecast_source` coordinate, and never includes the baseline. So
-  `["GraphCast", ...]` is GraphCast first, then all the rest. At most one `...`
-  is allowed; the default is every source but the baseline.
+  `forecast_source` coordinate, and **never includes the baseline**: it is left
+  out automatically. So `["GraphCast", ...]` is GraphCast first, then all the
+  rest. At most one `...`; leaving `forecast_source` out is the same as `[...]`.
 - **With `relative_to`:** each forecast source minus the baseline, paired,
   coloured by polarity, with the significance border.
 - **`relative_to=None`:** reserved for the absolute card (item 5); raises for now.
-- Naming the baseline in `predictions_from` as well **raises**. The baseline is
+- Naming the baseline explicitly in `forecast_source` **raises**. The baseline is
   never a row of its own.
 - "relative to" rather than "control" or "baseline model": a baseline is often not
   a model (climatology, persistence, an older cycle).
@@ -1236,9 +1245,8 @@ See *Public API* above for the signature.
 - `image_path` takes its format from the suffix, and several paths give several
   formats. A suffix that contradicts the argument raises, e.g.
   `html_path="card.png"`, and this is checked before anything is computed.
-- The CLI follows the same pattern: `--predictions-from` (repeatable, `...`
-  allowed), `--relative-to`, `--html-path`, and `--image-path` (repeatable).
-  `--validate-only` needs no output.
+- The CLI follows the same pattern: `--relative-to`, `--html-path`, and
+  `--image-path` (repeatable). `--validate-only` needs no output.
 - `build_layout()` and `render(layout, path)` stay as the lower-level route, with
   `render` still choosing the format by suffix.
 - A clean break, with a CHANGELOG entry and no deprecated alias.
@@ -1259,39 +1267,64 @@ See *Public API* above for the signature.
   opt-in wider boxes (`show_values=True`), or values in the tooltip and drill-down
   only. To be decided before implementing.
 
-### 6. Smaller changes
+### 6. A single value in `select=` drops the dimension
 
-- A single value in `select=` drops that dimension, like `ds.sel(...)`. It is
-  applied before the axes are inferred, so it needs no place on the card. A list
-  or slice keeps the dimension. A `select=` key that is not a dimension raises.
+Superseded and extended by item 7.
+
+### 7. Every selection through `select=`, one rule for every coordinate
+
+- A **single value** picks that member and drops the dimension, like `ds.sel(...)`
+  — unless the caller named the dimension in `rows=`, `columns=` or `cell=`, where
+  it is kept one entry long. Only the caller's own axes count: inferred axes have
+  not been chosen when the selection is applied.
+- A **list** keeps the dimension, subset **in the order given**. The layout already
+  draws each dimension in coordinate order, so this is also how sort order is set.
+  At most one `...`, for every value not otherwise named, in coordinate order.
+- A **slice** keeps the dimension, as `ds.sel` would.
+- `variable` and `metric` are names, not dimensions of the input, so they are
+  selected by choosing and ordering data variables; they always stay on an axis.
+- `forecast_source`: as item 1. A slice is refused.
+- Applied to the dataset before `prepare()`, in `api._apply_selection`, so
+  `aggregate()` no longer takes a `subset=`. The expansion is
+  `aggregate.expand_selection()`, which `resolve_sources()` also uses.
+- The CLI's `--select DIM=V1,V2` (repeatable): no comma is a single value, commas a
+  list, a trailing comma a list of one; `...` is the ellipsis; values are cast to
+  the coordinate's type (`level=500` → 500.0). It replaces `--predictions-from` and
+  `--truth-source`.
 
 ### Examples
 
 ```python
 # two sources, analysis and observations on one card
-make_scorecard(ds, predictions_from=["GraphCast"], relative_to="IFS-HRES",
+make_scorecard(ds, relative_to="IFS-HRES", select=dict(forecast_source=["GraphCast"]),
                html_path="graphcast_vs_hres.html",
                image_path=["graphcast_vs_hres.png", "graphcast_vs_hres.pdf"],
                rows=["truth_source", "variable", "level"], columns=["spatial_region", "metric"])
 
-# several sources against one baseline
-make_scorecard(ds, predictions_from=["GraphCast", "AIFS", "Aurora"], relative_to="IFS-HRES",
+# several sources against one baseline, Europe only, analysis only
+make_scorecard(ds, relative_to="IFS-HRES",
+               select=dict(forecast_source=["GraphCast", "AIFS", "Aurora"],
+                           truth_source="analysis", spatial_region="europe", metric="rmse"),
                html_path="sources_vs_hres.html",
-               rows=["forecast_source"], columns=["variable", "level"],
-               truth_source="analysis", select={"spatial_region": "europe", "metric": "rmse"})
+               rows=["forecast_source"], columns=["variable", "level", "metric"])
 
 # every source but the baseline, both truths: two blocks of rows
-make_scorecard(ds, predictions_from=[...], relative_to="IFS-HRES",
+make_scorecard(ds, relative_to="IFS-HRES",
+               select=dict(spatial_region="europe", metric="rmse"),
                html_path="all_vs_hres.html",
-               rows=["truth_source", "forecast_source"], columns=["variable", "level"],
-               select={"spatial_region": "europe", "metric": "rmse"})
+               rows=["truth_source", "forecast_source"],
+               columns=["variable", "level", "metric"])
 ```
+
+`metric` stays on the columns even when one is selected: `variable` and `metric`
+always need a place, so a single value keeps them one entry long rather than
+dropping them.
 
 ### Commits
 
-On branch `forecast-sources`: item 0 (`18327bc`), items 1–3 (`ffd7323`), item 4
-(`a2ae9d5`), the rename to `predictions_from` / `relative_to` (`fe08e54`), item 6
-(`7f87e55`).
+On `main`: item 0 (`18327bc`), items 1–3 (`ffd7323`), item 4 (`a2ae9d5`), the
+rename to `predictions_from` / `relative_to` (`fe08e54`), item 6 (`7f87e55`); item 7
+on branch `select-dict`.
 
 ---
 

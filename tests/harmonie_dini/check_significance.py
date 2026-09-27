@@ -29,10 +29,10 @@ def main() -> None:
         return build_layout(
             ds,
             relative_to="aifs",
-            predictions_from=["harmonie-arome"],
+            # truth_source is on the rows, so the single value keeps a one-row block
+            select=dict(forecast_source=["harmonie-arome"], truth_source=truth),
             rows=["truth_source", "variable"],
             columns=["metric"],
-            truth_source=truth,
             confidence_levels=levels,
             n_resamples=N_BOOT,
             seed=0,

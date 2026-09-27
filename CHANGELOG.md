@@ -112,6 +112,11 @@ Design and rationale are documented in [`PLAN.md`](PLAN.md).
 
 ### Fixed
 
+- **The HTML page dropped middle column-header levels.** Only the outermost and
+  leaf header rows were written, so `columns=["forecast_source",
+  "spatial_region", "metric"]` lost the region headings (the static figure had
+  them). Every level is now a row, and hiding columns resizes each level's spans.
+
 - **A string dimension only some variables have** no longer shows the text "nan"
   where it does not apply. Padding used NaN, which a fixed-width string coordinate
   (what a netCDF round trip gives) turns into `'nan'`; it now pads with None for

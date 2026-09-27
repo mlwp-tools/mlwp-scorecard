@@ -140,6 +140,33 @@ def test_html_has_no_external_requests(verification, tmp_path):
     assert "googletagmanager" not in text
 
 
+def test_every_column_header_level_is_on_the_page(verification, tmp_path):
+    """With three column levels the middle one was dropped: only the outermost
+    and leaf header rows were written."""
+    lay = build_layout(
+        verification,
+        colour_relative_to="persistence",
+        rows=["variable", "level"],
+        columns=["truth_source", "spatial_region", "metric"],
+        n_resamples=50,
+    )
+    p = make_scorecard(
+        verification,
+        html_path=tmp_path / "c.html",
+        colour_relative_to="persistence",
+        rows=["variable", "level"],
+        columns=["truth_source", "spatial_region", "metric"],
+        n_resamples=50,
+    )[0]
+    thead = re.search(r"<thead>(.*?)</thead>", p.read_text(), re.S).group(1)
+    rows = re.findall(r"<tr>(.*?)</tr>", thead, re.S)
+    assert len(rows) == 3
+    for depth, blocks in enumerate(lay.column_headers):
+        labels = re.findall(r"<th[^>]*>([^<]*)</th>", rows[depth])
+        want = [b.label for b in blocks]
+        assert [x for x in labels if x] == want, (depth, labels)
+
+
 def test_html_box_count_matches_the_layout(layout, verification, tmp_path):
     p = make_scorecard(
         verification,

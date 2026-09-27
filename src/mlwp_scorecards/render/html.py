@@ -125,14 +125,15 @@ _JS = r"""
       }).join(',');
       dyn.insertRule(sel + '{display:none}', 0);
     }
-    var head = table.tHead.rows[0];
-    for (var i = 0; i < head.cells.length; i++) {
-      var th = head.cells[i], g = th.dataset.group;
-      if (!g) continue;
-      var vis = groups[g].filter(function (k) { return !hidden.has(k); }).length;
-      th.hidden = vis === 0;
-      if (vis) th.colSpan = vis;
-    }
+    Array.prototype.forEach.call(table.tHead.rows, function (head) {
+      for (var i = 0; i < head.cells.length; i++) {
+        var th = head.cells[i], g = th.dataset.group;
+        if (!g) continue;
+        var vis = groups[g].filter(function (k) { return !hidden.has(k); }).length;
+        th.hidden = vis === 0;
+        if (vis) th.colSpan = vis;
+      }
+    });
   }
 
   function recompute() {
@@ -593,22 +594,48 @@ def render_html(
     for c in layout.columns:
         groups.setdefault(str(c.key[0]), []).append(colkey(c))
 
-    head1 = [f'<th class="corner" colspan="{layout.row_depth}" rowspan="2"></th>']
+    # One header row per column depth. The stylesheet makes rows 1 and 2 sticky;
+    # any deeper row carries its own offset, so a card of at most two column
+    # levels is written exactly as before.
+    def _top(i: int) -> str:
+        return f' style="top:{23 * i}px"' if i >= 2 else ""
+
+    corner_span = max(2, layout.column_depth)
+    head_rows = [
+        [
+            f'<th class="corner" colspan="{layout.row_depth}" '
+            f'rowspan="{corner_span}"></th>'
+        ]
+    ]
     for blk in layout.column_headers[0]:
-        head1.append(
+        head_rows[0].append(
             f'<th class="h0" data-group="{esc(blk.key)}" colspan="{blk.span}" '
             f'scope="colgroup">{esc(blk.label)}</th>'
         )
-    head2 = []
-    if layout.column_depth > 1:
-        for c in layout.columns:
-            head2.append(
-                f'<th class="h1" data-col="{esc(colkey(c))}" scope="col">'
-                f"{esc(c.headers[-1].label)}</th>"
+    # Middle levels: each block is a group too, keyed by its prefix, so hiding
+    # columns shrinks its span exactly as it does the outermost row's.
+    for depth in range(1, layout.column_depth - 1):
+        row = []
+        for blk in layout.column_headers[depth]:
+            prefix = SEP.join(
+                str(k) for k in layout.columns[blk.start].key[: depth + 1]
             )
-    thead = f"<tr>{''.join(head1)}</tr>" + (
-        f"<tr>{''.join(head2)}</tr>" if head2 else ""
-    )
+            groups[prefix] = [colkey(c) for c in layout.columns[blk.start : blk.stop]]
+            row.append(
+                f'<th class="hm" data-group="{esc(prefix)}" colspan="{blk.span}" '
+                f'scope="colgroup"{_top(depth)}>{esc(blk.label)}</th>'
+            )
+        head_rows.append(row)
+    if layout.column_depth > 1:
+        leaf = layout.column_depth - 1
+        head_rows.append(
+            [
+                f'<th class="h1" data-col="{esc(colkey(c))}" scope="col"{_top(leaf)}>'
+                f"{esc(c.headers[-1].label)}</th>"
+                for c in layout.columns
+            ]
+        )
+    thead = "".join(f"<tr>{''.join(row)}</tr>" for row in head_rows)
 
     # Cell identity for the drill-down is an integer, enumerated in the same order
     # the payload uses. Labels never participate: the reference builds ids by

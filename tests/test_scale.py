@@ -60,7 +60,7 @@ def test_full_size_card_renders_quickly(tmp_path):
     t0 = time.perf_counter()
     layout = build_layout(
         ds,
-        relative_to="ctl",
+        colour_relative_to="ctl",
         select=dict(forecast_source=["exp"]),
         rows=["truth_source", "variable", "level"],
         columns=["spatial_region", "metric"],
@@ -78,7 +78,7 @@ def test_full_size_card_renders_quickly(tmp_path):
         ds,
         html_path=tmp_path / "b.html",
         image_path=tmp_path / "b.png",
-        relative_to="ctl",
+        colour_relative_to="ctl",
         select=dict(forecast_source=["exp"]),
         rows=["truth_source", "variable", "level"],
         columns=["spatial_region", "metric"],
@@ -97,7 +97,7 @@ def test_full_size_html_box_count(tmp_path):
     ds = _big_dataset()
     layout = build_layout(
         ds,
-        relative_to="ctl",
+        colour_relative_to="ctl",
         select=dict(forecast_source=["exp"]),
         rows=["truth_source", "variable", "level"],
         columns=["spatial_region", "metric"],
@@ -106,7 +106,7 @@ def test_full_size_html_box_count(tmp_path):
     p = make_scorecard(
         ds,
         html_path=tmp_path / "b.html",
-        relative_to="ctl",
+        colour_relative_to="ctl",
         select=dict(forecast_source=["exp"]),
         rows=["truth_source", "variable", "level"],
         columns=["spatial_region", "metric"],
@@ -127,7 +127,7 @@ def test_the_bootstrap_is_affordable_at_full_scale():
     t0 = time.perf_counter()
     layout = build_layout(
         ds,
-        relative_to="ctl",
+        colour_relative_to="ctl",
         select=dict(forecast_source=["exp"]),
         rows=["truth_source", "variable", "level"],
         columns=["spatial_region", "metric"],

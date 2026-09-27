@@ -34,7 +34,7 @@ def render(ds: xr.Dataset, name: str, baseline: str, forecast: str, scheme: str)
         cell="lead_time",
     )
     kwargs = dict(
-        relative_to=baseline,
+        colour_relative_to=baseline,
         select=dict(forecast_source=[forecast]),
         scheme=scheme,
         **axes,
@@ -53,7 +53,7 @@ def render(ds: xr.Dataset, name: str, baseline: str, forecast: str, scheme: str)
         **kwargs,
     )
     layout = build_layout(
-        ds, relative_to=baseline, select=dict(forecast_source=[forecast]), **axes
+        ds, colour_relative_to=baseline, select=dict(forecast_source=[forecast]), **axes
     )
 
     print(f"\n{name}: {layout.stats.n_rows} rows x {layout.stats.n_cols} columns")

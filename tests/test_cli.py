@@ -27,7 +27,7 @@ def test_renders_both_formats(netcdf, tmp_path):
     rc = main(
         [
             str(netcdf),
-            "--relative-to",
+            "--colour-relative-to",
             "persistence",
             "--select",
             "forecast_source=drifting-persistence",
@@ -67,14 +67,14 @@ def test_several_forecast_sources_give_a_block_of_rows_each(
     four_sources, tmp_path, select
 ):
     out = tmp_path / "c.html"
-    argv = [str(four_sources), "--relative-to", "base", "--html-path", str(out)]
+    argv = [str(four_sources), "--colour-relative-to", "base", "--html-path", str(out)]
     assert main(argv + select + ["--cases", "pairwise", "--n-resamples", "50"]) == 0
     assert out.read_text().count('<i class="b') == 3 * 2 * 4  # sources x vars x leads
 
 
 def _boxes(netcdf, tmp_path, *select, rows="truth_source,variable,level"):
     out = tmp_path / "c.html"
-    argv = [str(netcdf), "--relative-to", "persistence", "--html-path", str(out)]
+    argv = [str(netcdf), "--colour-relative-to", "persistence", "--html-path", str(out)]
     argv += ["--rows", rows, "--columns", "spatial_region,metric"]
     for s in select:
         argv += ["--select", s]
@@ -128,7 +128,7 @@ def test_select_parsing():
 )
 def test_a_malformed_select_exits_nonzero(netcdf, tmp_path, select):
     out = tmp_path / "c.html"
-    argv = [str(netcdf), "--relative-to", "persistence", "--html-path", str(out)]
+    argv = [str(netcdf), "--colour-relative-to", "persistence", "--html-path", str(out)]
     for s in select:
         argv += ["--select", s]
     assert main(argv) == 1
@@ -136,7 +136,7 @@ def test_a_malformed_select_exits_nonzero(netcdf, tmp_path, select):
 
 
 def test_no_baseline_is_a_clear_error_not_a_traceback(netcdf, tmp_path):
-    """--relative-to is optional, matching the Python default of None, which will
+    """--colour-relative-to is optional, matching the Python default of None, which will
     mean an absolute-score card. Until that exists it must say so and exit 1."""
     out = tmp_path / "c.html"
     assert main([str(netcdf), "--html-path", str(out)]) == 1
@@ -145,7 +145,7 @@ def test_no_baseline_is_a_clear_error_not_a_traceback(netcdf, tmp_path):
 
 def test_selecting_a_dimension_the_dataset_lacks_exits_nonzero(netcdf, tmp_path):
     out = tmp_path / "c.html"
-    argv = [str(netcdf), "--relative-to", "persistence", "--html-path", str(out)]
+    argv = [str(netcdf), "--colour-relative-to", "persistence", "--html-path", str(out)]
     assert main(argv + ["--select", "nonsuch=1"]) == 1
     assert not out.exists()
 
@@ -154,7 +154,7 @@ def test_validate_only_needs_no_output(netcdf):
     rc = main(
         [
             str(netcdf),
-            "--relative-to",
+            "--colour-relative-to",
             "persistence",
             "--select",
             "forecast_source=drifting-persistence",
@@ -169,7 +169,7 @@ def test_validate_only_writes_nothing(netcdf, tmp_path):
     rc = main(
         [
             str(netcdf),
-            "--relative-to",
+            "--colour-relative-to",
             "persistence",
             "--select",
             "forecast_source=drifting-persistence",
@@ -187,7 +187,7 @@ def test_explicit_axes_are_honoured(netcdf, tmp_path):
     rc = main(
         [
             str(netcdf),
-            "--relative-to",
+            "--colour-relative-to",
             "persistence",
             "--select",
             "forecast_source=drifting-persistence",
@@ -214,7 +214,7 @@ def test_an_output_suffix_that_contradicts_its_flag_exits_nonzero(
     rc = main(
         [
             str(netcdf),
-            "--relative-to",
+            "--colour-relative-to",
             "persistence",
             "--select",
             "forecast_source=drifting-persistence",
@@ -230,7 +230,7 @@ def test_no_output_at_all_exits_nonzero(netcdf):
     rc = main(
         [
             str(netcdf),
-            "--relative-to",
+            "--colour-relative-to",
             "persistence",
             "--select",
             "forecast_source=drifting-persistence",
@@ -259,7 +259,7 @@ def test_reads_zarr_as_well_as_netcdf(zarr_store, tmp_path):
     rc = main(
         [
             str(zarr_store),
-            "--relative-to",
+            "--colour-relative-to",
             "persistence",
             "--select",
             "forecast_source=drifting-persistence",
@@ -280,7 +280,7 @@ def test_unknown_input_format_exits_nonzero(tmp_path):
     rc = main(
         [
             str(bad),
-            "--relative-to",
+            "--colour-relative-to",
             "persistence",
             "--select",
             "forecast_source=drifting-persistence",

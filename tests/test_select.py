@@ -19,7 +19,7 @@ COLUMNS = ["spatial_region", "metric"]
 
 def _card(ds, **kw):
     kw.setdefault("n_resamples", 50)
-    return build_layout(ds, relative_to="persistence", **kw)
+    return build_layout(ds, colour_relative_to="persistence", **kw)
 
 
 def _order(lay, dim):

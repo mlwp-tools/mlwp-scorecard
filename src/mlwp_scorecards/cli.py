@@ -52,7 +52,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
-        "--relative-to",
+        "--colour-relative-to",
         metavar="NAME",
         help=(
             "the baseline every forecast source is compared with. Leaving it out "
@@ -207,7 +207,7 @@ def _build(
     """Call :func:`build_layout` with the parsed command line."""
     return build_layout(
         ds,
-        relative_to=args.relative_to,
+        colour_relative_to=args.colour_relative_to,
         select=select or None,
         cases=args.cases,
         rows=_split(args.rows),

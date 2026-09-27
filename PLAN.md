@@ -1006,12 +1006,12 @@ half-pixel edges.
 
 ```python
 make_scorecard(data, *,
-               relative_to=None, select=None,                 # baseline; every selection
+               colour_relative_to=None, select=None,                 # baseline; every selection
                html_path=None, image_path=None, dpi=200,      # at least one output
                **build_layout_kwargs) -> list[Path]
 
 build_layout(data, *,
-             relative_to=None, select=None, cases="common",
+             colour_relative_to=None, select=None, cases="common",
              rows=None, columns=None, cell="lead_time",
              metric_polarity=None,
              scheme="cvd", title="", subtitle="",
@@ -1030,7 +1030,7 @@ Re-exported from `__init__.py`: `make_scorecard`, `build_layout`, `render`, `Lay
 `select=dict(forecast_source=["GraphCast", ...], truth_source="analysis", ...)`: one
 rule for every coordinate, described under *API changes of 2026-09-27*, item 7.
 
-CLI `mlwp.make_scorecard DATASET [--relative-to NAME] [--select DIM=V1,V2 ...]
+CLI `mlwp.make_scorecard DATASET [--colour-relative-to NAME] [--select DIM=V1,V2 ...]
 [--html-path PATH] [--image-path PATH ...]`, argparse + `@logger.catch`; exit 1 when
 `report.has_fails()`, an output path is refused, or a selection is malformed.
 
@@ -1152,13 +1152,15 @@ the same card: PNG byte-identical, HTML differing only in the drill-down JS.
 **Status:** items 0–4, 6 and 7 are implemented. Item 5 (values in cells, and the
 absolute card) still needs a visual design: a cell is a row of up to 15 small
 per-lead-time boxes, with no room for a number in each as things stand. Until then
-`relative_to=None` raises `NotImplementedError`.
+`colour_relative_to=None` raises `NotImplementedError`.
 
 The argument names changed during implementation. Item 1 was first built as
 `forecast_source=` / `baseline_source=`, then renamed to `predictions_from=` /
 `relative_to=`. Item 7 then folded `predictions_from=` and `truth_source=` into
 `select=`, because both were only selections along a coordinate, leaving
-**`relative_to=`** as the one source argument. Item 4's outputs are
+`relative_to=` as the one source argument; item 5 renamed it
+**`colour_relative_to=`**, because the baseline decides only the colouring once values
+can be shown without one. Item 4's outputs are
 **`html_path=` / `image_path=`**. The dimension names stay fixed (the `*_DIM`
 constants); making them configurable was considered and rejected, for the reason
 AGENTS.md gives. Selecting through arbitrary keyword arguments
@@ -1183,12 +1185,12 @@ Fix: mask every source to the shared case set (item 3) **before** the means and
 the bootstrap, not only when counting. Test:
 `test_the_means_use_only_the_cases_both_sources_scored`.
 
-### 1. Sources: `relative_to` and `select=dict(forecast_source=...)`
+### 1. Sources: `colour_relative_to` and `select=dict(forecast_source=...)`
 
 `control` / `experiment` are replaced by:
 
 ```python
-relative_to: str | None = None                          # the baseline
+colour_relative_to: str | None = None                          # the baseline
 select=dict(forecast_source=["GraphCast", ...])         # the sources shown, in order
 ```
 
@@ -1196,9 +1198,9 @@ select=dict(forecast_source=["GraphCast", ...])         # the sources shown, in 
   `forecast_source` coordinate, and **never includes the baseline**: it is left
   out automatically. So `["GraphCast", ...]` is GraphCast first, then all the
   rest. At most one `...`; leaving `forecast_source` out is the same as `[...]`.
-- **With `relative_to`:** each forecast source minus the baseline, paired,
+- **With `colour_relative_to`:** each forecast source minus the baseline, paired,
   coloured by polarity, with the significance border.
-- **`relative_to=None`:** reserved for the absolute card (item 5); raises for now.
+- **`colour_relative_to=None`:** reserved for the absolute card (item 5); raises for now.
 - Naming the baseline explicitly in `forecast_source` **raises**. The baseline is
   never a row of its own.
 - "relative to" rather than "control" or "baseline model": a baseline is often not
@@ -1245,7 +1247,7 @@ See *Public API* above for the signature.
 - `image_path` takes its format from the suffix, and several paths give several
   formats. A suffix that contradicts the argument raises, e.g.
   `html_path="card.png"`, and this is checked before anything is computed.
-- The CLI follows the same pattern: `--relative-to`, `--html-path`, and
+- The CLI follows the same pattern: `--colour-relative-to`, `--html-path`, and
   `--image-path` (repeatable). `--validate-only` needs no output.
 - `build_layout()` and `render(layout, path)` stay as the lower-level route, with
   `render` still choosing the format by suffix.
@@ -1255,14 +1257,14 @@ See *Public API* above for the signature.
 
 - Each cell can print its value. On a relative card that's the forecast source's
   own score; on an absolute card it's the only content.
-- The absolute card (`relative_to=None`) has no colour to start with: absolute
+- The absolute card (`colour_relative_to=None`) has no colour to start with: absolute
   scores have units and vary across variables, levels and lead times, so there's no
   shared scale. Colouring by rank among the sources in a cell is a possible later
   option.
 - It uses each source's own interval, which `aggregate` already computes, in the
   tooltip and drill-down.
 - The title or legend must say "absolute scores, no baseline", so that leaving out
-  `relative_to` is visible rather than silent.
+  `colour_relative_to` is visible rather than silent.
 - **Open:** how to fit a value into each per-lead-time box. Options discussed:
   opt-in wider boxes (`show_values=True`), or values in the tooltip and drill-down
   only. To be decided before implementing.
@@ -1296,20 +1298,20 @@ Superseded and extended by item 7.
 
 ```python
 # two sources, analysis and observations on one card
-make_scorecard(ds, relative_to="IFS-HRES", select=dict(forecast_source=["GraphCast"]),
+make_scorecard(ds, colour_relative_to="IFS-HRES", select=dict(forecast_source=["GraphCast"]),
                html_path="graphcast_vs_hres.html",
                image_path=["graphcast_vs_hres.png", "graphcast_vs_hres.pdf"],
                rows=["truth_source", "variable", "level"], columns=["spatial_region", "metric"])
 
 # several sources against one baseline, Europe only, analysis only
-make_scorecard(ds, relative_to="IFS-HRES",
+make_scorecard(ds, colour_relative_to="IFS-HRES",
                select=dict(forecast_source=["GraphCast", "AIFS", "Aurora"],
                            truth_source="analysis", spatial_region="europe", metric="rmse"),
                html_path="sources_vs_hres.html",
                rows=["forecast_source"], columns=["variable", "level", "metric"])
 
 # every source but the baseline, both truths: two blocks of rows
-make_scorecard(ds, relative_to="IFS-HRES",
+make_scorecard(ds, colour_relative_to="IFS-HRES",
                select=dict(spatial_region="europe", metric="rmse"),
                html_path="all_vs_hres.html",
                rows=["truth_source", "forecast_source"],

@@ -50,7 +50,7 @@ def _dataset(n_case=60, n_lead=4, seed=0):
     )
 
 
-KW = dict(relative_to="base", n_resamples=300, seed=0)
+KW = dict(colour_relative_to="base", n_resamples=300, seed=0)
 
 
 def _card(ds, sources, **kw):
@@ -138,14 +138,14 @@ def test_a_repeated_forecast_source_is_refused():
 def test_an_unknown_source_is_refused_naming_the_argument():
     with pytest.raises(KeyError, match="'nonsuch' is not in forecast_source"):
         _card(_dataset(), ["a", "nonsuch"])
-    with pytest.raises(KeyError, match="relative_to='nonsuch'"):
-        _card(_dataset(), ["a"], relative_to="nonsuch")
+    with pytest.raises(KeyError, match="colour_relative_to='nonsuch'"):
+        _card(_dataset(), ["a"], colour_relative_to="nonsuch")
 
 
 def test_no_baseline_is_not_implemented_yet():
     """The absolute-score card is planned, not built: it must say so, not guess."""
-    with pytest.raises(NotImplementedError, match="relative_to=None") as excinfo:
-        _card(_dataset(), ["a"], relative_to=None)
+    with pytest.raises(NotImplementedError, match="colour_relative_to=None") as excinfo:
+        _card(_dataset(), ["a"], colour_relative_to=None)
     assert "one of: base, a, b, c" in str(excinfo.value), "should list the options"
 
 
@@ -171,7 +171,7 @@ def test_an_ellipsis_may_sit_anywhere():
 
 def test_an_ellipsis_never_includes_the_baseline():
     ds = _dataset()
-    assert _sources(_card(ds, [...], relative_to="b")) == ["base", "a", "c"]
+    assert _sources(_card(ds, [...], colour_relative_to="b")) == ["base", "a", "c"]
 
 
 def test_two_ellipses_are_refused():

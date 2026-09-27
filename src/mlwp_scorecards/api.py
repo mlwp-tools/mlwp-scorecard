@@ -77,7 +77,7 @@ def _select_names(data: xr.Dataset, dim: str, value: Any) -> xr.Dataset:
 def _apply_selection(
     data: xr.Dataset,
     select: Mapping[str, Any] | None,
-    relative_to: str | None,
+    colour_relative_to: str | None,
     placed: set[str],
 ) -> tuple[xr.Dataset, tuple[str, ...]]:
     """Apply ``select=`` to the dataset, before any layout is inferred.
@@ -119,7 +119,9 @@ def _apply_selection(
 
     if FORECAST_DIM not in data.dims:
         raise KeyError(f"{FORECAST_DIM!r} is not a dimension of the dataset")
-    sources = resolve_sources(source_sel, relative_to, data.coords[FORECAST_DIM].values)
+    sources = resolve_sources(
+        source_sel, colour_relative_to, data.coords[FORECAST_DIM].values
+    )
     return data, sources
 
 
@@ -174,7 +176,7 @@ def _infer_axes(
 def build_layout(
     data: xr.Dataset,
     *,
-    relative_to: str | None = None,
+    colour_relative_to: str | None = None,
     select: Mapping[str, Any] | None = None,
     cases: str = "common",
     rows: Sequence[str] | None = None,
@@ -198,7 +200,7 @@ def build_layout(
     ----------
     data : xr.Dataset
         Verification statistics: one variable per ``{metric}.{variable}`` pair.
-    relative_to : str
+    colour_relative_to : str
         The member of ``forecast_source`` every forecast source is compared with;
         the card colours ``forecast - baseline``. ``None`` will mean a card of
         absolute scores with no baseline, which is not implemented yet and raises.
@@ -260,17 +262,17 @@ def build_layout(
     Raises
     ------
     NotImplementedError
-        If ``relative_to`` is None: the absolute-score card is not built yet.
+        If ``colour_relative_to`` is None: the absolute-score card is not built yet.
     """
-    if relative_to is None:
+    if colour_relative_to is None:
         options = (
             [str(s) for s in data.coords[FORECAST_DIM].values]
             if FORECAST_DIM in data.coords
             else []
         )
         raise NotImplementedError(
-            "a card of absolute scores (relative_to=None) is not implemented yet; "
-            "name the baseline with relative_to= (--relative-to on the command line)"
+            "a card of absolute scores (colour_relative_to=None) is not implemented yet; "
+            "name the baseline with colour_relative_to= (--colour-relative-to on the command line)"
             + (f", one of: {', '.join(options)}" if options else "")
         )
     # Applied to the dataset before anything is inferred, so a dropped dimension
@@ -278,7 +280,7 @@ def build_layout(
     # placing a dimension: inferred axes have not been chosen yet, and could not
     # decide this without the selection deciding them in turn.
     placed = set(rows or ()) | set(columns or ()) | {cell}
-    data, sources = _apply_selection(data, select, relative_to, placed)
+    data, sources = _apply_selection(data, select, colour_relative_to, placed)
 
     sch = SCHEMES[scheme] if isinstance(scheme, str) else scheme
     row_dims, col_dims = _infer_axes(data, rows, columns, cell, len(sources))
@@ -293,7 +295,7 @@ def build_layout(
     agg = aggregate(
         cube,
         forecast_source=sources,
-        baseline_source=relative_to,
+        baseline_source=colour_relative_to,
         cases=cases,
         bootstrap=bootstrap,
         block_length=block_length,
@@ -385,7 +387,7 @@ def _output_paths(
 def make_scorecard(
     data: xr.Dataset,
     *,
-    relative_to: str | None = None,
+    colour_relative_to: str | None = None,
     select: Mapping[str, Any] | None = None,
     html_path: str | Path | None = None,
     image_path: str | Path | Sequence[str | Path] | None = None,
@@ -398,7 +400,7 @@ def make_scorecard(
     ----------
     data : xr.Dataset
         Verification statistics.
-    relative_to : str
+    colour_relative_to : str
         The source each is compared with.
     select : mapping, optional
         Selection along coordinates, including which forecast sources to show;
@@ -428,12 +430,14 @@ def make_scorecard(
 
     Examples
     --------
-    >>> make_scorecard(ds, relative_to="IFS-HRES",
+    >>> make_scorecard(ds, colour_relative_to="IFS-HRES",
     ...                select=dict(forecast_source=["GraphCast", ...]),
     ...                html_path="card.html",
     ...                image_path=["card.png", "card.pdf"])  # doctest: +SKIP
     """
     paths = _output_paths(html_path, image_path)
-    layout = build_layout(data, relative_to=relative_to, select=select, **kwargs)
+    layout = build_layout(
+        data, colour_relative_to=colour_relative_to, select=select, **kwargs
+    )
     assert isinstance(layout, Layout)
     return [render(layout, p, dpi=dpi) for p in paths]

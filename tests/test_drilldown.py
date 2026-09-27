@@ -30,7 +30,7 @@ def page(verification, tmp_path_factory) -> str:
     make_scorecard(
         verification,
         html_path=out,
-        relative_to="persistence",
+        colour_relative_to="persistence",
         select=dict(forecast_source=["drifting-persistence"]),
         title="t",
     )
@@ -100,7 +100,7 @@ def test_detail_can_be_switched_off(verification, tmp_path):
 
     layout = build_layout(
         verification,
-        relative_to="persistence",
+        colour_relative_to="persistence",
         select=dict(forecast_source=["drifting-persistence"]),
     )
     with_ = render_html(layout, tmp_path / "a.html", scheme=SCHEMES["cvd"])
@@ -141,7 +141,7 @@ def test_drilldown_actually_draws(verification, tmp_path):
     make_scorecard(
         verification,
         html_path=out,
-        relative_to="persistence",
+        colour_relative_to="persistence",
         select=dict(forecast_source=["drifting-persistence"]),
         title="t",
     )

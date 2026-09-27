@@ -36,7 +36,7 @@ ds = xr.open_dataset("verification_summary.nc")
 
 make_scorecard(
     ds,
-    relative_to="IFS-HRES",
+    colour_relative_to="IFS-HRES",
     select=dict(forecast_source=["GraphCast"]),
     html_path="scorecard.html",
     image_path="scorecard.png",
@@ -49,7 +49,7 @@ Rows and columns are inferred from the dataset, or named explicitly:
 ```python
 make_scorecard(
     ds, html_path="scorecard.html",
-    relative_to="IFS-HRES", select=dict(forecast_source=["GraphCast"]),
+    colour_relative_to="IFS-HRES", select=dict(forecast_source=["GraphCast"]),
     rows=["truth_source", "variable", "level"],
     columns=["spatial_region", "metric"],
     cell="lead_time",
@@ -58,7 +58,7 @@ make_scorecard(
 
 The same file yields another card by naming different sources, so which source is
 truth, baseline or forecast is an argument rather than something baked into the data.
-`relative_to` is required for now; a card of absolute scores with no baseline is
+`colour_relative_to` is required for now; a card of absolute scores with no baseline is
 planned.
 
 ### Selecting
@@ -94,12 +94,12 @@ out of every `...` automatically, and naming it explicitly is an error. Leaving
 
 Select several sources and `forecast_source` becomes a layout axis — outermost on
 the rows unless you place it — with one block of rows per source, each compared
-with the `relative_to` baseline:
+with the `colour_relative_to` baseline:
 
 ```python
 make_scorecard(
     ds, html_path="scorecard.html",
-    relative_to="IFS-HRES",
+    colour_relative_to="IFS-HRES",
     select=dict(forecast_source=["GraphCast", "AIFS", "Aurora"],
                 truth_source="analysis"),
     rows=["forecast_source", "variable", "level"],
@@ -127,7 +127,7 @@ paths are all the API has.
 
 ```bash
 mlwp.make_scorecard verification_summary.nc \
-    --relative-to IFS-HRES --select forecast_source=GraphCast \
+    --colour-relative-to IFS-HRES --select forecast_source=GraphCast \
     --html-path scorecard.html --image-path scorecard.png
 ```
 
@@ -209,7 +209,7 @@ Both choices are arguments, and both are printed on the card:
 
 ```python
 make_scorecard(ds, html_path="scorecard.html",
-               relative_to="IFS-HRES", select=dict(forecast_source=["GraphCast"]),
+               colour_relative_to="IFS-HRES", select=dict(forecast_source=["GraphCast"]),
                bootstrap="moving-block",   # or "iid"
                block_length=None,          # in CASES; derived from the cadence
                n_resamples=2000,
@@ -236,7 +236,7 @@ Data variables:
 ```
 
 ```python
-make_scorecard(ds, html_path="scorecard.html", relative_to="IFS-HRES")
+make_scorecard(ds, html_path="scorecard.html", colour_relative_to="IFS-HRES")
 ```
 
 With only two sources, every source but the baseline is GraphCast, so no `select=`
@@ -266,7 +266,7 @@ only when there are several forecast sources.
 
 | Name | Required | What it does |
 |---|---|---|
-| `forecast_source` | yes | The sources being compared: the baseline named at call time by `relative_to=`, the others chosen with `select=dict(forecast_source=[...])` (every other source by default). The card shows `forecast - baseline`. With one forecast source the dimension is collapsed by differencing; with several it is laid out like any other axis. |
+| `forecast_source` | yes | The sources being compared: the baseline named at call time by `colour_relative_to=`, the others chosen with `select=dict(forecast_source=[...])` (every other source by default). The card shows `forecast - baseline`. With one forecast source the dimension is collapsed by differencing; with several it is laid out like any other axis. |
 | `init_time` | no | The forecast cases. Collapsed by the bootstrap, which is where the intervals and the significance come from. Absent, the values are read as already-collapsed means. |
 | `variable`, `metric` | never | **Produced** by splitting the `{metric}.{variable}` names. Supplying either as an input dimension is an error. |
 
@@ -279,7 +279,7 @@ dimension the package has never heard of behaves exactly the same way:
 # season and threshold are not special; they are just axes
 make_scorecard(
     ds, html_path="scorecard.html",
-    relative_to="IFS-HRES",
+    colour_relative_to="IFS-HRES",
     rows=["season", "variable"],
     columns=["threshold", "metric"],
 )

@@ -35,7 +35,7 @@ def layout(verification):
 
     return build_layout(
         verification,
-        relative_to="persistence",
+        colour_relative_to="persistence",
         select=dict(forecast_source=["drifting-persistence"]),
         rows=ROWS,
         columns=COLUMNS,

@@ -17,12 +17,13 @@ Design and rationale are documented in [`PLAN.md`](PLAN.md).
 
 ### Changed
 
-- **`control=` / `experiment=` are gone.** The baseline is `relative_to=`
-  (`--relative-to`); the sources compared with it are a selection like any other,
+- **`control=` / `experiment=` are gone.** The baseline is `colour_relative_to=`
+  (`--colour-relative-to`): it decides the colouring, and the significance, and
+  nothing else. The sources compared with it are a selection like any other,
   `select=dict(forecast_source=["GraphCast", ...])`, and default to every source
   but the baseline. A baseline is often not a model at all, hence "relative to"
-  rather than "control". `relative_to=None` is reserved for a card of absolute
-  scores and raises `NotImplementedError` for now. `Step.control*` /
+  rather than "control". `colour_relative_to=None` is reserved for a card of
+  absolute scores and raises `NotImplementedError` for now. `Step.control*` /
   `Step.experiment*` become `Step.baseline*` / `Step.forecast*`, and
   `Layout.control` / `Layout.experiment` become `Layout.baseline_source` /
   `Layout.forecast_sources`. There is no alias for the old names.

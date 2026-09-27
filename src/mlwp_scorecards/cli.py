@@ -55,8 +55,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--colour-relative-to",
         metavar="NAME",
         help=(
-            "the baseline every forecast source is compared with. Leaving it out "
-            "will mean a card of absolute scores, which is not implemented yet"
+            "colour each box by its difference from this baseline source, and mark "
+            "significance. Leave it out, with --show-values, for a card of each "
+            "source's own scores"
+        ),
+    )
+    p.add_argument(
+        "--show-values",
+        action="store_true",
+        help=(
+            "print each source's own score in its boxes; with a baseline, also show "
+            "the baseline as a grey row of its own scores"
         ),
     )
     p.add_argument(
@@ -208,6 +217,7 @@ def _build(
     return build_layout(
         ds,
         colour_relative_to=args.colour_relative_to,
+        show_values=args.show_values,
         select=select or None,
         cases=args.cases,
         rows=_split(args.rows),
@@ -276,7 +286,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         layout, report = _build(ds, args, select, polarity)
-    except (KeyError, ValueError, NotImplementedError) as e:
+    except (KeyError, ValueError) as e:
         logger.error(e.args[0] if e.args else str(e))
         return 1
     for w in report.warnings:

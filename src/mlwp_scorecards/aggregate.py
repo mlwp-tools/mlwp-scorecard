@@ -68,6 +68,19 @@ CASE_POLICIES = ("common", "pairwise")
 
 
 @dataclass(frozen=True, slots=True)
+class SourceSummary:
+    """One source's own scores, collapsed over cases: for the baseline's grey row.
+
+    No ``forecast_source`` dimension: it describes a single source.
+    """
+
+    mean: xr.DataArray
+    lower: xr.DataArray | None
+    upper: xr.DataArray | None
+    counts: xr.DataArray
+
+
+@dataclass(frozen=True, slots=True)
 class Aggregated:
     """Forecast sources against a baseline, collapsed over cases, ready to lay out.
 
@@ -79,9 +92,12 @@ class Aggregated:
     Every array carries a ``forecast_source`` dimension, one entry per forecast
     source -- :attr:`baseline` included, because under ``cases="pairwise"`` the
     baseline's mean is taken over a different set of cases for each of them.
+
+    With no baseline, every ``baseline*`` field is None and nothing is paired:
+    each forecast source is summarised on its own.
     """
 
-    baseline: xr.DataArray
+    baseline: xr.DataArray | None
     forecast: xr.DataArray
     #: Each source's own interval, at the widest confidence level. For the
     #: drill-down chart only -- it is far wider than the paired interval below
@@ -100,6 +116,10 @@ class Aggregated:
     baseline_source: str = ""
     forecast_sources: tuple[str, ...] = ()
     cases: str = "common"
+    #: The baseline's own scores, for showing it as a row of its own: over the
+    #: common cases under ``cases="common"`` (what every row was compared on), and
+    #: over all of its own cases under ``"pairwise"``. Only when asked for.
+    baseline_row: SourceSummary | None = None
     #: How the interval was produced. Carried to the card, because a
     #: significance claim cannot be checked without it.
     method: str = "moving-block"
@@ -348,8 +368,9 @@ def aggregate(
     cube: PreparedCube,
     *,
     forecast_source: str | Sequence[str],
-    baseline_source: str,
+    baseline_source: str | None,
     cases: str = "common",
+    baseline_row: bool = False,
     bootstrap: str = "moving-block",
     block_length: int | None = None,
     n_resamples: int = 2000,
@@ -365,12 +386,18 @@ def aggregate(
     forecast_source : str or sequence of str
         Members of ``forecast_source`` to compare with the baseline; ``...`` is
         expanded as in :func:`resolve_sources`.
-    baseline_source : str
+    baseline_source : str or None
         The member every one of them is differenced against: the card colours
-        ``forecast - baseline``.
+        ``forecast - baseline``. None: nothing is compared, and each source is
+        summarised on its own.
     cases : {"common", "pairwise"}, optional
         Which forecast cases each comparison rests on; see :data:`CASE_POLICIES`.
-        The two agree when there is one forecast source.
+        The two agree when there is one forecast source. With no baseline,
+        ``"common"`` is the cases every selected source scored and ``"pairwise"``
+        each source's own.
+    baseline_row : bool, optional
+        Also summarise the baseline on its own, for showing it as a row; see
+        :attr:`Aggregated.baseline_row`.
     bootstrap : {"moving-block", "iid"}, optional
     block_length : int, optional
         In forecast **cases**, not hours. Derived from the initialisation cadence
@@ -394,24 +421,35 @@ def aggregate(
         forecast_source, baseline_source, da.coords[FORECAST_DIM].values
     )
 
+    has_base = baseline_source is not None
     fc_da = da.sel({FORECAST_DIM: list(sources)})
-    base_da = da.sel({FORECAST_DIM: baseline_source}, drop=True)
+    raw_base = da.sel({FORECAST_DIM: baseline_source}, drop=True) if has_base else None
     # Pair the sources before anything is averaged: a case the baseline or the
     # forecast source lacks is dropped from both. Otherwise each mean is taken
     # over that source's own cases, the difference compares different weather,
     # and a card can show a confidently significant difference the paired data
     # does not contain. Under "common", a case any one source lacks is dropped
-    # from all of them.
-    ok = np.isfinite(fc_da) & np.isfinite(base_da)
+    # from all of them -- which, with no baseline, is still what keeps the rows
+    # comparable with one another.
+    ok = np.isfinite(fc_da)
+    if has_base:
+        ok = ok & np.isfinite(raw_base)
     if cases == "common":
         ok = ok.all(FORECAST_DIM)
     fc_da = fc_da.where(ok)
-    # The baseline gets a forecast_source dimension of its own: under "pairwise"
-    # it is masked differently for each forecast source.
-    base_da, fc_da = xr.broadcast(base_da.where(ok), fc_da)
-    base_da = base_da.transpose(*fc_da.dims)
+    base_da = None
+    if has_base:
+        # The baseline gets a forecast_source dimension of its own: under
+        # "pairwise" it is masked differently for each forecast source.
+        base_da, fc_da = xr.broadcast(raw_base.where(ok), fc_da)
+        base_da = base_da.transpose(*fc_da.dims)
+    # The baseline as a row of its own: over the cases every row was compared on
+    # when those are common to all, and over all of its own cases otherwise.
+    row_da = None
+    if baseline_row and has_base:
+        row_da = raw_base.where(ok) if cases == "common" else raw_base
     provenance = dict(
-        baseline_source=baseline_source, forecast_sources=sources, cases=cases
+        baseline_source=baseline_source or "", forecast_sources=sources, cases=cases
     )
 
     levels = tuple(sorted(float(c) for c in confidence_levels))
@@ -427,7 +465,10 @@ def aggregate(
             f"no {CASE_DIM!r} dimension: values are read as already-collapsed "
             f"means, with no interval and nothing marked significant"
         )
-        empty = xr.full_like(base_da, np.nan)
+        empty = xr.full_like(fc_da, np.nan)
+        row = None
+        if row_da is not None:
+            row = SourceSummary(row_da, None, None, xr.full_like(row_da, np.nan))
         return Aggregated(
             baseline=base_da,
             forecast=fc_da,
@@ -438,6 +479,7 @@ def aggregate(
             paired={},
             counts=empty,
             confidence_levels=(),
+            baseline_row=row,
             **provenance,
         )
 
@@ -463,14 +505,15 @@ def aggregate(
     weights = _weights(idx, n_case)
 
     # Flatten to (series, case) so the bootstrap is one matmul per chunk.
-    base_da = base_da.transpose(..., CASE_DIM)
     fc_da = fc_da.transpose(..., CASE_DIM)
-    shape = base_da.shape[:-1]
-    dims = base_da.dims[:-1]
-    coords = {d: base_da.coords[d] for d in dims if d in base_da.coords}
-    b_flat = base_da.values.reshape(-1, n_case)
+    shape = fc_da.shape[:-1]
+    dims = fc_da.dims[:-1]
+    coords = {d: fc_da.coords[d] for d in dims if d in fc_da.coords}
     f_flat = fc_da.values.reshape(-1, n_case)
-    n_series = b_flat.shape[0]
+    if has_base:
+        base_da = base_da.transpose(..., CASE_DIM)
+        b_flat = base_da.values.reshape(-1, n_case)
+    n_series = f_flat.shape[0]
 
     widest = levels[-1]
     out = {k: np.empty(n_series) for k in ("b_lo", "b_hi", "f_lo", "f_hi")}
@@ -478,17 +521,19 @@ def aggregate(
 
     for lo in range(0, n_series, CHUNK):
         hi = min(lo + CHUNK, n_series)
-        b_boot = bootstrap_mean(b_flat[lo:hi], weights)
         f_boot = bootstrap_mean(f_flat[lo:hi], weights)
+        fb = _percentile_bounds(f_boot, [widest])[widest]
+        out["f_lo"][lo:hi], out["f_hi"][lo:hi] = fb
+        if not has_base:
+            continue
+        b_boot = bootstrap_mean(b_flat[lo:hi], weights)
         # The paired difference shares the resample, so this subtraction *is* the
         # paired bootstrap. It is not the same as differencing two independent
         # ones, which would be far wider and quite wrong.
         d_boot = f_boot - b_boot
 
         bb = _percentile_bounds(b_boot, [widest])[widest]
-        fb = _percentile_bounds(f_boot, [widest])[widest]
         out["b_lo"][lo:hi], out["b_hi"][lo:hi] = bb
-        out["f_lo"][lo:hi], out["f_hi"][lo:hi] = fb
         for c, (dlo, dhi) in _percentile_bounds(d_boot, levels).items():
             paired_flat[c][0][lo:hi] = dlo
             paired_flat[c][1][lo:hi] = dhi
@@ -497,8 +542,8 @@ def aggregate(
         return xr.DataArray(flat.reshape(shape), dims=dims, coords=coords)
 
     with np.errstate(invalid="ignore"):
-        mean_b = base_da.mean(CASE_DIM, skipna=True)
         mean_f = fc_da.mean(CASE_DIM, skipna=True)
+        mean_b = base_da.mean(CASE_DIM, skipna=True) if has_base else None
     # The cases each comparison is paired on: after the masking above, a forecast
     # value is finite exactly where its pair is.
     counts = np.isfinite(fc_da).sum(CASE_DIM)
@@ -506,16 +551,44 @@ def aggregate(
     return Aggregated(
         baseline=mean_b,
         forecast=mean_f,
-        baseline_lower=_wrap(out["b_lo"]),
-        baseline_upper=_wrap(out["b_hi"]),
+        baseline_lower=_wrap(out["b_lo"]) if has_base else None,
+        baseline_upper=_wrap(out["b_hi"]) if has_base else None,
         forecast_lower=_wrap(out["f_lo"]),
         forecast_upper=_wrap(out["f_hi"]),
-        paired={c: (_wrap(v[0]), _wrap(v[1])) for c, v in paired_flat.items()},
+        paired=(
+            {c: (_wrap(v[0]), _wrap(v[1])) for c, v in paired_flat.items()}
+            if has_base
+            else {}
+        ),
         counts=counts,
         confidence_levels=levels,
         method=bootstrap,
         block_length=block,
         n_resamples=n_resamples,
         seed=seed_out,
+        baseline_row=(
+            _summarise(row_da, weights, widest) if row_da is not None else None
+        ),
         **provenance,
     )
+
+
+def _summarise(da: xr.DataArray, weights: np.ndarray, conf: float) -> SourceSummary:
+    """One source on its own: mean, bootstrap interval at ``conf``, case count."""
+    da = da.transpose(..., CASE_DIM)
+    shape, dims = da.shape[:-1], da.dims[:-1]
+    coords = {d: da.coords[d] for d in dims if d in da.coords}
+    flat = da.values.reshape(-1, da.shape[-1])
+    lo = np.empty(flat.shape[0])
+    hi = np.empty(flat.shape[0])
+    for start in range(0, flat.shape[0], CHUNK):
+        stop = min(start + CHUNK, flat.shape[0])
+        boot = bootstrap_mean(flat[start:stop], weights)
+        lo[start:stop], hi[start:stop] = _percentile_bounds(boot, [conf])[conf]
+
+    def _wrap(a: np.ndarray) -> xr.DataArray:
+        return xr.DataArray(a.reshape(shape), dims=dims, coords=coords)
+
+    with np.errstate(invalid="ignore"):
+        mean = da.mean(CASE_DIM, skipna=True)
+    return SourceSummary(mean, _wrap(lo), _wrap(hi), np.isfinite(da).sum(CASE_DIM))

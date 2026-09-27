@@ -358,17 +358,24 @@ _JS = r"""
             name: d.control },
           { y: c.e, lo: c.el, hi: c.eu, colour: COLOURS.experiment,
             name: src, dash: '5 3' }
-        ]
+        ].filter(function (s) { return s.y; })
       }));
-      charts.append(f1, f2);
+      /* A neutral cell -- the baseline's own row, or a card with no baseline --
+         has a score of its own but no difference to chart. */
+      if (c.v) charts.append(f1);
+      charts.append(f2);
 
       var note = dlg.querySelector('.note');
       note.replaceChildren();
-      note.append(swatch(COLOURS.control), txt(' ' + d.control + '   '));
+      if (c.c) note.append(swatch(COLOURS.control), txt(' ' + d.control + '   '));
       note.append(swatch(COLOURS.experiment, true), txt(' ' + src));
       var extra = document.createElement('div');
       extra.style.marginTop = '6px';
-      extra.textContent = haveDiffCI
+      extra.textContent = !c.v
+        ? 'This source’s own score, with its own interval over forecast cases. '
+          + 'It is not compared with anything, so nothing here is marked '
+          + 'significant.'
+        : haveDiffCI
         ? 'The difference interval is paired: it is computed per forecast case '
           + 'before averaging, so the error the two sources share cancels. It is '
           + 'therefore much tighter than the two intervals on the right, and it '
@@ -434,9 +441,13 @@ _PAGE = Template(
 <div class="legend">
   <h2>How to read this</h2>
   <p>Each cell is one comparison across forecast lead time, earliest on the left:
-     {{ n_lead }} boxes from {{ first_lead }} to {{ last_lead }}. Colour shows the
+     {{ n_lead }} boxes from {{ first_lead }} to {{ last_lead }}. {% if coloured %}Colour shows the
      difference between <b>{{ experiment }}</b> and <b>{{ control }}</b>, and its
-     intensity the size of that difference relative to {{ control }}. Hover a box
+     intensity the size of that difference relative to {{ control }}.{% else %}There is no
+     baseline: each box is its source's own score, and nothing is compared or marked
+     significant.{% endif %}{% if show_values and coloured %} Each box prints its source's
+     own score; the grey rows are <b>{{ control }}</b>'s own, which the colours are
+     relative to.{% endif %} Hover a box
      for the exact value{% if has_detail %}, or click a cell for the full series{% endif %}.</p>
   {%- for fam in ramps %}
   <p><b>{{ fam.label }}</b>: {{ fam.negative_word }}
@@ -487,28 +498,44 @@ _PAGE = Template(
 )
 
 
-def _ramp_css(scheme: ColourScheme) -> str:
+def _ramp_css(scheme: ColourScheme, *, values: bool = False) -> str:
     """One rule per (family, direction, level) instead of a style on every box.
 
     A full-size card has ~20,000 boxes but only ~60 distinct colours, so carrying
-    the fill inline costs roughly 800 kB for nothing.
+    the fill inline costs roughly 800 kB for nothing. With ``values``, each rule
+    also carries the swatch's legible text colour for the number printed on it.
     """
-    rules = [f".c i.z {{ --f:{scheme.neutral.fill}; --e:{scheme.neutral.edge}; }}"]
+
+    def rule(sel: str, sw) -> str:
+        fg = f" --t:{sw.fg};" if values else ""
+        return f"{sel} {{ --f:{sw.fill}; --e:{sw.edge};{fg} }}"
+
+    rules = [rule(".c i.z", scheme.neutral)]
     for fam_key, fam in scheme.families.items():
         for sign, ramp in (("p", fam.positive), ("n", fam.negative)):
             for i, sw in enumerate(ramp.swatches, start=1):
-                rules.append(
-                    f".f-{fam_key} i.{sign}{i} {{ --f:{sw.fill}; --e:{sw.edge}; }}"
-                )
+                rules.append(rule(f".f-{fam_key} i.{sign}{i}", sw))
     return "\n".join(rules)
 
 
+#: Wider boxes that hold a number each, for a card that shows values. Appended
+#: only then, after the rest, so a card without values is byte-identical to before.
+_VALUES_CSS = """
+:root { --bw: auto; --bh: 15px; }
+td.c { line-height: 15px; }
+td.c > i { min-width: 30px; padding: 0 3px; font: 9.5px/13px ui-monospace, Menlo,
+  Consolas, monospace; font-style: normal; text-align: center; color: var(--t, #16191d); }
+tr.base th { color: #5b6470; font-style: italic; }
+"""
+
+
 def _boxes(cell) -> str:
-    """Emit one ``<i>`` per lead time, carrying only its level class."""
+    """Emit one ``<i>`` per lead time, carrying only its level class, and the
+    printed value when the card shows values."""
     out = []
     for st in cell.steps:
         tip = html.escape(st.tooltip, quote=True)
-        if st.value is None:
+        if not st.has_data:
             out.append(f'<i class="b nodata" title="{tip}"></i>')
             continue
         if st.level == 0:
@@ -517,7 +544,7 @@ def _boxes(cell) -> str:
             cls = f"b {'p' if st.level > 0 else 'n'}{abs(st.level)}"
         if st.significant:
             cls += " sig"
-        out.append(f'<i class="{cls}" title="{tip}"></i>')
+        out.append(f'<i class="{cls}" title="{tip}">{html.escape(st.text)}</i>')
     return "".join(out)
 
 
@@ -613,7 +640,12 @@ def render_html(
                     f'tabindex="0" role="button" '
                     f'data-cell="{esc(cell.cell_id)}">{_boxes(cell)}</td>'
                 )
-        body.append(f"<tr>{''.join(tds)}</tr>")
+        is_base = any(
+            cell.is_baseline
+            for cell in (layout.isel(row=r, col=c) for c in range(len(layout.columns)))
+            if cell is not None
+        )
+        body.append(f"<tr{' class=\"base\"' if is_base else ''}>{''.join(tds)}</tr>")
 
     table = (
         f'<table class="sc" id="sc-table">'
@@ -630,8 +662,9 @@ def render_html(
                 seen.append(v)
         control_groups.append({"dim": dim, "depth": depth, "members": seen})
 
+    # No baseline, nothing coloured: a colour legend would describe nothing.
     ramps = []
-    for key, fam in scheme.families.items():
+    for key, fam in scheme.families.items() if layout.coloured else ():
         step = max(1, len(fam.positive) // 7)
         ramps.append(
             {
@@ -662,7 +695,11 @@ def render_html(
     page = _PAGE.render(
         title=layout.title or "Scorecard",
         subtitle=layout.subtitle,
-        css=_CSS.format(missing=scheme.missing, ramp=_ramp_css(scheme)),
+        css=_CSS.format(
+            missing=scheme.missing,
+            ramp=_ramp_css(scheme, values=layout.show_values),
+        )
+        + (_VALUES_CSS if layout.show_values else ""),
         js=_JS,
         table=table,
         control_groups=control_groups,
@@ -674,6 +711,8 @@ def render_html(
         last_lead=layout.lead_labels[-1],
         control=layout.baseline_source,
         experiment=layout.forecast_label,
+        coloured=layout.coloured,
+        show_values=layout.show_values,
         n_significant=s.n_significant,
         n_boxes=s.n_boxes,
         # The border marks a box that clears the *narrowest* level supplied, so

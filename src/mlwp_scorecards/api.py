@@ -131,6 +131,7 @@ def _infer_axes(
     columns: Sequence[str] | None,
     cell: str,
     n_sources: int = 1,
+    lay_out_sources: bool = False,
 ) -> tuple[list[str], list[str]]:
     """Choose row and column nesting when the caller did not.
 
@@ -142,17 +143,19 @@ def _infer_axes(
     constants in :mod:`~mlwp_scorecards.ingest` so the two cannot drift apart.
 
     ``forecast_source`` is consumed by differencing when there is one forecast
-    source, and laid out when there are several -- outermost on the rows unless
-    placed elsewhere, one block of rows per source.
+    source, and laid out when there are several, or when ``lay_out_sources`` asks
+    for it -- outermost on the rows unless placed elsewhere, one block of rows per
+    source.
     """
-    consumed = {cell, CASE_DIM} | ({FORECAST_DIM} if n_sources == 1 else set())
+    laid_out = n_sources > 1 or lay_out_sources
+    consumed = {cell, CASE_DIM} | (set() if laid_out else {FORECAST_DIM})
     available = ({str(d) for d in ds.dims} | {VARIABLE_DIM, METRIC_DIM}) - consumed
 
     if rows is not None and columns is not None:
         return list(rows), list(columns)
 
     default_rows = DEFAULT_ROWS
-    if n_sources > 1 and FORECAST_DIM not in (columns or ()):
+    if laid_out and FORECAST_DIM not in (columns or ()):
         default_rows = (FORECAST_DIM,) + DEFAULT_ROWS
     r = [d for d in (rows if rows is not None else default_rows) if d in available]
     c = [
@@ -177,6 +180,7 @@ def build_layout(
     data: xr.Dataset,
     *,
     colour_relative_to: str | None = None,
+    show_values: bool = False,
     select: Mapping[str, Any] | None = None,
     cases: str = "common",
     rows: Sequence[str] | None = None,
@@ -200,10 +204,16 @@ def build_layout(
     ----------
     data : xr.Dataset
         Verification statistics: one variable per ``{metric}.{variable}`` pair.
-    colour_relative_to : str
+    colour_relative_to : str, optional
         The member of ``forecast_source`` every forecast source is compared with;
-        the card colours ``forecast - baseline``. ``None`` will mean a card of
-        absolute scores with no baseline, which is not implemented yet and raises.
+        the card colours ``forecast - baseline`` and marks significance. ``None``:
+        nothing is compared, every box is neutral, and ``show_values`` must be
+        True.
+    show_values : bool, optional
+        Print each source's own score in its boxes. With a baseline, the baseline
+        is also shown as a grey row of its own scores, first, and colours are
+        unchanged. ``forecast_source`` is then always on an axis -- outermost on
+        the rows unless placed -- even for a single forecast source.
     select : mapping, optional
         Selection along coordinates, one rule for every key, e.g.
         ``select=dict(forecast_source=["GraphCast", ...], truth_source="analysis",
@@ -217,9 +227,9 @@ def build_layout(
           value, in coordinate order;
         - a **slice** keeps the dimension, as ``ds.sel`` would.
 
-        ``forecast_source`` defaults to every source but the baseline, and a
-        ``...`` in it never includes the baseline; naming the baseline there is
-        an error. With several forecast sources, ``forecast_source`` becomes a
+        ``forecast_source`` defaults to every source but the baseline (every
+        source, with no baseline), and a ``...`` in it never includes the
+        baseline; naming the baseline there is an error. With several forecast sources, ``forecast_source`` becomes a
         layout axis. ``variable`` and ``metric`` may be selected too, and always
         stay on an axis.
     cases : {"common", "pairwise"}, optional
@@ -261,19 +271,21 @@ def build_layout(
 
     Raises
     ------
-    NotImplementedError
-        If ``colour_relative_to`` is None: the absolute-score card is not built yet.
+    ValueError
+        If ``colour_relative_to`` is None and ``show_values`` is False: the card
+        would have nothing on it.
     """
-    if colour_relative_to is None:
+    if colour_relative_to is None and not show_values:
         options = (
             [str(s) for s in data.coords[FORECAST_DIM].values]
             if FORECAST_DIM in data.coords
             else []
         )
-        raise NotImplementedError(
-            "a card of absolute scores (colour_relative_to=None) is not implemented yet; "
-            "name the baseline with colour_relative_to= (--colour-relative-to on the command line)"
-            + (f", one of: {', '.join(options)}" if options else "")
+        raise ValueError(
+            "nothing to show: pass colour_relative_to= to colour by the difference "
+            "from a baseline (--colour-relative-to on the command line)"
+            + (f", one of: {', '.join(options)}," if options else "")
+            + " or show_values=True (--show-values) to print each source's scores"
         )
     # Applied to the dataset before anything is inferred, so a dropped dimension
     # needs no place on the card. Only the caller's own rows/columns count as
@@ -283,7 +295,11 @@ def build_layout(
     data, sources = _apply_selection(data, select, colour_relative_to, placed)
 
     sch = SCHEMES[scheme] if isinstance(scheme, str) else scheme
-    row_dims, col_dims = _infer_axes(data, rows, columns, cell, len(sources))
+    # With values shown every source is a row of its own -- the baseline too -- so
+    # forecast_source is laid out even when there is only one forecast source.
+    row_dims, col_dims = _infer_axes(
+        data, rows, columns, cell, len(sources), lay_out_sources=show_values
+    )
 
     cube = prepare(
         data,
@@ -297,6 +313,7 @@ def build_layout(
         forecast_source=sources,
         baseline_source=colour_relative_to,
         cases=cases,
+        baseline_row=show_values and colour_relative_to is not None,
         bootstrap=bootstrap,
         block_length=block_length,
         n_resamples=n_resamples,
@@ -314,6 +331,7 @@ def build_layout(
         metric_polarity=metric_polarity,
         title=title,
         subtitle=subtitle,
+        show_values=show_values,
     )
     if return_validation_report:
         return layout, cube.report

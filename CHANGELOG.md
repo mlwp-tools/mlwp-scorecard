@@ -22,8 +22,7 @@ Design and rationale are documented in [`PLAN.md`](PLAN.md).
   nothing else. The sources compared with it are a selection like any other,
   `select=dict(forecast_source=["GraphCast", ...])`, and default to every source
   but the baseline. A baseline is often not a model at all, hence "relative to"
-  rather than "control". `colour_relative_to=None` is reserved for a card of
-  absolute scores and raises `NotImplementedError` for now. `Step.control*` /
+  rather than "control". `Step.control*` /
   `Step.experiment*` become `Step.baseline*` / `Step.forecast*`, and
   `Layout.control` / `Layout.experiment` become `Layout.baseline_source` /
   `Layout.forecast_sources`. There is no alias for the old names.
@@ -88,6 +87,17 @@ Design and rationale are documented in [`PLAN.md`](PLAN.md).
   variable name with no dot in it.
 
 ### Added
+
+- **`show_values=True`** (`--show-values`) prints each source's own score in its
+  boxes, formatted by one helper (`model.format_value`). With a baseline the
+  colours and significance borders are unchanged, and the baseline appears as a
+  grey row of its own scores, first; `forecast_source` is then always on an axis.
+- **Cards with no baseline.** `colour_relative_to=None` with `show_values=True`
+  shows every source's own scores on grey, with their own intervals in the
+  tooltip and drill-down, and nothing compared or marked significant. Neither
+  a baseline nor values is an error naming the available sources.
+- `Step.text`, `Step.has_data`, `Cell.is_baseline`, `Layout.show_values`,
+  `Layout.coloured`.
 
 - **Several forecast sources against one baseline.** With more than one source
   selected, `forecast_source` becomes a layout axis, outermost on the

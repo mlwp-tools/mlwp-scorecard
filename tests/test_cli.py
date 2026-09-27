@@ -135,12 +135,20 @@ def test_a_malformed_select_exits_nonzero(netcdf, tmp_path, select):
     assert not out.exists()
 
 
-def test_no_baseline_is_a_clear_error_not_a_traceback(netcdf, tmp_path):
-    """--colour-relative-to is optional, matching the Python default of None, which will
-    mean an absolute-score card. Until that exists it must say so and exit 1."""
+def test_neither_a_baseline_nor_values_is_a_clear_error(netcdf, tmp_path):
+    """Both are optional, but a card with neither would have nothing on it."""
     out = tmp_path / "c.html"
     assert main([str(netcdf), "--html-path", str(out)]) == 1
     assert not out.exists()
+
+
+@pytest.mark.parametrize("baseline", [["--colour-relative-to", "persistence"], []])
+def test_show_values_renders_with_and_without_a_baseline(netcdf, tmp_path, baseline):
+    out_html, out_png = tmp_path / "c.html", tmp_path / "c.png"
+    argv = [str(netcdf), "--show-values", "--n-resamples", "50"]
+    argv += ["--html-path", str(out_html), "--image-path", str(out_png)] + baseline
+    assert main(argv) == 0
+    assert out_html.stat().st_size > 2000 and out_png.stat().st_size > 2000
 
 
 def test_selecting_a_dimension_the_dataset_lacks_exits_nonzero(netcdf, tmp_path):

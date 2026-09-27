@@ -58,8 +58,6 @@ make_scorecard(
 
 The same file yields another card by naming different sources, so which source is
 truth, baseline or forecast is an argument rather than something baked into the data.
-`colour_relative_to` is required for now; a card of absolute scores with no baseline is
-planned.
 
 ### Selecting
 
@@ -122,6 +120,33 @@ which was used:
 
 With one forecast source the two are the same.
 
+### Showing values, and cards with no baseline
+
+`colour_relative_to=` decides the colouring (and the significance) and nothing
+else. `show_values=True` prints each source's own score in its boxes, as
+Brightband's OWB scorecard does:
+
+| `colour_relative_to` | `show_values` | card |
+|---|---|---|
+| `"IFS-HRES"` | False | boxes coloured by the paired difference from IFS-HRES |
+| `"IFS-HRES"` | True | the same colours and borders, each box printing its own score, and IFS-HRES as a grey row of its own scores, first |
+| None | True | every source a row of its own scores on grey: nothing compared, nothing marked significant |
+| None | False | an error: there would be nothing on the card |
+
+```python
+make_scorecard(ds, colour_relative_to="IFS-HRES", show_values=True,
+               select=dict(forecast_source=["GraphCast", "AIFS"]),
+               html_path="scorecard.html")
+make_scorecard(ds, show_values=True, html_path="scores.html")   # every source, no baseline
+```
+
+With values shown every source has a row of its own, so `forecast_source` is on an
+axis even for a single forecast source — outermost on the rows unless you place it.
+The boxes widen to fit a number, which suits cards with a handful of lead times.
+The baseline's grey row is over the same cases the other rows were compared on
+under `cases="common"`, and over all of its own cases under `"pairwise"`. With no
+baseline, `cases="common"` averages every source over the cases all of them scored.
+
 There is no configuration object to build: coordinate names, source names and output
 paths are all the API has.
 
@@ -131,7 +156,8 @@ mlwp.make_scorecard verification_summary.nc \
     --html-path scorecard.html --image-path scorecard.png
 ```
 
-`--select DIM=V1,V2` is repeatable and follows the same rule: no comma is a single
+`--show-values` prints values; leave out `--colour-relative-to` with it for a card
+of absolute scores. `--select DIM=V1,V2` is repeatable and follows the same rule: no comma is a single
 value, commas make a list (`--select forecast_source=GraphCast,...`), and a
 trailing comma makes a list of one (`--select spatial_region=europe,`). Values
 are read as the coordinate's type, so `--select level=500` selects 500.0.

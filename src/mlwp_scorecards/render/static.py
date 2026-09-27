@@ -8,7 +8,7 @@ full-size card to a single draw pass.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from ..colours import ColourScheme
@@ -33,6 +33,11 @@ class Geometry:
 
     def cell_w(self, n_steps: int) -> float:
         return n_steps * (self.box_w + self.box_gap) - self.box_gap + 2 * self.cell_pad
+
+
+#: Boxes wide enough for a printed value, and the size of that value.
+VALUES_BOX_W = 22.0
+VALUES_PT = 5.2
 
 
 def _label_widths(layout: Layout, geom: Geometry) -> list[float]:
@@ -61,6 +66,8 @@ def render_figure(
     from matplotlib.patches import Rectangle
 
     g = geometry or Geometry()
+    if layout.show_values and geometry is None:
+        g = replace(g, box_w=VALUES_BOX_W)
     n_step = len(layout.lead_times)
     lab_w = _label_widths(layout, g)
     cw = g.cell_w(n_step)
@@ -74,17 +81,30 @@ def render_figure(
     families = [f for k, f in scheme.families.items() if k in used] or list(
         scheme.families.values()
     )
+    if not layout.coloured:
+        families = []  # nothing is coloured, so a colour legend describes nothing
 
-    foot = (
-        f"{layout.forecast_label} vs {layout.baseline_source}. Each cell is {n_step} "
-        f"lead times, {layout.lead_labels[0]} to {layout.lead_labels[-1]}, earliest "
-        f"on the left; intensity is the difference relative to "
-        f"{layout.baseline_source}."
+    span = (
+        f"Each cell is {n_step} lead times, {layout.lead_labels[0]} to "
+        f"{layout.lead_labels[-1]}, earliest on the left"
     )
-    caveat = (
-        f"{layout.stats.n_boxes} simultaneous comparisons, and forecast cases are "
-        f"autocorrelated: isolated cells mean little, coherent blocks mean a lot."
-    )
+    if layout.coloured:
+        foot = (
+            f"{layout.forecast_label} vs {layout.baseline_source}. {span}; "
+            f"intensity is the difference relative to {layout.baseline_source}."
+        )
+        if layout.show_values:
+            foot += (
+                f" Numbers are each source's own score; grey rows are "
+                f"{layout.baseline_source}'s."
+            )
+        caveat = (
+            f"{layout.stats.n_boxes} simultaneous comparisons, and forecast cases are "
+            f"autocorrelated: isolated cells mean little, coherent blocks mean a lot."
+        )
+    else:
+        foot = f"No baseline: each number is its source's own score. {span}."
+        caveat = "Nothing is compared, so nothing is coloured or marked significant."
 
     # The table alone does not set the width: a long title or footnote would be
     # clipped by a figure sized only from the grid.
@@ -185,6 +205,7 @@ def render_figure(
 
     # ---- cells --------------------------------------------------------------
     rects, fills, edges = [], [], []
+    labels = []  # (x, y, text, colour) of each printed value
     for r in range(layout.stats.n_rows):
         for c in range(layout.stats.n_cols):
             cell = layout.isel(row=r, col=c)
@@ -208,13 +229,17 @@ def render_figure(
             for k, st in enumerate(cell.steps):
                 x = bx + k * (g.box_w + g.box_gap)
                 rects.append(Rectangle((x, by), g.box_w, g.box_h))
-                if st.value is None:
+                if not st.has_data:
                     fills.append("#ffffff")
                     edges.append("#e3e6ea")
                 else:
                     sw = scheme.swatch(st.family, st.level)
                     fills.append(sw.fill)
                     edges.append(sw.edge if st.significant else "#ffffff")
+                    if st.text:
+                        labels.append(
+                            (x + g.box_w / 2, by + g.box_h / 2, st.text, sw.fg)
+                        )
 
     pc = PatchCollection(rects, match_original=False, zorder=3)
     pc.set_facecolor(fills)
@@ -222,6 +247,18 @@ def render_figure(
     pc.set_linewidth(0.5)
     pc.set_snap(True)
     ax.add_collection(pc)
+    for x, y, text, colour in labels:
+        ax.text(
+            x,
+            y,
+            text,
+            ha="center",
+            va="center",
+            fontsize=VALUES_PT,
+            family="monospace",
+            color=colour,
+            zorder=4,
+        )
 
     # ---- legend: one ramp per family, plus the caveats -----------------------
     ly = y0 + g.row_h * layout.stats.n_rows + 12.0

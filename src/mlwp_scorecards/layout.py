@@ -18,7 +18,17 @@ import xarray as xr
 from .aggregate import Aggregated
 from .colours import ColourScheme, FixedScaling, Polarity, family_of, polarity_of
 from .ingest import FORECAST_DIM, METRIC_DIM, VARIABLE_DIM, PreparedCube
-from .model import Cell, HeaderCell, Key, Layout, LayoutStats, Line, Step
+from .model import (
+    NEUTRAL,
+    Cell,
+    HeaderCell,
+    Key,
+    Layout,
+    LayoutStats,
+    Line,
+    Step,
+    format_value,
+)
 
 __all__ = ["resolve"]
 
@@ -190,6 +200,7 @@ def resolve(
     agg: Aggregated,
     title: str = "",
     subtitle: str = "",
+    show_values: bool = False,
 ) -> Layout:
     """Difference each forecast source from the baseline and lay the result out.
 
@@ -198,7 +209,12 @@ def resolve(
     agg : Aggregated
         The collapse over forecast cases, from
         :func:`~mlwp_scorecards.aggregate.aggregate`. Subsetting and the choice
-        of sources happen there, because both must precede the resample.
+        of sources happen there, because both must precede the resample. With no
+        baseline in it, nothing is compared and every box is neutral.
+    show_values : bool, optional
+        Print each source's own score in its boxes, and, when there is a baseline,
+        show it as a grey row of its own scores, first. Needs ``forecast_source``
+        on an axis, and :attr:`Aggregated.baseline_row` when there is a baseline.
 
     Returns
     -------
@@ -207,14 +223,20 @@ def resolve(
     Raises
     ------
     ValueError
-        If there are several forecast sources and ``forecast_source`` is on
-        neither axis: the card would have nowhere to put them.
+        If ``forecast_source`` is on neither axis while there are several forecast
+        sources, or while values are shown: the card would have nowhere to put
+        them.
     """
     on_axis = FORECAST_DIM in list(row_dims) + list(column_dims)
     if not on_axis and len(agg.forecast_sources) > 1:
         raise ValueError(
             f"{len(agg.forecast_sources)} forecast sources, but {FORECAST_DIM!r} is "
             f"on neither rows nor columns; add it to one of them"
+        )
+    if not on_axis and show_values:
+        raise ValueError(
+            f"show_values=True gives every source a row of its own, but "
+            f"{FORECAST_DIM!r} is on neither rows nor columns; add it to one of them"
         )
 
     def _placed(da: xr.DataArray | None) -> xr.DataArray | None:
@@ -223,16 +245,43 @@ def resolve(
             return da
         return da.squeeze(FORECAST_DIM, drop=True)
 
+    coloured = agg.baseline is not None
     ctl, exp = _placed(agg.baseline), _placed(agg.forecast)
-    diff = exp - ctl
-    with np.errstate(divide="ignore", invalid="ignore"):
-        rel = diff / np.abs(ctl)
+    if coloured:
+        diff = exp - ctl
+        with np.errstate(divide="ignore", invalid="ignore"):
+            rel = diff / np.abs(ctl)
+    else:
+        diff = rel = xr.full_like(exp, np.nan)
     ctl_lo, ctl_hi = _placed(agg.baseline_lower), _placed(agg.baseline_upper)
     exp_lo, exp_hi = _placed(agg.forecast_lower), _placed(agg.forecast_upper)
     dif = {c: (_placed(lo), _placed(hi)) for c, (lo, hi) in agg.paired.items()}
     counts = _placed(agg.counts)
     levels = tuple(agg.confidence_levels)
     chart_conf = max(levels) if levels else None
+
+    # The baseline's own row, first along forecast_source: its scores where the
+    # forecast sources have theirs, and NaN wherever a comparison would go.
+    baseline_key = None
+    if show_values and coloured:
+        row = agg.baseline_row
+        if row is None:
+            raise ValueError("show_values=True needs aggregate(..., baseline_row=True)")
+        baseline_key = agg.baseline_source
+
+        def _first(da, own=None):
+            if da is None:
+                return None
+            head = own if own is not None else xr.full_like(row.mean, np.nan)
+            head = head.expand_dims({FORECAST_DIM: [baseline_key]})
+            return xr.concat([head, da], dim=FORECAST_DIM).transpose(*da.dims)
+
+        exp = _first(exp, row.mean)
+        exp_lo, exp_hi = _first(exp_lo, row.lower), _first(exp_hi, row.upper)
+        counts = _first(counts, row.counts)
+        diff, rel, ctl = _first(diff), _first(rel), _first(ctl)
+        ctl_lo, ctl_hi = _first(ctl_lo), _first(ctl_hi)
+        dif = {c: (_first(lo), _first(hi)) for c, (lo, hi) in dif.items()}
 
     return _lay_out(
         cube=cube,
@@ -257,6 +306,9 @@ def resolve(
         levels=levels,
         chart_conf=chart_conf,
         agg=agg,
+        coloured=coloured,
+        show_values=show_values,
+        baseline_key=baseline_key,
     )
 
 
@@ -273,7 +325,7 @@ def _lay_out(
     subtitle: str,
     diff: xr.DataArray,
     rel: xr.DataArray,
-    ctl: xr.DataArray,
+    ctl: xr.DataArray | None,
     exp: xr.DataArray,
     ctl_lo: xr.DataArray | None,
     ctl_hi: xr.DataArray | None,
@@ -284,8 +336,16 @@ def _lay_out(
     levels: tuple[float, ...],
     chart_conf: float | None,
     agg: Aggregated,
+    coloured: bool = True,
+    show_values: bool = False,
+    baseline_key: str | None = None,
 ) -> Layout:
-    """Lay collapsed arrays out on the card. Indifferent to where they came from."""
+    """Lay collapsed arrays out on the card. Indifferent to where they came from.
+
+    A cell is *compared* when there is a baseline and it is not the baseline's own
+    row: coloured by the difference, as always. Every other cell is neutral: its
+    boxes are the source's own score, with nothing marked significant.
+    """
     dims = list(row_dims) + list(column_dims)
     for d in dims + [cell_dim]:
         if d not in diff.dims:
@@ -301,11 +361,13 @@ def _lay_out(
 
     diff = diff.transpose(*dims, cell_dim)
     rel = rel.transpose(*dims, cell_dim)
-    ctl = ctl.transpose(*dims, cell_dim)
+    if ctl is not None:
+        ctl = ctl.transpose(*dims, cell_dim)
     exp = exp.transpose(*dims, cell_dim)
     if ctl_lo is not None:
         ctl_lo = ctl_lo.transpose(*dims, cell_dim)
         ctl_hi = ctl_hi.transpose(*dims, cell_dim)
+    if exp_lo is not None:
         exp_lo = exp_lo.transpose(*dims, cell_dim)
         exp_hi = exp_hi.transpose(*dims, cell_dim)
     dif = {
@@ -318,7 +380,10 @@ def _lay_out(
     coords = {d: _coord_values(diff, d) for d in dims}
     orders: dict[str, Sequence[Any]] = {}
 
-    finite = np.isfinite(diff.values)  # (…dims…, cell)
+    # What there is to draw: the difference on a compared card, and each source's
+    # own score wherever a neutral box can stand -- the baseline's row included.
+    present = diff if coloured and not show_values else exp
+    finite = np.isfinite(present.values)  # (…dims…, cell)
     any_data = finite.any(axis=-1)  # (…dims…)
 
     n_row = len(row_dims)
@@ -346,12 +411,12 @@ def _lay_out(
     def locate(key: Key, dim_names: Sequence[str]) -> tuple[int, ...]:
         return tuple(coords[d].index(v) for d, v in zip(dim_names, key))
 
-    diff_v, rel_v, ctl_v, exp_v = diff.values, rel.values, ctl.values, exp.values
-    has_ci = ctl_lo is not None
-    clo_v = ctl_lo.values if has_ci else None
-    chi_v = ctl_hi.values if has_ci else None
-    elo_v = exp_lo.values if has_ci else None
-    ehi_v = exp_hi.values if has_ci else None
+    diff_v, rel_v, exp_v = diff.values, rel.values, exp.values
+    ctl_v = ctl.values if ctl is not None else None
+    clo_v = ctl_lo.values if ctl_lo is not None else None
+    chi_v = ctl_hi.values if ctl_hi is not None else None
+    elo_v = exp_lo.values if exp_lo is not None else None
+    ehi_v = exp_hi.values if exp_hi is not None else None
     dif_v = {c: (lo.values, hi.values) for c, (lo, hi) in dif.items()}
     dif_levels = sorted(dif_v)
     chart_lo, chart_hi = dif_v.get(chart_conf, (None, None))
@@ -376,14 +441,39 @@ def _lay_out(
             metric = str(pos[METRIC_DIM])
             variable = str(pos[VARIABLE_DIM])
             source = str(pos.get(FORECAST_DIM, agg.forecast_sources[0]))
+            is_base = baseline_key is not None and source == baseline_key
+            compared = coloured and not is_base
+            units = cube.units.get((metric, variable))
+            u = f" {units}" if units else ""
             pol = polarity_of(metric, metric_polarity)
-            fam = family_of(pol)
+            fam = family_of(pol) if compared else NEUTRAL
 
             steps = []
             for k in range(len(lead_times)):
+
+                def _at(arr, k=k, idx=idx):
+                    if arr is None:
+                        return None
+                    v = arr[idx + (k,)]
+                    return float(v) if np.isfinite(v) else None
+
+                def _n(k=k, rl=rl, cl=cl):
+                    if cnt_v is None:
+                        return None
+                    cidx = tuple(
+                        coords[d].index(v)
+                        for d, v in zip(
+                            list(row_dims) + list(column_dims), rl.key + cl.key
+                        )
+                        if d in cnt_dims
+                    )
+                    val = cnt_v[cidx + (k,)]
+                    return int(val) if np.isfinite(val) else None
+
                 d_ = diff_v[idx + (k,)]
                 r_ = rel_v[idx + (k,)]
-                if not np.isfinite(d_):
+                own = _at(exp_v)
+                if not (np.isfinite(d_) if compared else own is not None):
                     steps.append(
                         Step(
                             lead_time=lead_times[k],
@@ -405,16 +495,47 @@ def _lay_out(
                         )
                     )
                     continue
+                text = format_value(own) if show_values and own is not None else ""
+
+                if not compared:
+                    # A neutral box: this source's own score, compared with nothing.
+                    lo, hi = _at(elo_v), _at(ehi_v)
+                    nn = _n()
+                    tip = f"{lead_labels[k]} {format_value(own)}{u}"
+                    if lo is not None and hi is not None and chart_conf:
+                        tip += (
+                            f", {_pct(chart_conf)} interval "
+                            f"{format_value(lo)} to {format_value(hi)}"
+                        )
+                    if nn is not None:
+                        tip += f" ({nn} cases)"
+                    steps.append(
+                        Step(
+                            lead_time=lead_times[k],
+                            value=None,
+                            relative=None,
+                            baseline=None,
+                            forecast=own,
+                            baseline_lower=None,
+                            baseline_upper=None,
+                            forecast_lower=lo,
+                            forecast_upper=hi,
+                            value_lower=None,
+                            value_upper=None,
+                            n=nn,
+                            level=0,
+                            family=NEUTRAL,
+                            significant_at=None,
+                            tooltip=tip,
+                            text=text,
+                        )
+                    )
+                    continue
+
                 signed = -float(r_) if pol is Polarity.LOWER_IS_BETTER else float(r_)
                 lvl = scaling.level(signed)
                 if scaling.saturated(signed):
                     n_sat += 1
-
-                def _at(arr, k=k, idx=idx):
-                    if arr is None:
-                        return None
-                    v = arr[idx + (k,)]
-                    return float(v) if np.isfinite(v) else None
 
                 # Significant when the paired difference interval excludes zero.
                 # Without that input nothing is marked: the two sources' marginal
@@ -434,20 +555,11 @@ def _lay_out(
                 if sig_at is not None:
                     n_sig += 1
                 d_lo, d_hi = _at(chart_lo), _at(chart_hi)
-                nn = None
-                if cnt_v is not None:
-                    cidx = tuple(
-                        coords[d].index(v)
-                        for d, v in zip(
-                            list(row_dims) + list(column_dims), rl.key + cl.key
-                        )
-                        if d in cnt_dims
-                    )
-                    val = cnt_v[cidx + (k,)]
-                    nn = int(val) if np.isfinite(val) else None
+                nn = _n()
                 word = scheme.word(fam, lvl)
                 pct = abs(float(r_)) * 100
-                tip = f"{lead_labels[k]} {pct:.3g}% {word}"
+                score = f" {text}{u}," if text else ""
+                tip = f"{lead_labels[k]}{score} {pct:.3g}% {word}"
                 if sig_at is not None:
                     tip += f", significant at {_pct(sig_at)}"
                 if nn is not None:
@@ -470,6 +582,7 @@ def _lay_out(
                         family=fam,
                         significant_at=sig_at,
                         tooltip=tip,
+                        text=text,
                     )
                 )
 
@@ -480,9 +593,10 @@ def _lay_out(
                 col_key=cl.key,
                 cell_id=f"{rl.slug}__{cl.slug}",
                 metric=metric,
-                units=cube.units.get((metric, variable)),
+                units=units,
                 steps=tuple(steps),
                 forecast_source=source,
+                is_baseline=is_base,
             )
 
     stats = LayoutStats(
@@ -502,12 +616,41 @@ def _lay_out(
     }
 
     notes = []
-    if agg.n_resamples:
-        block = (
-            f"blocks of {agg.block_length} cases"
-            if agg.block_length > 1
-            else "independent cases"
+    block = (
+        f"blocks of {agg.block_length} cases"
+        if agg.block_length > 1
+        else "independent cases"
+    )
+    if not coloured:
+        own_cases = (
+            "the forecast cases every source scored, so the rows can be compared"
+            if agg.cases == "common" or len(agg.forecast_sources) == 1
+            else "each source's own forecast cases, which differ between sources, "
+            "so the rows should not be ranked against one another"
         )
+        notes.append(
+            f"No baseline: each box is its source's own score, averaged over "
+            f"{own_cases}. Nothing is compared, so nothing is coloured or marked "
+            f"significant."
+        )
+        if agg.n_resamples:
+            notes.append(
+                f"Intervals in the tooltips and drill-down are each source's own, "
+                f"from a {agg.method} bootstrap over forecast cases ({block}, "
+                f"{agg.n_resamples} resamples, seed {agg.seed})."
+            )
+    elif show_values:
+        where = (
+            "the same forecast cases the other rows were compared on"
+            if agg.cases == "common"
+            else "all of its own forecast cases"
+        )
+        notes.append(
+            f"Each box prints its source's own score. The grey rows are "
+            f"{agg.baseline_source}'s own scores, over {where}; they are what the "
+            f"colours are relative to, and are not compared with anything."
+        )
+    if coloured and agg.n_resamples:
         sharing = "both sources" if len(agg.forecast_sources) == 1 else "every source"
         notes.append(
             f"Intervals from a {agg.method} bootstrap over forecast cases "
@@ -517,7 +660,7 @@ def _lay_out(
         )
     # With one forecast source the two policies coincide, and saying anything
     # would only add noise to today's card.
-    if len(agg.forecast_sources) > 1:
+    if coloured and len(agg.forecast_sources) > 1:
         if agg.cases == "common":
             notes.append(
                 f"Every forecast source is compared with {agg.baseline_source} on "
@@ -533,25 +676,26 @@ def _lay_out(
             )
     # The package chooses the resample now, so the caveat has to name what it
     # chose -- and the measured cost of that choice, not a general warning.
-    if agg.block_length > 1:
+    if coloured and agg.block_length > 1:
         notes.append(
             "Consecutive forecasts share a weather system. Blocking reduces the "
             "resulting over-marking but does not remove it: measured at roughly "
             "8% false positives against a nominal 5% on AR(1) synthetic data, "
             "and no block length reaches nominal."
         )
-    elif agg.n_resamples:
+    elif coloured and agg.n_resamples:
         notes.append(
             "Cases were resampled independently, which treats consecutive "
             "forecasts as unrelated weather. On AR(1) synthetic data that marks "
             "about 44% of truly-null cells as significant against a nominal 5%, "
             "so read the markings below as optimistic."
         )
-    notes.append(
-        f"This card shows {stats.n_boxes} simultaneous comparisons. Isolated cells "
-        "mean little; coherent blocks mean a lot."
-    )
-    if case_counts:
+    if coloured:
+        notes.append(
+            f"This card shows {stats.n_boxes} simultaneous comparisons. Isolated "
+            "cells mean little; coherent blocks mean a lot."
+        )
+    if coloured and case_counts:
         lo, hi = min(case_counts), max(case_counts)
         span = f"{lo}" if lo == hi else f"{lo}-{hi}"
         if hi < 30:
@@ -593,4 +737,5 @@ def _lay_out(
         seed=agg.seed,
         scheme_name=scheme.name,
         notes=tuple(notes),
+        show_values=show_values,
     )

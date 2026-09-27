@@ -142,9 +142,10 @@ def test_an_unknown_source_is_refused_naming_the_argument():
         _card(_dataset(), ["a"], colour_relative_to="nonsuch")
 
 
-def test_no_baseline_is_not_implemented_yet():
-    """The absolute-score card is planned, not built: it must say so, not guess."""
-    with pytest.raises(NotImplementedError, match="colour_relative_to=None") as excinfo:
+def test_no_baseline_and_no_values_leaves_nothing_to_show():
+    """Neutral boxes with nothing in them would be an empty card: say so, and list
+    the sources that could be the baseline."""
+    with pytest.raises(ValueError, match="nothing to show") as excinfo:
         _card(_dataset(), ["a"], colour_relative_to=None)
     assert "one of: base, a, b, c" in str(excinfo.value), "should list the options"
 

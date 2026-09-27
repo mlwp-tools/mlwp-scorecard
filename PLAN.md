@@ -1011,7 +1011,7 @@ make_scorecard(data, *,
                **build_layout_kwargs) -> list[Path]
 
 build_layout(data, *,
-             colour_relative_to=None, select=None, cases="common",
+             colour_relative_to=None, show_values=False, select=None, cases="common",
              rows=None, columns=None, cell="lead_time",
              metric_polarity=None,
              scheme="cvd", title="", subtitle="",
@@ -1030,7 +1030,7 @@ Re-exported from `__init__.py`: `make_scorecard`, `build_layout`, `render`, `Lay
 `select=dict(forecast_source=["GraphCast", ...], truth_source="analysis", ...)`: one
 rule for every coordinate, described under *API changes of 2026-09-27*, item 7.
 
-CLI `mlwp.make_scorecard DATASET [--colour-relative-to NAME] [--select DIM=V1,V2 ...]
+CLI `mlwp.make_scorecard DATASET [--colour-relative-to NAME] [--show-values] [--select DIM=V1,V2 ...]
 [--html-path PATH] [--image-path PATH ...]`, argparse + `@logger.catch`; exit 1 when
 `report.has_fails()`, an output path is refused, or a selection is malformed.
 
@@ -1149,10 +1149,7 @@ the card from "one experiment against one control" to "one or more forecast sour
 optionally against a baseline". A single source against a baseline still produces
 the same card: PNG byte-identical, HTML differing only in the drill-down JS.
 
-**Status:** items 0–4, 6 and 7 are implemented. Item 5 (values in cells, and the
-absolute card) still needs a visual design: a cell is a row of up to 15 small
-per-lead-time boxes, with no room for a number in each as things stand. Until then
-`colour_relative_to=None` raises `NotImplementedError`.
+**Status:** items 0–7 are all implemented.
 
 The argument names changed during implementation. Item 1 was first built as
 `forecast_source=` / `baseline_source=`, then renamed to `predictions_from=` /
@@ -1253,21 +1250,32 @@ See *Public API* above for the signature.
   `render` still choosing the format by suffix.
 - A clean break, with a CHANGELOG entry and no deprecated alias.
 
-### 5. Values in cells, and the absolute card (not yet implemented)
+### 5. Values in cells, and the absolute card
 
-- Each cell can print its value. On a relative card that's the forecast source's
-  own score; on an absolute card it's the only content.
-- The absolute card (`colour_relative_to=None`) has no colour to start with: absolute
-  scores have units and vary across variables, levels and lead times, so there's no
-  shared scale. Colouring by rank among the sources in a cell is a possible later
-  option.
-- It uses each source's own interval, which `aggregate` already computes, in the
-  tooltip and drill-down.
-- The title or legend must say "absolute scores, no baseline", so that leaving out
-  `colour_relative_to` is visible rather than silent.
-- **Open:** how to fit a value into each per-lead-time box. Options discussed:
-  opt-in wider boxes (`show_values=True`), or values in the tooltip and drill-down
-  only. To be decided before implementing.
+Settled by looking at Brightband OWB, which colours each cell by the difference
+from a baseline but prints the model's own score in it, with the baseline's row
+pinned first in grey; with no baseline, every cell is a number on grey.
+
+- **`colour_relative_to=`** decides the colouring (and the significance) and nothing
+  else — hence the rename from `relative_to=`.
+- **`show_values=True`** (`--show-values`) prints each source's own score in every
+  box, through one formatting helper, `model.format_value` (fixed decimals down to
+  0.1, two significant figures below). Boxes widen to fit (HTML `min-width: 30px`,
+  static `VALUES_BOX_W = 22pt`), so it suits cards with a handful of lead times.
+- With a baseline, colours and borders are unchanged, and the baseline is a **grey
+  row of its own scores, first** along `forecast_source`. That axis is therefore
+  always laid out when values are shown, even for one forecast source. The row is
+  `Aggregated.baseline_row`: the baseline over the common cases under
+  `cases="common"`, and over all of its own cases under `"pairwise"`.
+- **`colour_relative_to=None`** (with `show_values=True`): every source's own
+  scores on grey (`family="neutral"`, level 0), their own intervals in the tooltip
+  and drill-down, no colour legend, and a note saying nothing is compared.
+  `cases="common"` averages every source over the cases all of them scored.
+- Neither a baseline nor values is a `ValueError` listing the available sources.
+- A card without values is byte-identical to before (PNG), and its HTML differs
+  only in the drill-down JS, which now skips the difference chart for neutral cells.
+- Colouring an absolute card, e.g. by rank among the sources, remains a possible
+  later option.
 
 ### 6. A single value in `select=` drops the dimension
 

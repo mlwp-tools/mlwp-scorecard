@@ -16,7 +16,10 @@ Guidance for agents and contributors working in this repository.
 - A scorecard compares **one or more forecast sources** with a **baseline source**,
   all scored against a **common truth source**, and colours each one's *paired
   difference* from the baseline. "Better" means better than the baseline, not
-  better than truth. The baseline is never also one of the forecast sources.
+  better than truth. The baseline is never also one of the forecast sources, and
+  is never compared with itself; with `show_values=True` it appears as a grey row
+  of its own scores. With no baseline (`colour_relative_to=None`) nothing is
+  compared and the card is each source's own scores.
 
 ## Interfaces
 

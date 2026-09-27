@@ -17,6 +17,34 @@ from typing import Any, Iterator, Mapping
 Key = tuple[Any, ...]
 """Coordinate values identifying one row or column, in nesting order."""
 
+#: The colour family of a box that is not compared with anything: a baseline's
+#: own row, or every box on a card with no baseline. Drawn in the scheme's
+#: neutral grey.
+NEUTRAL = "neutral"
+
+
+def format_value(x: float) -> str:
+    """A score as printed in a box: about three significant figures, never an
+    exponent for the sizes scores come in.
+
+    The one place a printed value is formatted, so the HTML page and the figure
+    cannot disagree, and output stays byte-reproducible.
+
+    Fixed decimals down to 0.1, so a column of values lines up (``0.40`` beside
+    ``0.46``, not ``0.4``); only below that does it keep two significant figures.
+
+    >>> [format_value(v) for v in (433.2, 21.37, 2.071, 0.617, 0.4, 0.00123, -12.34)]
+    ['433', '21.4', '2.07', '0.62', '0.40', '0.0012', '-12.3']
+    """
+    mag = abs(x)
+    if mag >= 100:
+        return f"{x:.0f}"
+    if mag >= 10:
+        return f"{x:.1f}"
+    if mag >= 0.1:
+        return f"{x:.2f}"
+    return f"{x:.2g}"
+
 
 @dataclass(frozen=True, slots=True)
 class HeaderCell:
@@ -75,11 +103,23 @@ class Step:
     #: card that shows only the second is over-claiming.
     significant_at: float | None
     tooltip: str
+    #: The number printed in the box: this source's own score, formatted once
+    #: here by :func:`format_value`. Empty unless the card shows values.
+    text: str = ""
 
     @property
     def significant(self) -> bool:
         """Whether the paired interval excludes zero at any level supplied."""
         return self.significant_at is not None
+
+    @property
+    def has_data(self) -> bool:
+        """Whether there is anything to draw: a difference, or a score of its own.
+
+        A grey box on an uncoloured card, or in the baseline's row, has a score but
+        no difference, so ``value is None`` alone would wrongly mark it missing.
+        """
+        return self.value is not None or self.forecast is not None
 
     @property
     def has_intervals(self) -> bool:
@@ -102,10 +142,13 @@ class Cell:
     #: The forecast source this cell compares with the baseline. Explicit rather
     #: than left in a row or column key, so a renderer never has to find it there.
     forecast_source: str = ""
+    #: The baseline's own row, shown in grey when the card shows values. Its boxes
+    #: are its own scores; nothing is compared or marked significant in it.
+    is_baseline: bool = False
 
     @property
     def has_data(self) -> bool:
-        return any(s.value is not None for s in self.steps)
+        return any(s.has_data for s in self.steps)
 
 
 @dataclass(frozen=True, slots=True)
@@ -158,6 +201,14 @@ class Layout:
     seed: int = 0
     scheme_name: str = "cvd"
     notes: tuple[str, ...] = field(default_factory=tuple)
+    #: Whether each box prints its source's own score (:attr:`Step.text`).
+    show_values: bool = False
+
+    @property
+    def coloured(self) -> bool:
+        """Whether boxes are coloured by the difference from a baseline. When not,
+        every box is neutral and nothing is marked significant."""
+        return bool(self.baseline_source)
 
     @property
     def confidence(self) -> float | None:

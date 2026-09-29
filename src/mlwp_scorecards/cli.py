@@ -347,55 +347,6 @@ def _parse_select(items: Sequence[str], ds: xr.Dataset) -> dict[str, Any]:
     return out
 
 
-def _build(
-    ds: xr.Dataset,
-    args: argparse.Namespace,
-    select: dict[str, Any],
-    polarity: dict[str, str],
-) -> ScoreCard:
-    """Build the :class:`ScoreCard` the parsed command line asks for.
-
-    Parameters
-    ----------
-    ds : xr.Dataset
-        The opened dataset.
-    args : argparse.Namespace
-        The parsed command line.
-    select : dict of str to Any
-        From :func:`_parse_select`.
-    polarity : dict of str to str
-        Metric polarities from ``--metric-polarity``.
-
-    Returns
-    -------
-    ScoreCard
-        The card, laid out and ready to write.
-    """
-    return ScoreCard(
-        ds,
-        colour_relative_to=args.colour_relative_to,
-        show_values=args.show_values,
-        select=select or None,
-        cases=args.cases,
-        rows=_split(args.rows),
-        columns=_split(args.columns),
-        cell=args.cell,
-        bootstrap=args.bootstrap,
-        block_length=args.block_length,
-        n_resamples=args.n_resamples,
-        seed=args.seed,
-        **(
-            {"confidence_levels": tuple(args.confidence_level)}
-            if args.confidence_level
-            else {}
-        ),
-        metric_polarity=polarity or None,
-        scheme=args.scheme,
-        title=args.title,
-        subtitle=args.subtitle,
-    )
-
-
 @logger.catch
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the CLI.
@@ -443,7 +394,29 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
 
     try:
-        score_card = _build(ds, args, select, polarity)
+        score_card = ScoreCard(
+            ds,
+            colour_relative_to=args.colour_relative_to,
+            show_values=args.show_values,
+            select=select or None,
+            cases=args.cases,
+            rows=_split(args.rows),
+            columns=_split(args.columns),
+            cell=args.cell,
+            bootstrap=args.bootstrap,
+            block_length=args.block_length,
+            n_resamples=args.n_resamples,
+            seed=args.seed,
+            **(
+                {"confidence_levels": tuple(args.confidence_level)}
+                if args.confidence_level
+                else {}
+            ),
+            metric_polarity=polarity or None,
+            scheme=args.scheme,
+            title=args.title,
+            subtitle=args.subtitle,
+        )
     except (KeyError, ValueError) as e:
         logger.error(e.args[0] if e.args else str(e))
         return 1

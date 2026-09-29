@@ -7,9 +7,10 @@ Weather forecasting scorecards for machine-learning weather prediction.
 *GraphCast compared with IFS HRES, both verified against ERA5, over 2020
 (WeatherBench 2 data on its 5.625° grid, so the Europe region is only a few grid
 points). Blue is better than HRES, red worse; a dark frame marks a significant
-difference. The interactive version, with a drill-down chart behind every cell, is
-[`docs/images/scorecard.html`](docs/images/scorecard.html) (download it and open
-it in a browser). Both are made by [`docs/example/`](docs/example/).*
+difference. [Open the interactive version](https://raw.githack.com/mlwp-tools/mlwp-scorecards/main/docs/images/scorecard.html)
+(hover for values, click any cell for its charts; the file is
+[`docs/images/scorecard.html`](docs/images/scorecard.html)). Both are made by
+[`docs/example/`](docs/example/).*
 
 When a forecasting system changes, the question is rarely "is it good?" but "is it
 better than what we already have, and **where is it worse**?" The evidence runs to

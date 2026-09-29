@@ -24,8 +24,10 @@ NEUTRAL = "neutral"
 
 
 def format_value(x: float) -> str:
-    """A score as printed in a box: about three significant figures, never an
-    exponent for the sizes scores come in.
+    """Format a score as printed in a box.
+
+    About three significant figures, never an exponent for the sizes scores come
+    in.
 
     The one place a printed value is formatted, so the HTML page and the figure
     cannot disagree, and output stays byte-reproducible.
@@ -33,6 +35,18 @@ def format_value(x: float) -> str:
     Fixed decimals down to 0.1, so a column of values lines up (``0.40`` beside
     ``0.46``, not ``0.4``); only below that does it keep two significant figures.
 
+    Parameters
+    ----------
+    x : float
+        The score.
+
+    Returns
+    -------
+    str
+        The score as text.
+
+    Examples
+    --------
     >>> [format_value(v) for v in (433.2, 21.37, 2.071, 0.617, 0.4, 0.00123, -12.34)]
     ['433', '21.4', '2.07', '0.62', '0.40', '0.0012', '-12.3']
     """
@@ -48,7 +62,30 @@ def format_value(x: float) -> str:
 
 @dataclass(frozen=True, slots=True)
 class HeaderCell:
-    """One label block on a row or column axis."""
+    """One label block on a row or column axis.
+
+    Attributes
+    ----------
+    dim : str
+        The dimension this block labels.
+    key : Any
+        The coordinate value it labels; None where the dimension does not apply.
+    label : str
+        The text shown; empty where the dimension does not apply.
+    depth : int
+        The nesting depth on its axis, 0 outermost.
+    start : int
+        The index of the first line (row or leaf column) it covers.
+    span : int
+        The number of consecutive lines it covers.
+    tooltip : str or None, optional
+        Hover text for the label, if any.
+    tint : str or None, optional
+        A background colour for the label, if any.
+    is_na : bool, optional
+        Whether the dimension does not apply to this branch, as for the level
+        of a surface variable.
+    """
 
     dim: str
     key: Any
@@ -62,13 +99,31 @@ class HeaderCell:
 
     @property
     def stop(self) -> int:
-        """One past the last line this block covers."""
+        """One past the last line this block covers.
+
+        Returns
+        -------
+        int
+            ``start + span``.
+        """
         return self.start + self.span
 
 
 @dataclass(frozen=True, slots=True)
 class Line:
-    """One physical row, or one leaf column."""
+    """One physical row, or one leaf column.
+
+    Attributes
+    ----------
+    index : int
+        Its position on the axis.
+    key : Key
+        Its coordinate values, one per axis dimension, in nesting order.
+    headers : tuple of HeaderCell
+        The header block covering it at each depth, outermost first.
+    slug : str
+        ``key`` made safe for an identifier, used to build :attr:`Cell.cell_id`.
+    """
 
     index: int
     key: Key
@@ -78,7 +133,51 @@ class Line:
 
 @dataclass(frozen=True, slots=True)
 class Step:
-    """One lead time inside a :class:`Cell` — one drawn box."""
+    """One lead time inside a :class:`Cell` — one drawn box.
+
+    Every score is a mean over forecast cases; every field that is None means
+    "not available here", never zero.
+
+    Attributes
+    ----------
+    lead_time : float
+        The lead time, in hours.
+    value : float or None
+        The difference, forecast minus baseline, in the metric's units. None when
+        the box is compared with nothing or has no data.
+    relative : float or None
+        ``value`` relative to the baseline's magnitude, signed so that positive
+        means better (or more active) whatever the metric's polarity.
+    baseline : float or None
+        The baseline's score.
+    forecast : float or None
+        The forecast source's own score.
+    baseline_lower : float or None
+        Lower end of the baseline's own interval, at the widest level.
+    baseline_upper : float or None
+        Upper end of the baseline's own interval, at the widest level.
+    forecast_lower : float or None
+        Lower end of the forecast source's own interval, at the widest level.
+    forecast_upper : float or None
+        Upper end of the forecast source's own interval, at the widest level.
+    value_lower : float or None
+        Lower end of the paired difference interval, at the widest level.
+    value_upper : float or None
+        Upper end of the paired difference interval, at the widest level.
+    n : int or None
+        The number of forecast cases the comparison rests on.
+    level : int
+        The signed ramp level that picks the fill; 0 for a neutral box.
+    family : str
+        The colour family, or :data:`NEUTRAL` when compared with nothing.
+    significant_at : float or None
+        The highest confidence level whose paired interval excludes zero, or
+        None when none does.
+    tooltip : str
+        Hover text describing the box.
+    text : str, optional
+        The formatted score printed in the box.
+    """
 
     lead_time: float
     value: float | None
@@ -109,7 +208,13 @@ class Step:
 
     @property
     def significant(self) -> bool:
-        """Whether the paired interval excludes zero at any level supplied."""
+        """Whether the paired interval excludes zero at any level supplied.
+
+        Returns
+        -------
+        bool
+            True when :attr:`significant_at` is set.
+        """
         return self.significant_at is not None
 
     @property
@@ -118,18 +223,53 @@ class Step:
 
         A grey box on an uncoloured card, or in the baseline's row, has a score but
         no difference, so ``value is None`` alone would wrongly mark it missing.
+
+        Returns
+        -------
+        bool
+            True when there is a difference or a score of its own.
         """
         return self.value is not None or self.forecast is not None
 
     @property
     def has_intervals(self) -> bool:
-        """Whether either source carries a confidence interval."""
+        """Whether either source carries a confidence interval.
+
+        Returns
+        -------
+        bool
+            True when the baseline or the forecast has a lower bound.
+        """
         return self.baseline_lower is not None or self.forecast_lower is not None
 
 
 @dataclass(frozen=True, slots=True)
 class Cell:
-    """One row crossed with one leaf column."""
+    """One row crossed with one leaf column.
+
+    Attributes
+    ----------
+    row : int
+        The row's index.
+    col : int
+        The leaf column's index.
+    row_key : Key
+        The row's coordinate values.
+    col_key : Key
+        The column's coordinate values.
+    cell_id : str
+        A string identifier built from the row and column slugs.
+    metric : str
+        The metric scored in this cell.
+    units : str or None
+        The metric's units for this variable, if known.
+    steps : tuple of Step
+        One box per lead time, in lead-time order.
+    forecast_source : str, optional
+        The forecast source this cell compares with the baseline.
+    is_baseline : bool, optional
+        Whether this is the baseline's own row.
+    """
 
     row: int
     col: int
@@ -148,12 +288,37 @@ class Cell:
 
     @property
     def has_data(self) -> bool:
+        """Whether any of its boxes has something to draw.
+
+        Returns
+        -------
+        bool
+            True when any step's :attr:`Step.has_data` is.
+        """
         return any(s.has_data for s in self.steps)
 
 
 @dataclass(frozen=True, slots=True)
 class LayoutStats:
-    """Counts describing a resolved layout."""
+    """Counts describing a resolved layout.
+
+    Attributes
+    ----------
+    n_rows : int
+        The number of rows.
+    n_cols : int
+        The number of leaf columns.
+    n_cells_possible : int
+        Rows times columns.
+    n_cells_present : int
+        The number of crossings holding a :class:`Cell`.
+    n_boxes : int
+        The number of boxes in those cells: one per lead time each.
+    n_saturated : int
+        The number of boxes at or beyond the top of the colour scale.
+    n_significant : int
+        The number of boxes marked significant at any level.
+    """
 
     n_rows: int
     n_cols: int
@@ -165,13 +330,71 @@ class LayoutStats:
 
     @property
     def n_tests(self) -> int:
-        """Number of simultaneous comparisons the card displays."""
+        """Number of simultaneous comparisons the card displays.
+
+        Returns
+        -------
+        int
+            Populated cells times the boxes in each.
+        """
         return self.n_cells_present * (self.n_boxes // max(self.n_cells_present, 1))
 
 
 @dataclass(frozen=True, slots=True)
 class Layout:
-    """A fully resolved scorecard, ready to render."""
+    """A fully resolved scorecard, ready to render.
+
+    Attributes
+    ----------
+    rows : tuple of Line
+        The rows, top to bottom.
+    columns : tuple of Line
+        The leaf columns, left to right.
+    row_headers : tuple of tuple of HeaderCell
+        The row header blocks, one tuple per depth, outermost first.
+    column_headers : tuple of tuple of HeaderCell
+        The column header blocks, one tuple per depth, outermost first.
+    lead_times : tuple of float
+        The lead times inside every cell, in hours.
+    lead_labels : tuple of str
+        Their labels, such as ``T+24``.
+    cells : mapping of (Key, Key) to Cell
+        The populated crossings, keyed by ``(row_key, col_key)``.
+    row_dims : tuple of str
+        The dimensions nested on the rows, outermost first.
+    column_dims : tuple of str
+        The dimensions nested on the columns, outermost first.
+    cell_dim : str
+        The dimension laid out inside each cell: the lead time.
+    stats : LayoutStats
+        Counts describing the layout.
+    title : str, optional
+        The card's title.
+    subtitle : str, optional
+        The card's subtitle.
+    baseline_source : str, optional
+        The source every other is compared with; empty when there is none.
+    forecast_sources : tuple of str, optional
+        The sources compared with the baseline.
+    cases : str, optional
+        Which forecast cases each comparison rests on: ``common`` or ``pairwise``.
+    confidence_levels : tuple of float, optional
+        Every confidence level the data supplied, ascending.
+    resampling : str, optional
+        The bootstrap method that produced the intervals.
+    block_length : int, optional
+        The bootstrap block length, in forecast cases.
+    n_resamples : int, optional
+        The number of bootstrap resamples; 0 when none were drawn.
+    seed : int, optional
+        The bootstrap's random seed.
+    scheme_name : str, optional
+        The name of the colour scheme to draw with.
+    notes : tuple of str, optional
+        Caveats to print on the card.
+    show_values : bool, optional
+        Whether each box prints its source's own score.
+    """
 
     rows: tuple[Line, ...]
     columns: tuple[Line, ...]
@@ -206,8 +429,15 @@ class Layout:
 
     @property
     def coloured(self) -> bool:
-        """Whether boxes are coloured by the difference from a baseline. When not,
-        every box is neutral and nothing is marked significant."""
+        """Whether boxes are coloured by the difference from a baseline.
+
+        When not, every box is neutral and nothing is marked significant.
+
+        Returns
+        -------
+        bool
+            True when there is a baseline.
+        """
         return bool(self.baseline_source)
 
     @property
@@ -216,13 +446,26 @@ class Layout:
 
         The widest supplied, which is the most conservative choice: the interval a
         reader sees should not be narrower than the evidence for it.
+
+        Returns
+        -------
+        float or None
+            The widest level, or None when no intervals were supplied.
         """
         return max(self.confidence_levels) if self.confidence_levels else None
 
     @property
     def forecast_label(self) -> str:
-        """What the legend calls the compared side: the source's name, or, when
-        each row or column is a different source, a phrase saying so."""
+        """Return what the legend calls the compared side.
+
+        The source's name, or, when each row or column is a different source, a
+        phrase saying so.
+
+        Returns
+        -------
+        str
+            The label.
+        """
         if len(self.forecast_sources) == 1:
             return self.forecast_sources[0]
         return "each forecast source"
@@ -230,10 +473,24 @@ class Layout:
     # ---- shape -------------------------------------------------------------
     @property
     def row_depth(self) -> int:
+        """Number of dimensions nested on the rows.
+
+        Returns
+        -------
+        int
+            The length of :attr:`row_dims`.
+        """
         return len(self.row_dims)
 
     @property
     def column_depth(self) -> int:
+        """Number of dimensions nested on the columns.
+
+        Returns
+        -------
+        int
+            The length of :attr:`column_dims`.
+        """
         return len(self.column_dims)
 
     # ---- label access ------------------------------------------------------
@@ -266,6 +523,23 @@ class Layout:
         return self[rkey, ckey]
 
     def __getitem__(self, keys: tuple[Key, Key]) -> Cell | None:
+        """Return the cell at a row key and a column key.
+
+        Parameters
+        ----------
+        keys : tuple of (Key, Key)
+            The row's and the column's coordinate values.
+
+        Returns
+        -------
+        Cell or None
+            None when the crossing exists but holds no data.
+
+        Raises
+        ------
+        KeyError
+            If either key names no row or column.
+        """
         rkey, ckey = keys
         rkey, ckey = tuple(rkey), tuple(ckey)
         if rkey not in {r.key for r in self.rows}:
@@ -275,7 +549,23 @@ class Layout:
         return self.cells.get((rkey, ckey))
 
     def row(self, **coords: Any) -> Line:
-        """Return the row line at the given coordinate values."""
+        """Return the row line at the given coordinate values.
+
+        Parameters
+        ----------
+        **coords
+            One value per row dimension.
+
+        Returns
+        -------
+        Line
+            The row.
+
+        Raises
+        ------
+        KeyError
+            If a row dimension is missing, or the values name no row.
+        """
         key = tuple(coords[d] for d in self.row_dims)
         for line in self.rows:
             if line.key == key:
@@ -283,7 +573,23 @@ class Layout:
         raise KeyError(f"no such row: {key}")
 
     def column(self, **coords: Any) -> Line:
-        """Return the column line at the given coordinate values."""
+        """Return the column line at the given coordinate values.
+
+        Parameters
+        ----------
+        **coords
+            One value per column dimension.
+
+        Returns
+        -------
+        Line
+            The leaf column.
+
+        Raises
+        ------
+        KeyError
+            If a column dimension is missing, or the values name no column.
+        """
         key = tuple(coords[d] for d in self.column_dims)
         for line in self.columns:
             if line.key == key:
@@ -292,11 +598,30 @@ class Layout:
 
     # ---- positional access, for renderers ----------------------------------
     def isel(self, *, row: int, col: int) -> Cell | None:
-        """Return the cell at the given row and column positions."""
+        """Return the cell at the given row and column positions.
+
+        Parameters
+        ----------
+        row : int
+            The row's index.
+        col : int
+            The leaf column's index.
+
+        Returns
+        -------
+        Cell or None
+            None when the crossing holds no data.
+        """
         return self.cells.get((self.rows[row].key, self.columns[col].key))
 
     def iter_cells(self) -> Iterator[tuple[int, int, Cell]]:
-        """Yield ``(row, col, cell)`` for every populated crossing, in reading order."""
+        """Yield ``(row, col, cell)`` for every populated crossing, in reading order.
+
+        Yields
+        ------
+        tuple of (int, int, Cell)
+            The row index, the column index, and the cell there.
+        """
         for r, rl in enumerate(self.rows):
             for c, cl in enumerate(self.columns):
                 cell = self.cells.get((rl.key, cl.key))

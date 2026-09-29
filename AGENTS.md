@@ -75,6 +75,10 @@ Guidance for agents and contributors working in this repository.
 - **Rendered output must be byte-reproducible.** No `datetime.now()`, no `set`
   iteration in output paths, `gzip.compress(..., mtime=0)`, float formatting through a
   single helper. `tests/test_determinism.py` enforces this.
-- Keep docstrings (numpydoc) and type annotations on new code; `from __future__ import
-  annotations` at the top of every module.
+- Every module, class, function and method under `src/` -- private helpers and
+  nested functions included -- has a numpydoc docstring with its Parameters and
+  Returns. The `numpydoc-validation` pre-commit hook enforces it; the checks are
+  configured in `pyproject.toml` under `[tool.numpydoc_validation]`. A constructor's
+  parameters go on the class docstring. Keep type annotations on new code, and
+  `from __future__ import annotations` at the top of every module.
 - Add or update tests when changing behaviour.

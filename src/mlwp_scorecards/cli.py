@@ -36,6 +36,23 @@ def _output_paths(
     A suffix that contradicts the flag it was passed to is refused rather than
     re-guessed: ``--html-path card.png`` is far more likely a slip than a request
     for a PNG, and silently writing one would hide it.
+
+    Parameters
+    ----------
+    html_path : str or Path or None
+        The ``--html-path`` value.
+    image_path : sequence of str or Path, or None
+        The ``--image-path`` values.
+
+    Returns
+    -------
+    list of Path
+        The HTML page first, if asked for, then the images in the order given.
+
+    Raises
+    ------
+    ValueError
+        If nothing is asked for, or a suffix does not match its flag.
     """
     if html_path is None and not image_path:
         raise ValueError(
@@ -60,8 +77,24 @@ def _output_paths(
 
 
 def _write(score_card: ScoreCard, path: Path, *, dpi: int) -> Path:
-    """Write one output, its format by suffix (already checked by
-    :func:`_output_paths`)."""
+    """Write one output, its format by suffix.
+
+    The suffix has already been checked by :func:`_output_paths`.
+
+    Parameters
+    ----------
+    score_card : ScoreCard
+        The card to write.
+    path : Path
+        Where to write it.
+    dpi : int
+        Resolution of a raster image.
+
+    Returns
+    -------
+    Path
+        The file written.
+    """
     if path.suffix.lower() in _HTML_SUFFIXES:
         path.write_text(score_card.to_html(), encoding="utf-8")
         return path
@@ -76,6 +109,7 @@ def build_parser() -> argparse.ArgumentParser:
     Returns
     -------
     argparse.ArgumentParser
+        The parser for ``mlwp.make_scorecard``.
     """
     p = argparse.ArgumentParser(
         prog="mlwp.make_scorecard",
@@ -206,7 +240,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _open(path: Path) -> None:
-    """Open a file in the system's default viewer, without waiting for it."""
+    """Open a file in the system's default viewer, without waiting for it.
+
+    Parameters
+    ----------
+    path : Path
+        The file to open.
+    """
     if sys.platform == "darwin":
         subprocess.Popen(["open", str(path)])
     elif sys.platform == "win32":  # pragma: no cover
@@ -216,14 +256,47 @@ def _open(path: Path) -> None:
 
 
 def _split(value: str | None) -> list[str] | None:
+    """Split a comma-separated option into its non-empty items.
+
+    Parameters
+    ----------
+    value : str or None
+        The option's value.
+
+    Returns
+    -------
+    list of str or None
+        The stripped items; None when the option was not given or is empty.
+    """
     return [v.strip() for v in value.split(",") if v.strip()] if value else None
 
 
 def _cast(ds: xr.Dataset, dim: str, token: str) -> Any:
-    """A command-line string as a value of the ``dim`` coordinate.
+    """Convert a command-line string to a value of the ``dim`` coordinate.
 
     Selection compares against the coordinate's own values, so ``level=500`` has to
     arrive as a number and ``init_time=2024-01-01`` as a date, not as strings.
+
+    Parameters
+    ----------
+    ds : xr.Dataset
+        The dataset whose coordinate gives the type.
+    dim : str
+        The dimension selected along.
+    token : str
+        One value from the command line.
+
+    Returns
+    -------
+    Any
+        ``...`` for ``"..."``; otherwise the value as the coordinate's type, or
+        the string itself when ``dim`` has no coordinate or a non-numeric,
+        non-time one.
+
+    Raises
+    ------
+    ValueError
+        If the token does not parse as the coordinate's type.
     """
     if token == "...":
         return ...
@@ -242,10 +315,22 @@ def _cast(ds: xr.Dataset, dim: str, token: str) -> Any:
 
 
 def _parse_select(items: Sequence[str], ds: xr.Dataset) -> dict[str, Any]:
-    """``DIM=V1,V2`` items as a ``select=`` mapping.
+    """Parse ``DIM=V1,V2`` items into a ``select=`` mapping.
 
     No comma is a single value; commas make a list, and a trailing comma makes a
     list of one, which keeps the dimension where a single value would drop it.
+
+    Parameters
+    ----------
+    items : sequence of str
+        The ``--select`` values.
+    ds : xr.Dataset
+        The dataset, whose coordinates type the values.
+
+    Returns
+    -------
+    dict of str to Any
+        A value or list of values for each dimension named.
 
     Raises
     ------
@@ -278,7 +363,24 @@ def _build(
     select: dict[str, Any],
     polarity: dict[str, str],
 ) -> ScoreCard:
-    """Build the :class:`ScoreCard` the parsed command line asks for."""
+    """Build the :class:`ScoreCard` the parsed command line asks for.
+
+    Parameters
+    ----------
+    ds : xr.Dataset
+        The opened dataset.
+    args : argparse.Namespace
+        The parsed command line.
+    select : dict of str to Any
+        From :func:`_parse_select`.
+    polarity : dict of str to str
+        Metric polarities from ``--metric-polarity``.
+
+    Returns
+    -------
+    ScoreCard
+        The card, laid out and ready to write.
+    """
     return ScoreCard(
         ds,
         colour_relative_to=args.colour_relative_to,
@@ -308,6 +410,11 @@ def _build(
 @logger.catch
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the CLI.
+
+    Parameters
+    ----------
+    argv : sequence of str, optional
+        Command-line arguments; ``sys.argv[1:]`` when omitted.
 
     Returns
     -------

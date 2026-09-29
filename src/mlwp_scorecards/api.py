@@ -51,18 +51,46 @@ _PACKAGE_DIR = os.path.dirname(__file__) + os.sep
 
 
 def _is_many(value: Any) -> bool:
-    """Whether a ``select=`` value picks several members (keeping the dimension)
-    rather than one (which drops it, unless the dimension was placed)."""
+    """Tell whether a ``select=`` value picks several members rather than one.
+
+    Several members keep the dimension; one drops it, unless the dimension was
+    placed.
+
+    Parameters
+    ----------
+    value : Any
+        One value of the ``select=`` mapping.
+
+    Returns
+    -------
+    bool
+        True for ``...``, a list, a tuple or an array.
+    """
     return value is Ellipsis or isinstance(value, (list, tuple, np.ndarray))
 
 
 def _select_names(data: xr.Dataset, dim: str, value: Any) -> xr.Dataset:
-    """Select along ``variable`` or ``metric``, which are halves of the data-variable
-    names rather than dimensions of the input.
+    """Select along ``variable`` or ``metric`` by choosing data variables.
 
-    Both are always on an axis, so a single value keeps them at length one. Order
-    follows the selection, because :func:`~mlwp_scorecards.ingest.prepare` orders
-    each by first appearance among the data variables.
+    Both are halves of the ``{metric}.{variable}`` names rather than dimensions of
+    the input. Both are always on an axis, so a single value keeps them at length
+    one. Order follows the selection, because
+    :func:`~mlwp_scorecards.ingest.prepare` orders each by first appearance among
+    the data variables.
+
+    Parameters
+    ----------
+    data : xr.Dataset
+        The verification statistics.
+    dim : {"variable", "metric"}
+        Which half of the names to select on.
+    value : Any
+        One name, a list of names (with at most one ``...``), or ``...``.
+
+    Returns
+    -------
+    xr.Dataset
+        ``data`` with only the chosen variables, in the order selected.
     """
     half = 0 if dim == METRIC_DIM else 1
     names = [str(n) for n in data.data_vars]
@@ -92,11 +120,29 @@ def _apply_selection(
     would. ``forecast_source`` differs only in that the baseline always stays in
     the data and is never part of a ``...``.
 
+    Parameters
+    ----------
+    data : xr.Dataset
+        The verification statistics.
+    select : mapping or None
+        The caller's ``select=``.
+    colour_relative_to : str or None
+        The baseline source, which always stays in the data.
+    placed : set of str
+        Dimensions the caller named in ``rows``, ``columns`` or ``cell``.
+
     Returns
     -------
     data : xr.Dataset
+        The dataset after selection.
     sources : tuple of str
         The forecast sources to show, in order.
+
+    Raises
+    ------
+    KeyError
+        If ``select=`` names something that is not a dimension, or the dataset
+        has no ``forecast_source``.
     """
     chosen = dict(select or {})
     source_sel = chosen.pop(FORECAST_DIM, ...)
@@ -149,6 +195,31 @@ def _infer_axes(
     source, and laid out when there are several, or when ``lay_out_sources`` asks
     for it -- outermost on the rows unless placed elsewhere, one block of rows per
     source.
+
+    Parameters
+    ----------
+    ds : xr.Dataset
+        The verification statistics, after selection.
+    rows, columns : sequence of str or None
+        The caller's nesting, outermost first; None to infer.
+    cell : str
+        The coordinate drawn inside each cell.
+    n_sources : int, optional
+        How many forecast sources are shown.
+    lay_out_sources : bool, optional
+        Put ``forecast_source`` on an axis even for a single forecast source.
+
+    Returns
+    -------
+    rows : list of str
+        Row nesting, outermost first.
+    columns : list of str
+        Column nesting, outermost first.
+
+    Raises
+    ------
+    ValueError
+        If the dimensions cannot be split so that both axes get at least one.
     """
     laid_out = n_sources > 1 or lay_out_sources
     consumed = {cell, CASE_DIM} | (set() if laid_out else {FORECAST_DIM})
@@ -179,7 +250,7 @@ def _infer_axes(
     return r, c
 
 
-def build_layout(
+def build_layout(  # numpydoc ignore=PR01
     data: xr.Dataset,
     *,
     colour_relative_to: str | None = None,
@@ -204,15 +275,23 @@ def build_layout(
     """Resolve a verification dataset into a ready-to-render :class:`Layout`.
 
     The engine behind :class:`ScoreCard`, and internal: the ``Layout`` is the
-    renderer contract, not something a caller needs. The parameters are those of
-    :class:`ScoreCard`, plus:
+    renderer contract, not something a caller needs. Every parameter but the last
+    is documented on :class:`ScoreCard`, and is not repeated here -- hence the
+    ``numpydoc ignore`` on the signature.
 
+    Parameters
+    ----------
+    data : xr.Dataset
+        Verification statistics: one variable per ``{metric}.{variable}`` pair.
     return_validation_report : bool, optional
         Also return the report, whose warnings would otherwise be lost.
 
     Returns
     -------
-    Layout, or (Layout, ValidationReport)
+    layout : Layout
+        The resolved card.
+    report : ValidationReport
+        What validation found; only when ``return_validation_report`` is True.
     """
     if colour_relative_to is None and not show_values:
         options = (
@@ -332,6 +411,8 @@ class ScoreCard:
         ``{"my_score": "higher_is_better"}``.
     scheme : str or ColourScheme, optional
         ``"cvd"`` (default, colour-vision-safe) or ``"ecmwf"``.
+    title, subtitle : str, optional
+        Printed above the card.
     bootstrap : {"moving-block", "iid"}, optional
         How to resample forecast cases. Consecutive forecasts share a weather
         system, so an iid resample marks about 44% of truly-null cells as
@@ -341,6 +422,7 @@ class ScoreCard:
         Block length in forecast **cases**, not hours. Derived from the
         initialisation cadence when omitted, and the choice is reported.
     n_resamples : int, optional
+        Bootstrap resamples of the forecast cases.
     confidence_levels : sequence of float, optional
         Fractions, so ``0.95`` rather than ``95``.
     seed : int, optional
@@ -415,6 +497,14 @@ class ScoreCard:
             warnings.warn(w, UserWarning, skip_file_prefixes=(_PACKAGE_DIR,))
 
     def __repr__(self) -> str:
+        """Name the sources and the card's size.
+
+        Returns
+        -------
+        str
+            E.g. ``<ScoreCard: GraphCast, relative to 'IFS-HRES'; 6 rows x 9
+            columns, 378 boxes>``.
+        """
         lay = self._layout
         s = lay.stats
         baseline = (
@@ -436,6 +526,7 @@ class ScoreCard:
         Returns
         -------
         matplotlib.figure.Figure
+            A new figure on each call.
         """
         from .render.static import render_figure
 

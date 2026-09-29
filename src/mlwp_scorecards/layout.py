@@ -36,14 +36,52 @@ _SLUG_RE = re.compile(r"[^A-Za-z0-9]+")
 
 
 def _is_na(v: Any) -> bool:
+    """Return whether a coordinate value marks a not-applicable dimension.
+
+    Parameters
+    ----------
+    v : Any
+        A coordinate value.
+
+    Returns
+    -------
+    bool
+        True for None or a float NaN.
+    """
     return v is None or (isinstance(v, float) and math.isnan(v))
 
 
 def _slug(parts: Sequence[Any]) -> str:
+    """Join a key's values into an identifier-safe string.
+
+    Parameters
+    ----------
+    parts : sequence of Any
+        The key's coordinate values.
+
+    Returns
+    -------
+    str
+        Each value with runs of non-alphanumerics replaced by ``_`` (``na`` if
+        nothing is left), joined with ``-``.
+    """
     return "-".join(_SLUG_RE.sub("_", str(p)).strip("_") or "na" for p in parts)
 
 
 def _label(v: Any) -> str:
+    """Return the text a header shows for a coordinate value.
+
+    Parameters
+    ----------
+    v : Any
+        A coordinate value.
+
+    Returns
+    -------
+    str
+        Empty for not-applicable, ``T+h`` for a time delta, an integer for a
+        whole float, and ``str(v)`` otherwise.
+    """
     if _is_na(v):
         return ""
     if isinstance(v, (np.timedelta64, _dt.timedelta)):
@@ -54,7 +92,19 @@ def _label(v: Any) -> str:
 
 
 def _lead_hours(v: Any) -> float:
-    """Lead time in hours, from a timedelta or a bare number."""
+    """Return a lead time in hours, from a timedelta or a bare number.
+
+    Parameters
+    ----------
+    v : Any
+        A ``numpy.timedelta64``, a ``datetime.timedelta``, or a number already in
+        hours.
+
+    Returns
+    -------
+    float
+        The lead time in hours.
+    """
     if isinstance(v, np.timedelta64):
         return float(v / np.timedelta64(1, "h"))
     if isinstance(v, _dt.timedelta):
@@ -63,16 +113,39 @@ def _lead_hours(v: Any) -> float:
 
 
 def _lead_label(v: Any) -> str:
+    """Return the label for a lead time.
+
+    Parameters
+    ----------
+    v : Any
+        A lead time, in any form :func:`_lead_hours` accepts.
+
+    Returns
+    -------
+    str
+        ``T+`` followed by the hours, such as ``T+24``.
+    """
     return f"T+{_lead_hours(v):g}"
 
 
 def _pct(c: float) -> str:
-    """A confidence level as a percentage, keeping 99.7% from rounding to 100%."""
+    """Format a confidence level as a percentage, keeping 99.7% from rounding to 100%.
+
+    Parameters
+    ----------
+    c : float
+        The level as a fraction.
+
+    Returns
+    -------
+    str
+        The level as a percentage, to four significant figures.
+    """
     return f"{c * 100:.4g}%"
 
 
 def _coord_values(cube: xr.DataArray, dim: str) -> list[Any]:
-    """Coordinate values as plain Python objects, with NaN normalised to None.
+    """Return coordinate values as plain Python objects, with NaN normalised to None.
 
     NaN cannot be used in a layout key: ``nan != nan``, so two layouts built from
     the same data would compare unequal and ``sel(level=float("nan"))`` could never
@@ -86,6 +159,18 @@ def _coord_values(cube: xr.DataArray, dim: str) -> list[Any]:
     round trip commonly decodes to, so this is the common case, not the exotic
     one. Leave numpy time scalars alone; every consumer below already handles
     them, and they are hashable and comparable so they remain valid keys.
+
+    Parameters
+    ----------
+    cube : xr.DataArray
+        The array whose coordinate to read.
+    dim : str
+        The dimension.
+
+    Returns
+    -------
+    list
+        The values, in the coordinate's order.
     """
     out = []
     for v in cube.coords[dim].values:
@@ -96,11 +181,24 @@ def _coord_values(cube: xr.DataArray, dim: str) -> list[Any]:
 
 
 def _order_key(coord_values: Sequence[Any], order: Sequence[Any] | None):
-    """Sort key for one dimension's categories.
+    """Return a sort key for one dimension's categories.
 
     The default is the order the coordinate already has in the dataset: the caller
     controls presentation order by ordering their coordinate, which is far less
     surprising than imposing an alphabetical sort on metric or region names.
+
+    Parameters
+    ----------
+    coord_values : sequence of Any
+        The dimension's values, in dataset order.
+    order : sequence of Any or None
+        An explicit order that replaces the dataset's, if given.
+
+    Returns
+    -------
+    callable
+        A key function: position in the reference order, values absent from it
+        last, ties broken by label.
     """
     ref = list(order) if order else list(coord_values)
     pos = {v: i for i, v in enumerate(ref)}
@@ -118,10 +216,40 @@ def _resolve_axis(
     ``present`` is a boolean array over the axis dims: True where any data exists.
     Categories with no data anywhere below them are dropped, so the dense cube's
     unused combinations never become rows.
+
+    Parameters
+    ----------
+    present : np.ndarray
+        Boolean, one axis per entry of ``dims``, in that order.
+    dims : sequence of str
+        The axis dimensions, outermost first.
+    coords : mapping of str to list
+        Each dimension's values, indexing ``present``.
+    orders : mapping of str to sequence
+        Explicit category orders, by dimension; see :func:`_order_key`.
+
+    Returns
+    -------
+    leaves : list of Key
+        The leaf keys, in display order.
+    headers : list of list of HeaderCell
+        The header blocks at each depth, outermost first.
     """
     axis_idx = {d: i for i, d in enumerate(dims)}
 
     def children(prefix: tuple[Any, ...]) -> list[Any]:
+        """Return the next dimension's values that have data below a prefix.
+
+        Parameters
+        ----------
+        prefix : tuple
+            Values of the outermost dimensions, one per depth so far.
+
+        Returns
+        -------
+        list
+            The next dimension's values with any data under ``prefix``, sorted.
+        """
         depth = len(prefix)
         dim = dims[depth]
         sel: list[Any] = []
@@ -137,6 +265,13 @@ def _resolve_axis(
     leaves: list[Key] = []
 
     def walk(prefix: tuple[Any, ...]) -> None:
+        """Append every leaf key under a prefix to ``leaves``, depth first.
+
+        Parameters
+        ----------
+        prefix : tuple
+            Values of the outermost dimensions, one per depth so far.
+        """
         if len(prefix) == len(dims):
             leaves.append(prefix)
             return
@@ -179,6 +314,22 @@ def _resolve_axis(
 def _headers_for(
     leaf: Key, headers: list[list[HeaderCell]], index: int
 ) -> tuple[HeaderCell, ...]:
+    """Return the header block covering one line at each depth.
+
+    Parameters
+    ----------
+    leaf : Key
+        The line's key (unused; the position decides).
+    headers : list of list of HeaderCell
+        The axis's header blocks, one list per depth.
+    index : int
+        The line's position on the axis.
+
+    Returns
+    -------
+    tuple of HeaderCell
+        One block per depth, outermost first.
+    """
     out = []
     for depth in range(len(headers)):
         for blk in headers[depth]:
@@ -206,11 +357,31 @@ def resolve(
 
     Parameters
     ----------
+    cube : PreparedCube
+        The prepared scores; only its units are read here.
+    row_dims : sequence of str
+        The dimensions nested on the rows, outermost first.
+    column_dims : sequence of str
+        The dimensions nested on the columns, outermost first.
+    cell_dim : str
+        The dimension laid out inside each cell.
+    scheme : ColourScheme
+        The palette whose words go into the tooltips, and whose name the layout
+        records.
+    scaling : FixedScaling
+        Maps each relative difference to a ramp level.
+    metric_polarity : mapping of str to str, optional
+        Polarities for metrics absent from the built-in table, or overriding it;
+        see :func:`~mlwp_scorecards.colours.polarity_of`.
     agg : Aggregated
         The collapse over forecast cases, from
         :func:`~mlwp_scorecards.aggregate.aggregate`. Subsetting and the choice
         of sources happen there, because both must precede the resample. With no
         baseline in it, nothing is compared and every box is neutral.
+    title : str, optional
+        The card's title.
+    subtitle : str, optional
+        The card's subtitle.
     show_values : bool, optional
         Print each source's own score in its boxes, and, when there is a baseline,
         show it as a grey row of its own scores, first. Needs ``forecast_source``
@@ -219,6 +390,7 @@ def resolve(
     Returns
     -------
     Layout
+        The resolved card.
 
     Raises
     ------
@@ -240,6 +412,18 @@ def resolve(
         )
 
     def _placed(da: xr.DataArray | None) -> xr.DataArray | None:
+        """Drop the forecast-source dimension when no axis carries it.
+
+        Parameters
+        ----------
+        da : xr.DataArray or None
+            An array from ``agg``.
+
+        Returns
+        -------
+        xr.DataArray or None
+            ``da`` unchanged when the source is on an axis, else squeezed.
+        """
         # One source and no axis for it: today's two-source card.
         if da is None or on_axis:
             return da
@@ -270,6 +454,20 @@ def resolve(
         baseline_key = agg.baseline_source
 
         def _first(da, own=None):
+            """Prepend the baseline's own entry along the forecast-source dimension.
+
+            Parameters
+            ----------
+            da : xr.DataArray or None
+                An array with one entry per forecast source.
+            own : xr.DataArray, optional
+                The baseline's values for this array; NaN where not given.
+
+            Returns
+            -------
+            xr.DataArray or None
+                ``da`` with the baseline's entry first, or None if ``da`` is.
+            """
             if da is None:
                 return None
             head = own if own is not None else xr.full_like(row.mean, np.nan)
@@ -345,6 +543,74 @@ def _lay_out(
     A cell is *compared* when there is a baseline and it is not the baseline's own
     row: coloured by the difference, as always. Every other cell is neutral: its
     boxes are the source's own score, with nothing marked significant.
+
+    Every array is indexed by ``row_dims``, ``column_dims`` and ``cell_dim``;
+    counts may lack some of the axis dimensions.
+
+    Parameters
+    ----------
+    cube : PreparedCube
+        The prepared scores; only its units are read.
+    row_dims : sequence of str
+        The dimensions nested on the rows, outermost first.
+    column_dims : sequence of str
+        The dimensions nested on the columns, outermost first.
+    cell_dim : str
+        The dimension laid out inside each cell.
+    scheme : ColourScheme
+        The palette whose words go into the tooltips.
+    scaling : FixedScaling
+        Maps each relative difference to a ramp level.
+    metric_polarity : mapping of str to str or None
+        Caller-supplied metric polarities.
+    title : str
+        The card's title.
+    subtitle : str
+        The card's subtitle.
+    diff : xr.DataArray
+        Forecast minus baseline; all NaN when there is no baseline.
+    rel : xr.DataArray
+        ``diff`` over the baseline's magnitude, not yet signed by polarity.
+    ctl : xr.DataArray or None
+        The baseline's scores.
+    exp : xr.DataArray
+        Each forecast source's own scores.
+    ctl_lo : xr.DataArray or None
+        Lower end of the baseline's own interval.
+    ctl_hi : xr.DataArray or None
+        Upper end of the baseline's own interval.
+    exp_lo : xr.DataArray or None
+        Lower end of each forecast source's own interval.
+    exp_hi : xr.DataArray or None
+        Upper end of each forecast source's own interval.
+    dif : dict of float to tuple of xr.DataArray
+        The paired difference interval ``(lower, upper)``, by confidence level.
+    counts : xr.DataArray or None
+        Forecast cases behind each comparison.
+    levels : tuple of float
+        The confidence levels supplied, ascending.
+    chart_conf : float or None
+        The level whose paired interval goes into :attr:`Step.value_lower` and
+        :attr:`Step.value_upper`: the widest.
+    agg : Aggregated
+        The aggregation these came from, for its sources and resampling details.
+    coloured : bool, optional
+        Whether there is a baseline to compare with.
+    show_values : bool, optional
+        Whether each box prints its source's own score.
+    baseline_key : str or None, optional
+        The forecast-source entry holding the baseline's own row, if there is one.
+
+    Returns
+    -------
+    Layout
+        The resolved card, with its caveat notes.
+
+    Raises
+    ------
+    KeyError
+        If a layout dimension is not in the arrays, or an array dimension is
+        assigned to neither rows, columns nor cell.
     """
     dims = list(row_dims) + list(column_dims)
     for d in dims + [cell_dim]:
@@ -409,6 +675,20 @@ def _lay_out(
     lead_labels = tuple(_lead_label(v) for v in leads_raw)
 
     def locate(key: Key, dim_names: Sequence[str]) -> tuple[int, ...]:
+        """Return the array indices of a key's coordinate values.
+
+        Parameters
+        ----------
+        key : Key
+            A row or column key.
+        dim_names : sequence of str
+            The dimensions the key's values belong to, in order.
+
+        Returns
+        -------
+        tuple of int
+            The position of each value along its dimension.
+        """
         return tuple(coords[d].index(v) for d, v in zip(dim_names, key))
 
     diff_v, rel_v, exp_v = diff.values, rel.values, exp.values
@@ -452,12 +732,45 @@ def _lay_out(
             for k in range(len(lead_times)):
 
                 def _at(arr, k=k, idx=idx):
+                    """Read this box's value from an array.
+
+                    Parameters
+                    ----------
+                    arr : np.ndarray or None
+                        Values indexed by the layout dims, then the cell dim.
+                    k : int, optional
+                        The lead-time index; bound to the current box.
+                    idx : tuple of int, optional
+                        The row and column indices; bound to the current cell.
+
+                    Returns
+                    -------
+                    float or None
+                        The value, or None if absent or not finite.
+                    """
                     if arr is None:
                         return None
                     v = arr[idx + (k,)]
                     return float(v) if np.isfinite(v) else None
 
                 def _n(k=k, rl=rl, cl=cl):
+                    """Read this box's case count.
+
+                    Parameters
+                    ----------
+                    k : int, optional
+                        The lead-time index; bound to the current box.
+                    rl : Line, optional
+                        The row; bound to the current cell.
+                    cl : Line, optional
+                        The column; bound to the current cell.
+
+                    Returns
+                    -------
+                    int or None
+                        The count, or None if there are no counts or it is not
+                        finite.
+                    """
                     if cnt_v is None:
                         return None
                     cidx = tuple(

@@ -48,7 +48,20 @@ _SERIES = (
 
 
 def _round(values: list, precision: int) -> list:
-    """Round to a fixed number of significant figures, keeping None as null."""
+    """Round to a fixed number of significant figures, keeping None as null.
+
+    Parameters
+    ----------
+    values : list
+        Numbers to round; None entries are passed through.
+    precision : int
+        Significant figures to keep.
+
+    Returns
+    -------
+    list
+        The rounded values, as floats or None.
+    """
     out = []
     for v in values:
         if v is None:
@@ -60,6 +73,13 @@ def _round(values: list, precision: int) -> list:
 
 def build_payload(layout: Layout, *, precision: int = 4) -> dict:
     """Assemble the drill-down data as a plain, JSON-safe dict.
+
+    Parameters
+    ----------
+    layout : Layout
+        The card whose populated cells are exported.
+    precision : int, optional
+        Significant figures kept in each series; case counts are not rounded.
 
     Returns
     -------
@@ -103,6 +123,16 @@ def pack(payload: dict) -> str:
 
     ``mtime=0`` keeps the output byte-reproducible; ``allow_nan=False`` refuses to
     emit bare ``NaN``, which is not valid JSON and would break ``JSON.parse``.
+
+    Parameters
+    ----------
+    payload : dict
+        A JSON-safe dict, as from :func:`build_payload`.
+
+    Returns
+    -------
+    str
+        The gzipped JSON, base64-encoded.
     """
     raw = json.dumps(payload, separators=(",", ":"), allow_nan=False).encode()
     return base64.b64encode(gzip.compress(raw, compresslevel=9, mtime=0)).decode()
@@ -111,12 +141,21 @@ def pack(payload: dict) -> str:
 def payload_for(layout: Layout, *, precision: int = 4) -> tuple[str, int, int]:
     """Build and pack in one step.
 
+    Parameters
+    ----------
+    layout : Layout
+        The card whose populated cells are exported.
+    precision : int, optional
+        Significant figures kept in each series.
+
     Returns
     -------
     encoded : str
+        The packed payload, as from :func:`pack`.
     raw_bytes : int
+        Size of the JSON before compression, for reporting.
     packed_bytes : int
-        Sizes before and after compression, for reporting.
+        Size of ``encoded`` after compression and base64, for reporting.
     """
     payload = build_payload(layout, precision=precision)
     raw = json.dumps(payload, separators=(",", ":"), allow_nan=False).encode()

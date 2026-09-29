@@ -36,6 +36,13 @@ _RC = {
 
 
 def _require_matplotlib() -> None:
+    """Fail early, with the install hint, when matplotlib is missing.
+
+    Raises
+    ------
+    ImportError
+        If matplotlib cannot be imported.
+    """
     try:
         import matplotlib  # noqa: F401
     except ModuleNotFoundError as exc:  # pragma: no cover
@@ -46,7 +53,31 @@ def _require_matplotlib() -> None:
 
 @dataclass(frozen=True, slots=True)
 class Geometry:
-    """Point-space dimensions. Fonts are never scaled below ``font_pt``."""
+    """Point-space dimensions.
+
+    Fonts are never scaled below ``font_pt``.
+
+    Attributes
+    ----------
+    box_w : float
+        Width of one lead-time box.
+    box_h : float
+        Height of one lead-time box.
+    box_gap : float
+        Horizontal gap between neighbouring boxes.
+    cell_pad : float
+        Padding either side of a cell's run of boxes.
+    row_h : float
+        Height of one table row.
+    label_w : float
+        Width of a row-label column.
+    head_h : float
+        Height of one column-header level.
+    font_pt : float
+        Size of label and legend text.
+    title_pt : float
+        Size of the title.
+    """
 
     box_w: float = 6.0
     box_h: float = 11.0
@@ -59,6 +90,18 @@ class Geometry:
     title_pt: float = 12.0
 
     def cell_w(self, n_steps: int) -> float:
+        """Return the width of a cell holding ``n_steps`` boxes, padding included.
+
+        Parameters
+        ----------
+        n_steps : int
+            Number of lead-time boxes in the cell.
+
+        Returns
+        -------
+        float
+            The cell width in points.
+        """
         return n_steps * (self.box_w + self.box_gap) - self.box_gap + 2 * self.cell_pad
 
 
@@ -68,7 +111,20 @@ VALUES_PT = 5.2
 
 
 def _label_widths(layout: Layout, geom: Geometry) -> list[float]:
-    """Width for each row-label column, from its longest label."""
+    """Return the width for each row-label column, from its longest label.
+
+    Parameters
+    ----------
+    layout : Layout
+        The card whose row headers are measured.
+    geom : Geometry
+        Supplies the font size the width is estimated from.
+
+    Returns
+    -------
+    list of float
+        One width in points per row-header level, never below 26.
+    """
     out = []
     for depth in range(layout.row_depth):
         longest = max((len(h.label) for h in layout.row_headers[depth]), default=1)
@@ -85,9 +141,20 @@ def render_figure(
     nothing accumulates in pyplot's figure list over repeated calls, and an
     interactive session keeps its backend.
 
+    Parameters
+    ----------
+    layout : Layout
+        The card to draw.
+    scheme : ColourScheme
+        The colours for the boxes and legend.
+    geometry : Geometry, optional
+        Point-space dimensions. When omitted, the defaults, with boxes widened
+        to hold a number if the card shows values.
+
     Returns
     -------
     matplotlib.figure.Figure
+        The drawn card.
     """
     _require_matplotlib()
     import matplotlib
@@ -97,10 +164,24 @@ def render_figure(
 
 
 def save_figure(fig: Figure, path: str | Path, *, dpi: int = 200) -> Path:
-    """Write ``fig`` to ``path`` with this package's font and SVG settings, which
-    keep PDF and SVG text as text and make the output byte-reproducible.
+    """Write ``fig`` to ``path`` with this package's font and SVG settings.
 
-    The format follows the suffix, as for ``Figure.savefig``.
+    Those settings keep PDF and SVG text as text and make the output
+    byte-reproducible. The format follows the suffix, as for ``Figure.savefig``.
+
+    Parameters
+    ----------
+    fig : matplotlib.figure.Figure
+        The figure, typically from :func:`render_figure`.
+    path : str or Path
+        Where to write it; the suffix picks the format.
+    dpi : int, optional
+        Resolution for raster formats.
+
+    Returns
+    -------
+    Path
+        The path written.
     """
     import matplotlib
 
@@ -120,7 +201,22 @@ _NO_CLOCK = {"svg": {"Date": None}, "pdf": {"CreationDate": None}}
 
 
 def _draw(layout: Layout, scheme: ColourScheme, geometry: Geometry | None) -> Figure:
-    """The body of :func:`render_figure`, run inside its rc settings."""
+    """Draw the card: the body of :func:`render_figure`, run inside its rc settings.
+
+    Parameters
+    ----------
+    layout : Layout
+        The card to draw.
+    scheme : ColourScheme
+        The colours for the boxes and legend.
+    geometry : Geometry or None
+        Point-space dimensions, or None for the defaults (widened for values).
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+        The drawn card, attached to an Agg canvas but not to ``pyplot``.
+    """
     from matplotlib.backends.backend_agg import FigureCanvasAgg
     from matplotlib.collections import PatchCollection
     from matplotlib.figure import Figure
@@ -170,6 +266,20 @@ def _draw(layout: Layout, scheme: ColourScheme, geometry: Geometry | None) -> Fi
     # The table alone does not set the width: a long title or footnote would be
     # clipped by a figure sized only from the grid.
     def _text_w(text: str, pt: float) -> float:
+        """Estimate the width of a line of text, with a little margin.
+
+        Parameters
+        ----------
+        text : str
+            The text.
+        pt : float
+            Its font size.
+
+        Returns
+        -------
+        float
+            The approximate width in points.
+        """
         return len(text) * pt * 0.56 + 8
 
     legend_w = 8.0 + sum(

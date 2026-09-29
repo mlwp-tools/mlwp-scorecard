@@ -499,14 +499,40 @@ _PAGE = Template(
 
 
 def _ramp_css(scheme: ColourScheme, *, values: bool = False) -> str:
-    """One rule per (family, direction, level) instead of a style on every box.
+    """Emit one rule per (family, direction, level) instead of a style on every box.
 
     A full-size card has ~20,000 boxes but only ~60 distinct colours, so carrying
     the fill inline costs roughly 800 kB for nothing. With ``values``, each rule
     also carries the swatch's legible text colour for the number printed on it.
+
+    Parameters
+    ----------
+    scheme : ColourScheme
+        The colours to emit, every ramp of every family plus the neutral swatch.
+    values : bool, optional
+        Also set each rule's text colour, for a card that prints values.
+
+    Returns
+    -------
+    str
+        The CSS rules, one per line.
     """
 
     def rule(sel: str, sw) -> str:
+        """Return one CSS rule setting a swatch's custom properties.
+
+        Parameters
+        ----------
+        sel : str
+            The CSS selector.
+        sw : Swatch
+            The swatch whose fill, edge and (with ``values``) text colour to set.
+
+        Returns
+        -------
+        str
+            The rule.
+        """
         fg = f" --t:{sw.fg};" if values else ""
         return f"{sel} {{ --f:{sw.fill}; --e:{sw.edge};{fg} }}"
 
@@ -531,8 +557,20 @@ td.c.empty { background-clip: content-box; }
 
 
 def _boxes(cell) -> str:
-    """Emit one ``<i>`` per lead time, carrying only its level class, and the
-    printed value when the card shows values."""
+    """Emit one ``<i>`` per lead time, carrying only its level class.
+
+    Each box also carries the printed value when the card shows values.
+
+    Parameters
+    ----------
+    cell : Cell
+        The cell whose steps become boxes.
+
+    Returns
+    -------
+    str
+        The concatenated ``<i>`` elements.
+    """
     out = []
     for st in cell.steps:
         tip = html.escape(st.tooltip, quote=True)
@@ -550,7 +588,18 @@ def _boxes(cell) -> str:
 
 
 def _pct(conf: float | None) -> str:
-    """A confidence level as a percentage, keeping 99.7% from reading as 100%."""
+    """Format a confidence level as a percentage, keeping 99.7% from reading as 100%.
+
+    Parameters
+    ----------
+    conf : float or None
+        The confidence level as a fraction.
+
+    Returns
+    -------
+    str
+        The percentage, or the word "confidence" when ``conf`` is None or zero.
+    """
     return f"{conf * 100:.4g}%" if conf else "confidence"
 
 
@@ -566,7 +615,9 @@ def render_html(
     Parameters
     ----------
     layout : Layout
+        The card to render.
     scheme : ColourScheme
+        The colours for the boxes and legend.
     detail : bool, optional
         Embed the click-through drill-down data. On a full-size card this is the
         largest thing in the file; pass False for a table-only page.
@@ -581,9 +632,33 @@ def render_html(
     """
 
     def esc(v: object) -> str:
+        """Escape a value for HTML text or a quoted attribute.
+
+        Parameters
+        ----------
+        v : object
+            The value, converted with ``str``.
+
+        Returns
+        -------
+        str
+            The escaped text.
+        """
         return html.escape(str(v), quote=True)
 
     def colkey(line) -> str:
+        """Join a column's key into the string the page identifies it by.
+
+        Parameters
+        ----------
+        line : Line
+            The column.
+
+        Returns
+        -------
+        str
+            The key's parts joined with ``SEP``.
+        """
         return SEP.join(str(k) for k in line.key)
 
     col_keys = [colkey(c) for c in layout.columns]
@@ -595,6 +670,18 @@ def render_html(
     # any deeper row carries its own offset, so a card of at most two column
     # levels is written exactly as before.
     def _top(i: int) -> str:
+        """Return the sticky offset for header row ``i``, if it needs one.
+
+        Parameters
+        ----------
+        i : int
+            The header row's depth.
+
+        Returns
+        -------
+        str
+            A ``style`` attribute for rows from 2 down, else an empty string.
+        """
         return f' style="top:{23 * i}px"' if i >= 2 else ""
 
     corner_span = max(2, layout.column_depth)

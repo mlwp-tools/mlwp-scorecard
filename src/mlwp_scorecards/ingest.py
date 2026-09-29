@@ -61,6 +61,18 @@ def split_name(name: str) -> tuple[str, str]:
         >>> split_name("seeps.v1.5.tp")
         ('seeps.v1.5', 'tp')
 
+    Parameters
+    ----------
+    name : str
+        A score variable's name.
+
+    Returns
+    -------
+    metric : str
+        Everything before the last dot.
+    variable : str
+        Everything after it.
+
     Raises
     ------
     ValueError
@@ -78,38 +90,104 @@ def split_name(name: str) -> tuple[str, str]:
 
 @dataclass
 class ValidationReport:
-    """Accumulated problems found while reading a dataset."""
+    """Accumulated problems found while reading a dataset.
+
+    Attributes
+    ----------
+    fails : list of str
+        Problems that stop the dataset being read.
+    warnings : list of str
+        Problems the card can still be drawn with.
+    """
 
     fails: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
     def fail(self, msg: str) -> None:
+        """Record a problem that stops the dataset being read.
+
+        Parameters
+        ----------
+        msg : str
+            What is wrong.
+        """
         self.fails.append(msg)
 
     def warn(self, msg: str) -> None:
+        """Record a problem the card can still be drawn with.
+
+        Parameters
+        ----------
+        msg : str
+            What is wrong.
+        """
         self.warnings.append(msg)
 
     def has_fails(self) -> bool:
+        """Report whether any failure has been recorded.
+
+        Returns
+        -------
+        bool
+            True if :meth:`fail` has been called.
+        """
         return bool(self.fails)
 
     def __iadd__(self, other: "ValidationReport") -> "ValidationReport":
+        """Append another report's failures and warnings to this one.
+
+        Parameters
+        ----------
+        other : ValidationReport
+            The report to take problems from.
+
+        Returns
+        -------
+        ValidationReport
+            This report, extended.
+        """
         self.fails += other.fails
         self.warnings += other.warnings
         return self
 
     def __str__(self) -> str:
+        """List the problems, one per line, failures first.
+
+        Returns
+        -------
+        str
+            The problems, or ``"no problems found"``.
+        """
         lines = [f"ERROR   {m}" for m in self.fails]
         lines += [f"warning {m}" for m in self.warnings]
         return "\n".join(lines) or "no problems found"
 
     def raise_if_failed(self) -> None:
+        """Raise if any failure has been recorded.
+
+        Raises
+        ------
+        ValueError
+            Listing every problem, if there is a failure among them.
+        """
         if self.has_fails():
             raise ValueError("dataset validation failed:\n" + str(self))
 
 
 @dataclass(frozen=True, slots=True)
 class PreparedCube:
-    """A verification dataset flattened to a single score array."""
+    """A verification dataset flattened to a single score array.
+
+    Attributes
+    ----------
+    score : xr.DataArray
+        One score per forecast case, ``(metric, variable, ..., lead_time,
+        init_time)``.
+    units : dict of (str, str) to str or None
+        Units keyed by ``(metric, variable)``.
+    report : ValidationReport
+        What was found while reading the dataset.
+    """
 
     #: One score per forecast case: ``(metric, variable, ..., lead_time,
     #: init_time)``. The collapse over cases has not happened yet -- that is
@@ -123,17 +201,39 @@ class PreparedCube:
 
     @property
     def dims(self) -> tuple[str, ...]:
+        """Return the score array's dimension names.
+
+        Returns
+        -------
+        tuple of str
+            The dimensions of :attr:`score`, in order.
+        """
         return tuple(self.score.dims)
 
 
 def _optional_index(ds: xr.Dataset, scores: Sequence[str], dim: str) -> np.ndarray:
-    """The full coordinate of an optional dimension, not-applicable entry last.
+    """Build the full coordinate of an optional dimension, not-applicable entry last.
 
     Values are in order of first appearance across the variables, never sorted:
     rows follow the dataset's order, and so a ``select=`` list's order. The
     not-applicable entry goes last. It is NaN on a numeric coordinate and None on
     any other: NaN on a fixed-width string coordinate becomes the text ``'nan'``,
     which is neither blank on the card nor recognised as not-applicable.
+
+    Parameters
+    ----------
+    ds : xr.Dataset
+        The input dataset.
+    scores : sequence of str
+        Its score variable names.
+    dim : str
+        The optional dimension.
+
+    Returns
+    -------
+    np.ndarray
+        Every value of ``dim`` any score carries, then the not-applicable entry;
+        float for a numeric coordinate, object otherwise.
     """
     seen: list[Any] = []
     kinds = set()
@@ -156,6 +256,19 @@ def _pad_optional(da: xr.DataArray, full: dict[str, np.ndarray]) -> xr.DataArray
     ``level = [nan]`` and so becomes one row, rather than being broadcast across
     every pressure level as NaN. Every variable ends up with the *same* index, so
     the concat that follows has nothing to align, and so nothing to sort.
+
+    Parameters
+    ----------
+    da : xr.DataArray
+        One score variable.
+    full : dict of str to np.ndarray
+        The full coordinate of each optional dimension, from
+        :func:`_optional_index`.
+
+    Returns
+    -------
+    xr.DataArray
+        The variable on every optional dimension's full coordinate.
     """
     for dim, index in full.items():
         if dim in da.dims:
@@ -184,6 +297,23 @@ def _stack(
     Coverage is ragged on purpose — CRPS needs an ensemble, FSS a threshold — so
     absent combinations are filled here and dropped again by the layout engine,
     which already removes categories with no data anywhere below them.
+
+    Parameters
+    ----------
+    blocks : dict of (str, str) to xr.DataArray
+        Padded scores keyed by ``(metric, variable)``.
+    metrics : sequence of str
+        The metrics, in order.
+    variables : sequence of str
+        The physical variables, in order.
+    template_for : dict of str to xr.DataArray
+        For each variable, an array of its shape to fill with NaN where a metric
+        has no score for it.
+
+    Returns
+    -------
+    xr.DataArray
+        Scores with leading ``metric`` and ``variable`` dimensions.
     """
     per_metric = []
     for m in metrics:
@@ -225,14 +355,23 @@ def prepare(
     strict : bool, optional
         Promote warnings to failures.
 
+    Returns
+    -------
+    PreparedCube
+        The stacked per-case scores, their units, and what was found wrong.
+
+    Raises
+    ------
+    ValueError
+        If validation fails.
+    KeyError
+        If a layout dimension is missing from the dataset, or a dataset
+        dimension is placed nowhere.
+
     Notes
     -----
     The schema's other dimension names are fixed, not arguments: see the
     ``*_DIM`` constants above. There is one documented input shape.
-
-    Returns
-    -------
-    PreparedCube
     """
     report = ValidationReport()
 

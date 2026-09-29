@@ -62,6 +62,18 @@ markers = [
     "golden: marks tests that compare against committed golden artefacts",
 ]
 
+[tool.numpydoc_validation]
+# Every module, class, function and method in src/ carries a numpydoc docstring,
+# checked by the numpydoc-validation pre-commit hook. Left out:
+#   GL01  the summary starts on the opening-quote line in this codebase
+#   ES01  an extended summary on every object would be padding
+#   SA01  likewise a See Also section
+#   EX01  likewise an Examples section
+checks = ["all", "GL01", "ES01", "SA01", "EX01"]
+# A constructor's parameters are documented on its class, and checked there
+# against the __init__ signature (the numpydoc convention).
+exclude = ['\.__init__$']
+
 [dependency-groups]
 dev = [
     "pre-commit>=4.0.0",

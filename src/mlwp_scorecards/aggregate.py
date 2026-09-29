@@ -72,6 +72,16 @@ class SourceSummary:
     """One source's own scores, collapsed over cases: for the baseline's grey row.
 
     No ``forecast_source`` dimension: it describes a single source.
+
+    Attributes
+    ----------
+    mean : xr.DataArray
+        The source's mean score over its cases.
+    lower, upper : xr.DataArray or None
+        Its own interval at the widest confidence level; None with no cases to
+        resample.
+    counts : xr.DataArray
+        Forecast cases behind each mean.
     """
 
     mean: xr.DataArray
@@ -95,6 +105,39 @@ class Aggregated:
 
     With no baseline, every ``baseline*`` field is None and nothing is paired:
     each forecast source is summarised on its own.
+
+    Attributes
+    ----------
+    baseline : xr.DataArray or None
+        The baseline's mean score, over the cases each comparison rests on.
+    forecast : xr.DataArray
+        Each forecast source's mean score.
+    baseline_lower, baseline_upper : xr.DataArray or None
+        The baseline's own interval, at the widest confidence level.
+    forecast_lower, forecast_upper : xr.DataArray or None
+        Each forecast source's own interval, at the widest confidence level.
+    paired : dict of float to (xr.DataArray, xr.DataArray)
+        The paired-difference interval, lower and upper, per confidence level.
+    counts : xr.DataArray or None
+        Forecast cases behind each cell.
+    confidence_levels : tuple of float
+        The levels in ``paired``, as fractions.
+    baseline_source : str
+        The baseline's name; empty with no baseline.
+    forecast_sources : tuple of str
+        The forecast sources, in order.
+    cases : {"common", "pairwise"}
+        Which cases each comparison rests on.
+    baseline_row : SourceSummary or None
+        The baseline's own scores, when shown as a row of their own.
+    method : str
+        The resampling: ``"moving-block"`` or ``"iid"``.
+    block_length : int
+        Block length in forecast cases.
+    n_resamples : int
+        Bootstrap resamples drawn.
+    seed : int
+        The seed the resamples were drawn from; -1 when a generator was passed.
     """
 
     baseline: xr.DataArray | None
@@ -129,11 +172,29 @@ class Aggregated:
 
     @property
     def has_intervals(self) -> bool:
+        """Report whether there is a paired interval to decide significance.
+
+        Returns
+        -------
+        bool
+            False with no baseline, or no ``init_time`` to resample.
+        """
         return bool(self.paired)
 
 
 def _same(a: Any, b: Any) -> bool:
-    """Coordinate-value equality that tolerates types that cannot be compared."""
+    """Compare coordinate values, tolerating types that cannot be compared.
+
+    Parameters
+    ----------
+    a, b : Any
+        The two values.
+
+    Returns
+    -------
+    bool
+        True if they compare equal; False if not, or if comparing them raises.
+    """
     try:
         return bool(a == b)
     except (TypeError, ValueError):
@@ -167,6 +228,7 @@ def expand_selection(
     Returns
     -------
     list
+        The values, with ``...`` replaced by the rest of the coordinate.
 
     Raises
     ------
@@ -216,6 +278,7 @@ def resolve_sources(
     Parameters
     ----------
     forecast_source : str, ``...``, or sequence of str and at most one ``...``
+        The forecast sources asked for.
     colour_relative_to : str or None
         The baseline.
     available : sequence of str
@@ -224,6 +287,7 @@ def resolve_sources(
     Returns
     -------
     tuple of str
+        The forecast sources to show, in order, without the baseline.
 
     Raises
     ------
@@ -269,10 +333,34 @@ def resample_indices(
     block_length: int = 1,
     rng: np.random.Generator,
 ) -> np.ndarray:
-    """Case indices for each replicate, ``(n_resamples, n_case)``.
+    """Draw the case indices for each bootstrap replicate.
 
     Drawn **once** by the caller and reused for every source; that sharing is
     what makes the difference interval a paired one.
+
+    Parameters
+    ----------
+    n_case : int
+        Number of forecast cases.
+    n_resamples : int
+        Number of replicates.
+    method : {"moving-block", "iid"}, optional
+        How cases are drawn.
+    block_length : int, optional
+        Block length in cases. A block of 1, or one covering every case, falls
+        back to an iid draw.
+    rng : np.random.Generator
+        Source of randomness.
+
+    Returns
+    -------
+    np.ndarray
+        Integer case indices, ``(n_resamples, n_case)``.
+
+    Raises
+    ------
+    ValueError
+        If ``method`` is not one of :data:`METHODS`.
     """
     if method not in METHODS:
         raise ValueError(f"bootstrap must be one of {METHODS}, got {method!r}")
@@ -285,7 +373,20 @@ def resample_indices(
 
 
 def _weights(idx: np.ndarray, n_case: int) -> np.ndarray:
-    """Multiplicity of each case in each replicate, ``(n_resamples, n_case)``."""
+    """Count how often each case is drawn in each replicate.
+
+    Parameters
+    ----------
+    idx : np.ndarray
+        Case indices, ``(n_resamples, n_case)``, from :func:`resample_indices`.
+    n_case : int
+        Number of forecast cases.
+
+    Returns
+    -------
+    np.ndarray
+        Multiplicity of each case in each replicate, ``(n_resamples, n_case)``.
+    """
     w = np.zeros((idx.shape[0], n_case))
     rows = np.repeat(np.arange(idx.shape[0]), idx.shape[1])
     np.add.at(w, (rows, idx.ravel()), 1.0)
@@ -293,7 +394,7 @@ def _weights(idx: np.ndarray, n_case: int) -> np.ndarray:
 
 
 def bootstrap_mean(x: np.ndarray, weights: np.ndarray) -> np.ndarray:
-    """Bootstrap distribution of the mean, ``(series, n_resamples)``.
+    """Compute the bootstrap distribution of the mean, ``(series, n_resamples)``.
 
     A bootstrap mean is a weighted mean, so every replicate of every series is
     one BLAS call rather than a fancy-index gather. At full card scale that is
@@ -305,6 +406,12 @@ def bootstrap_mean(x: np.ndarray, weights: np.ndarray) -> np.ndarray:
         ``(series, case)``. NaN marks a case that did not score.
     weights : np.ndarray
         ``(n_resamples, case)`` from :func:`_weights`.
+
+    Returns
+    -------
+    np.ndarray
+        The mean of each series in each replicate, ``(series, n_resamples)``;
+        NaN where a replicate drew only missing cases.
     """
     finite = np.isfinite(x)
     wt = weights.T
@@ -318,7 +425,20 @@ def bootstrap_mean(x: np.ndarray, weights: np.ndarray) -> np.ndarray:
 def _percentile_bounds(
     boot: np.ndarray, levels: Sequence[float]
 ) -> dict[float, tuple[np.ndarray, np.ndarray]]:
-    """Interval bounds at each level, from one bootstrap distribution."""
+    """Take percentile interval bounds at each level from one bootstrap distribution.
+
+    Parameters
+    ----------
+    boot : np.ndarray
+        Bootstrap distribution, replicates along the last axis.
+    levels : sequence of float
+        Confidence levels, as fractions.
+
+    Returns
+    -------
+    dict of float to tuple of np.ndarray
+        ``(lower, upper)`` for each level; NaN where the distribution is all NaN.
+    """
     half = [(1 - c) / 2 * 100 for c in levels]
     with warnings.catch_warnings():
         # A cell whose every case is missing gives an all-NaN distribution, and
@@ -330,12 +450,25 @@ def _percentile_bounds(
 
 
 def derive_block_length(cases: np.ndarray, report: ValidationReport) -> int:
-    """Block length in **forecast cases**, from the initialisation cadence.
+    """Derive a block length in **forecast cases** from the initialisation cadence.
 
     The cadence is visible in the data; the decorrelation time is not. So this
     targets a fixed span rather than pretending to estimate one, and says what it
     chose -- a block length silently picked for you is not something a reader can
     check.
+
+    Parameters
+    ----------
+    cases : np.ndarray
+        The ``init_time`` coordinate values.
+    report : ValidationReport
+        Where to warn when falling back to an iid resample.
+
+    Returns
+    -------
+    int
+        Cases per block, covering :data:`BLOCK_TARGET`; 1 (an iid resample) when
+        the cadence cannot be read or there are too few cases for such blocks.
     """
     n_case = len(cases)
     if n_case < 2 or not np.issubdtype(np.asarray(cases).dtype, np.datetime64):
@@ -399,14 +532,31 @@ def aggregate(
         Also summarise the baseline on its own, for showing it as a row; see
         :attr:`Aggregated.baseline_row`.
     bootstrap : {"moving-block", "iid"}, optional
+        How the forecast cases are resampled.
     block_length : int, optional
         In forecast **cases**, not hours. Derived from the initialisation cadence
         when omitted.
-    n_resamples, confidence_levels, seed : optional
+    n_resamples : int, optional
+        Number of bootstrap replicates.
+    confidence_levels : sequence of float, optional
+        Interval levels, as fractions strictly between 0 and 1.
+    seed : int or np.random.Generator, optional
+        Seed for the resample, or a generator to draw it from (recorded as -1).
 
     Returns
     -------
     Aggregated
+        Means, intervals, paired difference intervals and case counts, with how
+        they were produced.
+
+    Raises
+    ------
+    ValueError
+        If ``cases`` or ``bootstrap`` is not a known policy, or a confidence
+        level is not a fraction.
+    KeyError
+        If the dataset has no ``forecast_source`` dimension, or a source is not
+        in it.
     """
     report = cube.report
     da = cube.score
@@ -539,6 +689,18 @@ def aggregate(
             paired_flat[c][1][lo:hi] = dhi
 
     def _wrap(flat: np.ndarray) -> xr.DataArray:
+        """Restore flattened series to the cube's non-case dimensions.
+
+        Parameters
+        ----------
+        flat : np.ndarray
+            One value per series.
+
+        Returns
+        -------
+        xr.DataArray
+            The values on the cube's dimensions and coordinates, less ``init_time``.
+        """
         return xr.DataArray(flat.reshape(shape), dims=dims, coords=coords)
 
     with np.errstate(invalid="ignore"):
@@ -574,7 +736,22 @@ def aggregate(
 
 
 def _summarise(da: xr.DataArray, weights: np.ndarray, conf: float) -> SourceSummary:
-    """One source on its own: mean, bootstrap interval at ``conf``, case count."""
+    """Summarise one source on its own: mean, bootstrap interval, case count.
+
+    Parameters
+    ----------
+    da : xr.DataArray
+        The source's per-case scores, with an ``init_time`` dimension.
+    weights : np.ndarray
+        ``(n_resamples, case)`` from :func:`_weights`, shared with the comparison.
+    conf : float
+        Confidence level of the interval.
+
+    Returns
+    -------
+    SourceSummary
+        Collapsed over ``init_time``.
+    """
     da = da.transpose(..., CASE_DIM)
     shape, dims = da.shape[:-1], da.dims[:-1]
     coords = {d: da.coords[d] for d in dims if d in da.coords}
@@ -587,6 +764,18 @@ def _summarise(da: xr.DataArray, weights: np.ndarray, conf: float) -> SourceSumm
         lo[start:stop], hi[start:stop] = _percentile_bounds(boot, [conf])[conf]
 
     def _wrap(a: np.ndarray) -> xr.DataArray:
+        """Restore flattened series to the source's non-case dimensions.
+
+        Parameters
+        ----------
+        a : np.ndarray
+            One value per series.
+
+        Returns
+        -------
+        xr.DataArray
+            The values on the source's dimensions and coordinates, less ``init_time``.
+        """
         return xr.DataArray(a.reshape(shape), dims=dims, coords=coords)
 
     with np.errstate(invalid="ignore"):

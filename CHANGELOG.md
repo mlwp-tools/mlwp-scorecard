@@ -125,6 +125,13 @@ Design and rationale are documented in [`PLAN.md`](PLAN.md).
 
 ### Added
 
+- **A real example scorecard at the top of the README**: GraphCast vs IFS HRES
+  against ERA5 for 2020, from WeatherBench 2's public data. `docs/example/`
+  holds the scoring script, which downloads ~0.3 GB and writes per-case scores
+  to the gitignored `tmp/wb2/`, and the script that draws
+  `docs/images/scorecard.png` and the interactive `scorecard.html` from them.
+  Only the image and the page are committed. A test checks the example still
+  builds wherever the scores have been made.
 - **`show_values=True`** (`--show-values`) prints each source's own score in its
   boxes, formatted by one helper (`model.format_value`). With a baseline the
   colours and significance borders are unchanged, and the baseline appears as a

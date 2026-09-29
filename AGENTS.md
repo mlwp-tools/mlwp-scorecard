@@ -52,6 +52,8 @@ Guidance for agents and contributors working in this repository.
 - Palettes (level → colour): `src/mlwp_scorecards/render/colours.py`
 - Renderers: `src/mlwp_scorecards/render/html.py`, `render/static.py`
 - Synthetic test data: `tests/synthetic.py`
+- The README's example card (WeatherBench 2 scores, and the scripts that make
+  and draw them): `docs/example/`
 - Notes on other scorecard tools: `docs/prior-work/README.md` (overview and comparison; links to each note)
 
 ## Development expectations

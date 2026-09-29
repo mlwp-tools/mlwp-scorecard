@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GraphCast vs IFS HRES, verified against ERA5</title>
+<style>
+:root { --bw: 7px; --bh: 13px; --bg: 1px; }
+* { box-sizing: border-box; }
+body { margin: 0; padding: 18px 20px 40px;
+  font: 13px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: #16191d; background: #fff; }
+h1 { font-size: 19px; margin: 0 0 2px; }
+.sub { color: #5b6470; margin: 0 0 14px; font-size: 12.5px; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+fieldset { border: 1px solid #dde1e6; border-radius: 6px; margin: 0 0 10px;
+  padding: 7px 11px 9px; }
+legend { font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+  color: #5b6470; padding: 0 4px; }
+label { margin-right: 11px; font-size: 12px; white-space: nowrap; display: inline-block; }
+button { font: inherit; font-size: 11px; padding: 1px 8px; margin-left: 4px;
+  border: 1px solid #c8ced6; border-radius: 4px; background: #f6f7f9; cursor: pointer; }
+button:hover { background: #eceff3; }
+.scroll { overflow: auto; max-height: 78vh; border: 1px solid #dde1e6; border-radius: 6px; }
+table.sc { border-collapse: separate; border-spacing: 0; font-size: 11px; }
+.sc th, .sc td { padding: 0; white-space: nowrap; border-right: 1px solid #fff;
+  border-bottom: 1px solid #fff; }
+.sc thead th { position: sticky; background: #eef1f4; z-index: 3; font-weight: 600;
+  padding: 3px 6px; text-align: center; }
+.sc thead tr:nth-child(1) th { top: 0; }
+.sc thead tr:nth-child(2) th { top: 23px; }
+.sc tbody th { position: sticky; background: #f7f8fa; z-index: 2; font-weight: 400;
+  padding: 1px 7px 1px 6px; text-align: left; }
+.corner { left: 0; z-index: 4 !important; }
+.sc tbody th.lv { text-align: right; }
+td.c { padding: 2px 3px; line-height: 0; cursor: pointer; }
+td.c.empty { background: #f4f4f4; cursor: default; }
+td.c:hover { outline: 2px solid #7d8894; outline-offset: -2px; }
+td.c:focus-visible { outline: 2px solid #06c; outline-offset: -2px; }
+td.c > i { display: inline-block; width: var(--bw); height: var(--bh);
+  margin-right: var(--bg); vertical-align: top; border: 1px solid #ffffff;
+  background: var(--f, transparent); }
+td.c > i.sig { border-color: var(--e); }
+.c i.z { --f:#f0f0f0; --e:#bbbbbb; }
+.f-error i.p1 { --f:#eaf2f8; --e:#696d70; }
+.f-error i.p2 { --f:#d9e4ed; --e:#62676b; }
+.f-error i.p3 { --f:#c8d6e2; --e:#5a6066; }
+.f-error i.p4 { --f:#b7c8d7; --e:#525a61; }
+.f-error i.p5 { --f:#a5bacd; --e:#4a545c; }
+.f-error i.p6 { --f:#94acc2; --e:#434d57; }
+.f-error i.p7 { --f:#839eb7; --e:#3b4752; }
+.f-error i.p8 { --f:#7291ac; --e:#33414d; }
+.f-error i.p9 { --f:#6183a1; --e:#2c3b48; }
+.f-error i.p10 { --f:#507596; --e:#243544; }
+.f-error i.p11 { --f:#3e678c; --e:#1c2e3f; }
+.f-error i.p12 { --f:#2d5981; --e:#14283a; }
+.f-error i.p13 { --f:#1c4b76; --e:#0d2235; }
+.f-error i.p14 { --f:#0b3d6b; --e:#051b30; }
+.f-error i.n1 { --f:#fdeae7; --e:#726968; }
+.f-error i.n2 { --f:#f3dad6; --e:#6d6260; }
+.f-error i.n3 { --f:#e9cac6; --e:#695b59; }
+.f-error i.n4 { --f:#dfb9b5; --e:#645351; }
+.f-error i.n5 { --f:#d5a9a5; --e:#604c4a; }
+.f-error i.n6 { --f:#cb9994; --e:#5b4543; }
+.f-error i.n7 { --f:#c18984; --e:#573e3b; }
+.f-error i.n8 { --f:#b67873; --e:#523634; }
+.f-error i.n9 { --f:#ac6863; --e:#4d2f2d; }
+.f-error i.n10 { --f:#a25852; --e:#492825; }
+.f-error i.n11 { --f:#984842; --e:#44201e; }
+.f-error i.n12 { --f:#8e3731; --e:#401916; }
+.f-error i.n13 { --f:#842721; --e:#3b120f; }
+.f-error i.n14 { --f:#7a1710; --e:#370a07; }
+.f-activity i.p1 { --f:#f3ece1; --e:#6d6a65; }
+.f-activity i.p2 { --f:#e7ded0; --e:#68645e; }
+.f-activity i.p3 { --f:#dcd0bf; --e:#635e56; }
+.f-activity i.p4 { --f:#d0c2af; --e:#5e574f; }
+.f-activity i.p5 { --f:#c5b49e; --e:#595147; }
+.f-activity i.p6 { --f:#b9a68d; --e:#534b3f; }
+.f-activity i.p7 { --f:#ad987c; --e:#4e4438; }
+.f-activity i.p8 { --f:#a28a6c; --e:#493e31; }
+.f-activity i.p9 { --f:#967c5b; --e:#443829; }
+.f-activity i.p10 { --f:#8a6e4a; --e:#3e3221; }
+.f-activity i.p11 { --f:#7f6039; --e:#392b1a; }
+.f-activity i.p12 { --f:#735229; --e:#342512; }
+.f-activity i.p13 { --f:#684418; --e:#2f1f0b; }
+.f-activity i.p14 { --f:#5c3607; --e:#291803; }
+.f-activity i.n1 { --f:#e4f2f0; --e:#676d6c; }
+.f-activity i.n2 { --f:#d3e5e2; --e:#5f6766; }
+.f-activity i.n3 { --f:#c1d7d5; --e:#576160; }
+.f-activity i.n4 { --f:#b0cac7; --e:#4f5b5a; }
+.f-activity i.n5 { --f:#9ebcb9; --e:#475553; }
+.f-activity i.n6 { --f:#8dafac; --e:#3f4f4d; }
+.f-activity i.n7 { --f:#7ba29e; --e:#374947; }
+.f-activity i.n8 { --f:#6a9490; --e:#304341; }
+.f-activity i.n9 { --f:#588782; --e:#283d3a; }
+.f-activity i.n10 { --f:#477a75; --e:#203735; }
+.f-activity i.n11 { --f:#356c67; --e:#18312e; }
+.f-activity i.n12 { --f:#245f59; --e:#102b28; }
+.f-activity i.n13 { --f:#12514c; --e:#082422; }
+.f-activity i.n14 { --f:#01443e; --e:#001f1c; }
+td.c > i:last-child { margin-right: 0; }
+i.b.nodata { background: repeating-linear-gradient(45deg, #fff, #fff 2px,
+  #e3e6ea 2px, #e3e6ea 4px); border-color: #e3e6ea; }
+tbody tr:hover th { background: #eaeef3; }
+.legend { margin-top: 16px; font-size: 12px; color: #3b424b; max-width: 62em; }
+.legend h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
+  color: #5b6470; margin: 15px 0 5px; }
+.ramp { display: inline-block; vertical-align: middle; margin: 0 5px; }
+.ramp i { display: inline-block; width: 11px; height: 13px; border: 1px solid; }
+.caveat { border-left: 3px solid #d8b24a; padding: 6px 0 6px 11px; margin: 7px 0;
+  background: #fffdf5; }
+
+/* ---- drill-down ---------------------------------------------------------- */
+dialog#sc-detail { border: 1px solid #c8ced6; border-radius: 8px; padding: 0;
+  max-width: 96vw; box-shadow: 0 10px 40px rgba(0,0,0,.22); }
+dialog#sc-detail::backdrop { background: rgba(20,24,28,.45); }
+#sc-detail .head { display: flex; align-items: baseline; gap: 12px;
+  padding: 12px 16px 8px; border-bottom: 1px solid #eceff3; }
+#sc-detail h2 { font-size: 14px; margin: 0; }
+#sc-detail .meta { font-size: 12px; color: #5b6470; }
+#sc-detail .close { margin-left: auto; font: inherit; font-size: 16px;
+  line-height: 1; border: 0; background: none; cursor: pointer; color: #5b6470;
+  padding: 0 2px; }
+#sc-detail .charts { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 12px 4px; }
+#sc-detail figure { margin: 0; }
+#sc-detail figcaption { font-size: 11px; color: #5b6470; margin: 0 0 2px 46px; }
+#sc-detail .note { font-size: 11px; color: #5b6470; padding: 0 16px 12px;
+  max-width: 62em; }
+#sc-detail .key { display: inline-block; width: 22px; height: 2px;
+  vertical-align: middle; margin: 0 4px 0 10px; }
+
+@media print {
+  .controls { display: none; }
+  .scroll { max-height: none; overflow: visible; border: 0; }
+  .sc thead th, .sc tbody th { position: static; }
+  dialog#sc-detail { display: none; }
+}
+</style><style id="sc-dyn"></style>
+</head><body>
+<h1>GraphCast vs IFS HRES, verified against ERA5</h1>
+<p class="sub">WeatherBench 2, 2020: 732 initialisations (00 and 12 UTC), lead times 1-10 days, 5.625° grid</p>
+
+<form class="controls" id="sc-controls">
+  <fieldset><legend>spatial_region</legend>
+    <label><input type="checkbox" data-depth="0" data-key="global" checked> global</label>
+    <label><input type="checkbox" data-depth="0" data-key="n.extratropics" checked> n.extratropics</label>
+    <label><input type="checkbox" data-depth="0" data-key="tropics" checked> tropics</label>
+    <label><input type="checkbox" data-depth="0" data-key="s.extratropics" checked> s.extratropics</label>
+    <label><input type="checkbox" data-depth="0" data-key="europe" checked> europe</label>
+    <button type="button" data-set-all="1" data-depth="0">all</button>
+    <button type="button" data-set-all="0" data-depth="0">none</button>
+  </fieldset>
+</form>
+
+<div class="scroll"><table class="sc" id="sc-table"><caption class="vh">GraphCast vs IFS HRES, verified against ERA5</caption><thead><tr><th class="corner" colspan="2" rowspan="2"></th><th class="h0" data-group="global" colspan="1" scope="colgroup">global</th><th class="h0" data-group="n.extratropics" colspan="1" scope="colgroup">n.extratropics</th><th class="h0" data-group="tropics" colspan="1" scope="colgroup">tropics</th><th class="h0" data-group="s.extratropics" colspan="1" scope="colgroup">s.extratropics</th><th class="h0" data-group="europe" colspan="1" scope="colgroup">europe</th></tr></thead><tbody><tr><th class="" scope="row">rmse</th><th class="lv" scope="row">t2m</th><td class="c f-error" data-col="global" data-i="0" tabindex="0" role="button" data-cell="rmse-t2m__global"><i class="b p11 sig" title="T+24 49% better, significant at 99.7% (732 cases)"></i><i class="b p10 sig" title="T+48 39.5% better, significant at 99.7% (732 cases)"></i><i class="b p10 sig" title="T+72 31.3% better, significant at 99.7% (732 cases)"></i><i class="b p9 sig" title="T+96 24.2% better, significant at 99.7% (732 cases)"></i><i class="b p8 sig" title="T+120 18.5% better, significant at 99.7% (732 cases)"></i><i class="b p7 sig" title="T+144 13.9% better, significant at 99.7% (732 cases)"></i><i class="b p7 sig" title="T+168 10.6% better, significant at 99.7% (732 cases)"></i><i class="b p6 sig" title="T+192 7.88% better, significant at 99.7% (732 cases)"></i><i class="b p5 sig" title="T+216 5.72% better, significant at 99.7% (732 cases)"></i><i class="b p4 sig" title="T+240 3.93% better, significant at 99.7% (732 cases)"></i></td><td class="c f-error" data-col="n.extratropics" data-i="1" tabindex="0" role="button" data-cell="rmse-t2m__n_extratropics"><i class="b p11 sig" title="T+24 54.5% better, significant at 99.7% (732 cases)"></i><i class="b p11 sig" title="T+48 45.7% better, significant at 99.7% (732 cases)"></i><i class="b p10 sig" title="T+72 37% better, significant at 99.7% (732 cases)"></i><i class="b p9 sig" title="T+96 28.9% better, significant at 99.7% (732 cases)"></i><i class="b p9 sig" title="T+120 21.8% better, significant at 99.7% (732 cases)"></i><i class="b p8 sig" title="T+144 15.7% better, significant at 99.7% (732 cases)"></i><i class="b p7 sig" title="T+168 11.8% better, significant at 99.7% (732 cases)"></i><i class="b p6 sig" title="T+192 8.84% better, significant at 99.7% (732 cases)"></i><i class="b p5 sig" title="T+216 6.32% better, significant at 99.7% (732 cases)"></i><i class="b p4 sig" title="T+240 4.4% better, significant at 99.7% (732 cases)"></i></td><td class="c f-error" data-col="tropics" data-i="2" tabindex="0" role="button" data-cell="rmse-t2m__tropics"><i class="b p11 sig" title="T+24 43% better, significant at 99.7% (732 cases)"></i><i class="b p10 sig" title="T+48 37.4% better, significant at 99.7% (732 cases)"></i><i class="b p10 sig" title="T+72 33.9% better, significant at 99.7% (732 cases)"></i><i class="b p10 sig" title="T+96 30.6% better, significant at 99.7% (732 cases)"></i><i class="b p9 sig" title="T+120 27.3% better, significant at 99.7% (732 cases)"></i><i class="b p9 sig" title="T+144 24.4% better, significant at 99.7% (732 cases)"></i><i class="b p9 sig" title="T+168 21.1% better, significant at 99.7% (732 cases)"></i><i class="b p8 sig" title="T+192 18% better, significant at 99.7% (732 cases)"></i><i class="b p8 sig" title="T+216 15.2% better, significant at 99.7% (732 cases)"></i><i class="b p7 sig" title="T+240 13% better, significant at 99.7% (732 cases)"></i></td><td class="c f-error" data-col="s.extratropics" data-i="3" tabindex="0" role="button" data-cell="rmse-t2m__s_extratropics"><i class="b p10 sig" title="T+24 39.7% better, significant at 99.7% (732 cases)"></i><i class="b p9 sig" title="T+48 27.1% better, significant at 99.7% (732 cases)"></i><i class="b p8 sig" title="T+72 19.7% better, significant at 99.7% (732 cases)"></i><i class="b p8 sig" title="T+96 15.3% better, significant at 99.7% (732 cases)"></i><i class="b p7 sig" title="T+120 12.4% better, significant at 99.7% (732 cases)"></i><i class="b p7 sig" title="T+144 10.4% better, significant at 99.7% (732 cases)"></i><i class="b p6 sig" title="T+168 8.32% better, significant at 99.7% (732 cases)"></i><i class="b p5 sig" title="T+192 6.35% better, significant at 99.7% (732 cases)"></i><i class="b p4 sig" title="T+216 4.76% better, significant at 99.7% (732 cases)"></i><i class="b p4 sig" title="T+240 3.16% better, significant at 99.7% (732 cases)"></i></td><td class="c f-error" data-col="europe" data-i="4" tabindex="0" role="button" data-cell="rmse-t2m__europe"><i class="b p11 sig" title="T+24 48.3% better, significant at 99.7% (732 cases)"></i><i class="b p10 sig" title="T+48 38.4% better, significant at 99.7% (732 cases)"></i><i class="b p9 sig" title="T+72 27% better, significant at 99.7% (732 cases)"></i><i class="b p8 sig" title="T+96 18.7% better, significant at 99.7% (732 cases)"></i><i class="b p7 sig" title="T+120 12.4% better, significant at 99.7% (732 cases)"></i><i class="b p6 sig" title="T+144 10% better, significant at 99.7% (732 cases)"></i><i class="b p6 sig" title="T+168 8.35% better, significant at 99.7% (732 cases)"></i><i class="b p5 sig" title="T+192 7.2% better, significant at 99.7% (732 cases)"></i><i class="b p5 sig" title="T+216 6.18% better, significant at 99.7% (732 cases)"></i><i class="b p4 sig" title="T+240 3.95% better, significant at 95% (732 cases)"></i></td></tr><tr><th class="" scope="row"></th><th class="lv" scope="row">msl</th><td class="c f-error" data-col="global" data-i="5" tabindex="0" role="button" data-cell="rmse-msl__global"><i class="b p9 sig" title="T+24 22.2% better, significant at 99.7% (732 cases)"></i><i class="b p7 sig" title="T+48 14.9% better, significant at 99.7% (732 cases)"></i><i class="b p7 sig" title="T+72 11% better, significant at 99.7% (732 cases)"></i><i class="b p7 sig" title="T+96 10.2% better, significant at 99.7% (732 cases)"></i><i class="b p7 sig" title="T+120 10.3% better, significant at 99.7% (732 cases)"></i><i class="b p7 sig" title="T+144 10.3% better, significant at 99.7% (732 cases)"></i><i class="b p7 sig" title="T+168 10.3% better, significant at 99.7% (732 cases)"></i><i class="b p6 sig" title="T+192 9.92% better, significant at 99.7% (732 cases)"></i><i class="b p6 sig" title="T+216 9.27% better, significant at 99.7% (732 cases)"></i><i class="b p6 sig" title="T+240 8.91% better, significant at 99.7% (732 cases)"></i></td><td class="c f-error" data-col="n.extratropics" data-i="6" tabindex="0" role="button" data-cell="rmse-msl__n_extratropics"><i class="b p9 sig" title="T+24 20.8% better, significant at 99.7% (732 cases)"></i><i class="b p7 sig" title="T+48 12.3% better, significant at 99.7% (732 cases)"></i><i class="b p7 sig" title="T+72 10.1% better, significant at 99.7% (732 cases)"></i><i class="b p7 sig" title="T+96 10.5% better, significant at 99.7% (732 cases)"></i><i class="b p7 sig" title="T+120 10.5% better, significant at 99.7% (732 cases)"></i><i class="b p7 sig" title="T+144 10.7% better, significant at 99.7% (732 cases)"></i><i class="b p7 sig" title="T+168 10.9% better, significant at 99.7% (732 cases)"></i><i class="b p6 sig" title="T+192 9.85% better, significant at 99.7% (732 cases)"></i><i class="b p6 sig" title="T+216 8.04% better, significant at 99.7% (732 cases)"></i><i class="b p5 sig" title="T+240 6.71% better, significant at 99.7% (732 cases)"></i></td><td class="c f-error" data-col="tropics" data-i="7" tabindex="0" role="button" data-cell="rmse-msl__tropics"><i class="b p9 sig" title="T+24 25.8% better, significant at 99.7% (732 cases)"></i><i class="b p9 sig" title="T+48 26.2% better, significant at 99.7% (732 cases)"></i><i class="b p9 sig" title="T+72 24.7% better, significant at 99.7% (732 cases)"></i><i class="b p9 sig" title="T+96 22.7% better, significant at 99.7% (732 cases)"></i><i class="b p9 sig" title="T+120 20.5% better, significant at 99.7% (732 cases)"></i><i class="b p8 sig" title="T+144 18.3% better, significant at 99.7% (732 cases)"></i><i class="b p8 sig" title="T+168 15.4% better, significant at 99.7% (732 cases)"></i><i class="b p7 sig" title="T+192 13.2% better, significant at 99.7% (732 cases)"></i><i class="b p7 sig" title="T+216 11.2% better, significant at 99.7% (732 cases)"></i><i class="b p6 sig" title="T+240 8.22% better, significant at 99.7% (732 cases)"></i></td><td class="c f-error" data-col="s.extratropics" data-i="8" tabindex="0" role="button" data-cell="rmse-msl__s_extratropics"><i class="b p9 sig" title="T+24 21.8% better, significant at 99.7% (732 cases)"></i><i class="b p7 sig" title="T+48 14.1% better, significant at 99.7% (732 cases)"></i><i class="b p7 sig" title="T+72 10% better, significant at 99.7% (732 cases)"></i><i class="b p6 sig" title="T+96 9.29% better, significant at 99.7% (732 cases)"></i><i class="b p6 sig" title="T+120 9.83% better, significant at 99.7% (732 cases)"></i><i class="b p6 sig" title="T+144 9.94% better, significant at 99.7% (732 cases)"></i><i class="b p6 sig" title="T+168 9.99% better, significant at 99.7% (732 cases)"></i><i class="b p7 sig" title="T+192 10.1% better, significant at 99.7% (732 cases)"></i><i class="b p7 sig" title="T+216 10.1% better, significant at 99.7% (732 cases)"></i><i class="b p7 sig" title="T+240 10.3% better, significant at 99.7% (732 cases)"></i></td><td class="c f-error" data-col="europe" data-i="9" tabindex="0" role="button" data-cell="rmse-msl__europe"><i class="b p8 sig" title="T+24 19.5% better, significant at 99.7% (732 cases)"></i><i class="b p4 sig" title="T+48 4.17% better, significant at 95% (732 cases)"></i><i class="b p4 sig" title="T+72 3.07% better, significant at 68% (732 cases)"></i><i class="b p4 sig" title="T+96 4.69% better, significant at 95% (732 cases)"></i><i class="b p6 sig" title="T+120 8.05% better, significant at 99.7% (732 cases)"></i><i class="b p6 sig" title="T+144 9.13% better, significant at 99.7% (732 cases)"></i><i class="b p6 sig" title="T+168 9.97% better, significant at 99.7% (732 cases)"></i><i class="b p7 sig" title="T+192 10.5% better, significant at 99.7% (732 cases)"></i><i class="b p6 sig" title="T+216 9.62% better, significant at 99.7% (732 cases)"></i><i class="b p6 sig" title="T+240 9.77% better, significant at 99.7% (732 cases)"></i></td></tr><tr><th class="" scope="row"></th><th class="lv" scope="row">ws10</th><td class="c f-error" data-col="global" data-i="10" tabindex="0" role="button" data-cell="rmse-ws10__global"><i class="b p7 sig" title="T+24 13.8% better, significant at 99.7% (732 cases)"></i><i class="b p5 sig" title="T+48 7.04% better, significant at 99.7% (732 cases)"></i><i class="b p5 sig" title="T+72 5.79% better, significant at 99.7% (732 cases)"></i><i class="b p5 sig" title="T+96 5.98% better, significant at 99.7% (732 cases)"></i><i class="b p5 sig" title="T+120 6.09% better, significant at 99.7% (732 cases)"></i><i class="b p5 sig" title="T+144 5.99% better, significant at 99.7% (732 cases)"></i><i class="b p5 sig" title="T+168 5.43% better, significant at 99.7% (732 cases)"></i><i class="b p4 sig" title="T+192 4.71% better, significant at 99.7% (732 cases)"></i><i class="b p4 sig" title="T+216 4.31% better, significant at 99.7% (732 cases)"></i><i class="b p4 sig" title="T+240 3.62% better, significant at 99.7% (732 cases)"></i></td><td class="c f-error" data-col="n.extratropics" data-i="11" tabindex="0" role="button" data-cell="rmse-ws10__n_extratropics"><i class="b p5 sig" title="T+24 5.89% better, significant at 99.7% (732 cases)"></i><i class="b p1 sig" title="T+48 0.698% better, significant at 68% (732 cases)"></i><i class="b p2 sig" title="T+72 1.9% better, significant at 95% (732 cases)"></i><i class="b p4 sig" title="T+96 3.75% better, significant at 99.7% (732 cases)"></i><i class="b p4 sig" title="T+120 4.5% better, significant at 99.7% (732 cases)"></i><i class="b p5 sig" title="T+144 5.26% better, significant at 99.7% (732 cases)"></i><i class="b p5 sig" title="T+168 5.05% better, significant at 99.7% (732 cases)"></i><i class="b p4 sig" title="T+192 4.18% better, significant at 99.7% (732 cases)"></i><i class="b p4 sig" title="T+216 3.56% better, significant at 99.7% (732 cases)"></i><i class="b p3 sig" title="T+240 2.74% better, significant at 99.7% (732 cases)"></i></td><td class="c f-error" data-col="tropics" data-i="12" tabindex="0" role="button" data-cell="rmse-ws10__tropics"><i class="b p9 sig" title="T+24 21.5% better, significant at 99.7% (732 cases)"></i><i class="b p8 sig" title="T+48 16.3% better, significant at 99.7% (732 cases)"></i><i class="b p7 sig" title="T+72 13.9% better, significant at 99.7% (732 cases)"></i><i class="b p7 sig" title="T+96 12.1% better, significant at 99.7% (732 cases)"></i><i class="b p7 sig" title="T+120 11% better, significant at 99.7% (732 cases)"></i><i class="b p7 sig" title="T+144 10.2% better, significant at 99.7% (732 cases)"></i><i class="b p6 sig" title="T+168 9.26% better, significant at 99.7% (732 cases)"></i><i class="b p6 sig" title="T+192 7.75% better, significant at 99.7% (732 cases)"></i><i class="b p5 sig" title="T+216 6.36% better, significant at 99.7% (732 cases)"></i><i class="b p5 sig" title="T+240 5.13% better, significant at 99.7% (732 cases)"></i></td><td class="c f-error" data-col="s.extratropics" data-i="13" tabindex="0" role="button" data-cell="rmse-ws10__s_extratropics"><i class="b p6 sig" title="T+24 9.28% better, significant at 99.7% (732 cases)"></i><i class="b p4 sig" title="T+48 3.12% better, significant at 99.7% (732 cases)"></i><i class="b p4 sig" title="T+72 3.57% better, significant at 99.7% (732 cases)"></i><i class="b p4 sig" title="T+96 4.87% better, significant at 99.7% (732 cases)"></i><i class="b p5 sig" title="T+120 5.62% better, significant at 99.7% (732 cases)"></i><i class="b p5 sig" title="T+144 5.43% better, significant at 99.7% (732 cases)"></i><i class="b p4 sig" title="T+168 4.83% better, significant at 99.7% (732 cases)"></i><i class="b p4 sig" title="T+192 4.33% better, significant at 99.7% (732 cases)"></i><i class="b p4 sig" title="T+216 4.2% better, significant at 99.7% (732 cases)"></i><i class="b p4 sig" title="T+240 3.61% better, significant at 99.7% (732 cases)"></i></td><td class="c f-error" data-col="europe" data-i="14" tabindex="0" role="button" data-cell="rmse-ws10__europe"><i class="b n2 sig" title="T+24 1.58% worse, significant at 68% (732 cases)"></i><i class="b n6 sig" title="T+48 7.79% worse, significant at 99.7% (732 cases)"></i><i class="b n5 sig" title="T+72 5.28% worse, significant at 99.7% (732 cases)"></i><i class="b n2" title="T+96 1.8% worse (732 cases)"></i><i class="b p3 sig" title="T+120 2.21% better, significant at 68% (732 cases)"></i><i class="b p4 sig" title="T+144 4.42% better, significant at 99.7% (732 cases)"></i><i class="b p4 sig" title="T+168 3.58% better, significant at 95% (732 cases)"></i><i class="b p4 sig" title="T+192 3.02% better, significant at 68% (732 cases)"></i><i class="b p3 sig" title="T+216 2.02% better, significant at 68% (732 cases)"></i><i class="b p3 sig" title="T+240 2.84% better, significant at 95% (732 cases)"></i></td></tr></tbody></table></div>
+
+<div class="legend">
+  <h2>How to read this</h2>
+  <p>Each cell is one comparison across forecast lead time, earliest on the left:
+     10 boxes from T+24 to T+240. Colour shows the
+     difference between <b>graphcast</b> and <b>ifs-hres</b>, and its
+     intensity the size of that difference relative to ifs-hres. Hover a box
+     for the exact value, or click a cell for the full series.</p>
+  <p><b>error metrics</b>: worse
+     <span class="ramp"><i style="background:#842721;border-color:#3b120f"></i><i style="background:#984842;border-color:#44201e"></i><i style="background:#ac6863;border-color:#4d2f2d"></i><i style="background:#c18984;border-color:#573e3b"></i><i style="background:#d5a9a5;border-color:#604c4a"></i><i style="background:#e9cac6;border-color:#695b59"></i><i style="background:#fdeae7;border-color:#726968"></i></span>
+     no change
+     <span class="ramp"><i style="background:#eaf2f8;border-color:#696d70"></i><i style="background:#c8d6e2;border-color:#5a6066"></i><i style="background:#a5bacd;border-color:#4a545c"></i><i style="background:#839eb7;border-color:#3b4752"></i><i style="background:#6183a1;border-color:#2c3b48"></i><i style="background:#3e678c;border-color:#1c2e3f"></i><i style="background:#1c4b76;border-color:#0d2235"></i></span>
+     better</p>
+  <p><b>activity metrics</b>: less active
+     <span class="ramp"><i style="background:#12514c;border-color:#082422"></i><i style="background:#356c67;border-color:#18312e"></i><i style="background:#588782;border-color:#283d3a"></i><i style="background:#7ba29e;border-color:#374947"></i><i style="background:#9ebcb9;border-color:#475553"></i><i style="background:#c1d7d5;border-color:#576160"></i><i style="background:#e4f2f0;border-color:#676d6c"></i></span>
+     no change
+     <span class="ramp"><i style="background:#f3ece1;border-color:#6d6a65"></i><i style="background:#dcd0bf;border-color:#635e56"></i><i style="background:#c5b49e;border-color:#595147"></i><i style="background:#ad987c;border-color:#4e4438"></i><i style="background:#967c5b;border-color:#443829"></i><i style="background:#7f6039;border-color:#392b1a"></i><i style="background:#684418;border-color:#2f1f0b"></i></span>
+     more active</p>
+  <p><b>A framed box is significant</b>
+     <span class="ramp"><i style="background:#7291ac;border-color:#33414d"></i></span>
+     — its 68% interval on the difference excludes zero. An unframed
+     box
+     <span class="ramp"><i style="background:#7291ac;border-color:#ffffff"></i></span>
+     is not. 149 of 150 boxes are framed. The frame is one bit; hover a box for the strongest level it
+     reaches, up to 99.7%.</p>
+  <p>A blank grey cell has no data at all, which is deliberately distinct from a cell
+     whose difference happens to be zero. A hatched box is a lead time with no value
+     inside a cell that otherwise has data.</p>
+
+  <h2>What this card cannot tell you</h2>
+  <div class="caveat">Intervals from a moving-block bootstrap over forecast cases (blocks of 20 cases, 2000 resamples, seed 0). The difference is paired: it is taken per case before averaging, with one resample shared by both sources, so their common error cancels.</div>
+  <div class="caveat">Consecutive forecasts share a weather system. Blocking reduces the resulting over-marking but does not remove it: measured at roughly 8% false positives against a nominal 5% on AR(1) synthetic data, and no block length reaches nominal.</div>
+  <div class="caveat">This card shows 150 simultaneous comparisons. Isolated cells mean little; coherent blocks mean a lot.</div>
+  <div class="caveat">99% of boxes are marked significant. That is high enough to be worth double-checking how the interval was resampled, rather than read as 99% confidence in the result.</div>
+  <p class="sub">3 rows x 5 columns; 15 of 15 crossings populated; 150 boxes. Drill-down data 7 kB (1.9x compressed).</p>
+</div>
+
+<dialog id="sc-detail">
+  <div class="head">
+    <h2></h2><span class="meta"></span>
+    <button type="button" class="close" aria-label="Close">&#10005;</button>
+  </div>
+  <div class="charts"></div>
+  <div class="note"></div>
+</dialog>
+<script type="application/gzip;base64" id="sc-data">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</script>
+<script type="application/json" id="sc-colours">{"control": "#8a6d1f", "experiment": "#1f5c8a", "diff": "#3b424b"}</script>
+<script type="application/json" id="sc-groups">{"global": ["global"], "n.extratropics": ["n.extratropics"], "tropics": ["tropics"], "s.extratropics": ["s.extratropics"], "europe": ["europe"]}</script>
+<script type="application/json" id="sc-colkeys">["global", "n.extratropics", "tropics", "s.extratropics", "europe"]</script>
+<script type="application/json" id="sc-sep">"|"</script>
+<script>
+(function () {
+  var table = document.getElementById('sc-table');
+  var dyn = document.getElementById('sc-dyn').sheet;
+  var groups = JSON.parse(document.getElementById('sc-groups').textContent);
+  var allKeys = JSON.parse(document.getElementById('sc-colkeys').textContent);
+  var SEP = JSON.parse(document.getElementById('sc-sep').textContent);
+  var hidden = new Set();
+
+  function apply() {
+    while (dyn.cssRules.length) dyn.deleteRule(0);
+    if (hidden.size) {
+      var sel = Array.from(hidden).map(function (k) {
+        return '[data-col="' + CSS.escape(k) + '"]';
+      }).join(',');
+      dyn.insertRule(sel + '{display:none}', 0);
+    }
+    Array.prototype.forEach.call(table.tHead.rows, function (head) {
+      for (var i = 0; i < head.cells.length; i++) {
+        var th = head.cells[i], g = th.dataset.group;
+        if (!g) continue;
+        var vis = groups[g].filter(function (k) { return !hidden.has(k); }).length;
+        th.hidden = vis === 0;
+        if (vis) th.colSpan = vis;
+      }
+    });
+  }
+
+  function recompute() {
+    hidden.clear();
+    var off = {};
+    document.querySelectorAll('#sc-controls input[type=checkbox]').forEach(function (b) {
+      if (!b.checked) {
+        var d = b.dataset.depth;
+        (off[d] = off[d] || []).push(b.dataset.key);
+      }
+    });
+    allKeys.forEach(function (k) {
+      var parts = k.split(SEP);
+      for (var d in off) {
+        if (off[d].indexOf(parts[d]) !== -1) { hidden.add(k); return; }
+      }
+    });
+    apply();
+  }
+
+  var controls = document.getElementById('sc-controls');
+  controls.addEventListener('change', recompute);
+  controls.addEventListener('click', function (e) {
+    if (e.target.tagName !== 'BUTTON') return;
+    var want = e.target.dataset.setAll === '1';
+    controls.querySelectorAll('input[data-depth="' + e.target.dataset.depth + '"]')
+      .forEach(function (b) { b.checked = want; });
+    recompute();
+  });
+
+  /* ---- drill-down -------------------------------------------------------- */
+  var dlg = document.getElementById('sc-detail');
+  var dataEl = document.getElementById('sc-data');
+  if (!dlg || !dataEl) return;
+
+  var COLOURS = JSON.parse(document.getElementById('sc-colours').textContent);
+  var payload = null;
+
+  /* Inflated on first click, not at load: the page is useful without it, and on a
+     full-size card this is the largest thing in the file. */
+  function load() {
+    if (payload) return Promise.resolve(payload);
+    var bin = Uint8Array.from(atob(dataEl.textContent.trim()), function (c) {
+      return c.charCodeAt(0);
+    });
+    if (!('DecompressionStream' in window)) {
+      return Promise.reject(new Error('DecompressionStream unavailable'));
+    }
+    var stream = new Blob([bin]).stream()
+      .pipeThrough(new DecompressionStream('gzip'));
+    return new Response(stream).text().then(function (t) {
+      payload = JSON.parse(t);
+      return payload;
+    });
+  }
+
+  var NS = 'http://www.w3.org/2000/svg';
+  function el(tag, attrs, kids) {
+    var n = document.createElementNS(NS, tag);
+    for (var k in attrs) if (attrs[k] != null) n.setAttribute(k, attrs[k]);
+    (kids || []).forEach(function (c) { n.append(c); });
+    return n;
+  }
+  function txt(s) { return document.createTextNode(String(s)); }
+
+  function ticks(lo, hi, n) {
+    var span = hi - lo;
+    if (!(span > 0)) return [lo];
+    var raw = span / n;
+    var mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    var step = [1, 2, 2.5, 5, 10].reduce(function (a, b) {
+      return Math.abs(b * mag - raw) < Math.abs(a * mag - raw) ? b : a;
+    }) * mag;
+    var out = [], v = Math.ceil(lo / step) * step;
+    for (; v <= hi + step * 1e-9; v += step) out.push(v);
+    return out;
+  }
+
+  function fmt(v) {
+    var a = Math.abs(v);
+    if (a === 0) return '0';
+    if (a >= 1000 || a < 0.01) return v.toExponential(1);
+    return String(Number(v.toPrecision(4)));
+  }
+
+  /* One line with an optional confidence band. `series` entries are
+     {y, lo, hi, colour, name, dash}. */
+  function chart(opts) {
+    var x = opts.x, series = opts.series.filter(function (s) { return s.y; });
+    var W = opts.w || 430, H = opts.h || 250;
+    var m = { l: 58, r: 12, t: 8, b: 30 };
+    var all = [];
+    series.forEach(function (s) {
+      s.y.forEach(function (v, i) {
+        if (v == null) return;
+        all.push(v);
+        if (s.lo && s.lo[i] != null) all.push(s.lo[i]);
+        if (s.hi && s.hi[i] != null) all.push(s.hi[i]);
+      });
+    });
+    if (opts.zeroLine) all.push(0);
+    if (!all.length) return el('svg', { width: W, height: H });
+    var y0 = Math.min.apply(null, all), y1 = Math.max.apply(null, all);
+    var pad = (y1 - y0) * 0.08 || Math.abs(y0) * 0.1 || 1;
+    y0 -= pad; y1 += pad;
+
+    var sx = function (i) {
+      return x.length < 2 ? m.l : m.l + i * (W - m.l - m.r) / (x.length - 1);
+    };
+    var sy = function (v) {
+      return m.t + (y1 - v) * (H - m.t - m.b) / (y1 - y0);
+    };
+
+    var g = [];
+    ticks(y0, y1, 5).forEach(function (t) {
+      g.push(el('line', { x1: m.l, x2: W - m.r, y1: sy(t), y2: sy(t),
+                          stroke: '#e8ebee' }));
+      g.push(el('text', { x: m.l - 7, y: sy(t) + 3, 'text-anchor': 'end',
+                          'font-size': 10, fill: '#5b6470' }, [txt(fmt(t))]));
+    });
+    if (opts.zeroLine) {
+      g.push(el('line', { x1: m.l, x2: W - m.r, y1: sy(0), y2: sy(0),
+                          stroke: '#98a2ad', 'stroke-dasharray': '4 3' }));
+    }
+    x.forEach(function (lab, i) {
+      g.push(el('text', { x: sx(i), y: H - 10, 'text-anchor': 'middle',
+                          'font-size': 9.5, fill: '#5b6470' }, [txt(lab)]));
+    });
+
+    series.forEach(function (s, si) {
+      /* Error bars, offset slightly per series so two of them do not overlap
+         into an unreadable smear at the same x. */
+      var off = (si - (series.length - 1) / 2) * 3;
+      if (s.lo && s.hi) {
+        var cap = 3;
+        s.y.forEach(function (v, i) {
+          if (v == null || s.lo[i] == null || s.hi[i] == null) return;
+          var xx = sx(i) + off, a = sy(s.lo[i]), b = sy(s.hi[i]);
+          g.push(el('line', { x1: xx, x2: xx, y1: a, y2: b,
+                              stroke: s.colour, 'stroke-width': 1.2 }));
+          g.push(el('line', { x1: xx - cap, x2: xx + cap, y1: a, y2: a,
+                              stroke: s.colour, 'stroke-width': 1.2 }));
+          g.push(el('line', { x1: xx - cap, x2: xx + cap, y1: b, y2: b,
+                              stroke: s.colour, 'stroke-width': 1.2 }));
+        });
+      }
+      var pts = [];
+      s.y.forEach(function (v, i) {
+        if (v != null) pts.push((sx(i) + off) + ',' + sy(v));
+      });
+      g.push(el('polyline', { points: pts.join(' '), fill: 'none',
+                              stroke: s.colour, 'stroke-width': 1.9,
+                              'stroke-dasharray': s.dash || null }));
+      s.y.forEach(function (v, i) {
+        if (v != null) {
+          g.push(el('circle', { cx: sx(i) + off, cy: sy(v), r: 2.4,
+                                fill: s.colour }));
+        }
+      });
+    });
+
+    if (opts.ylabel) {
+      g.push(el('text', { x: 12, y: H / 2, 'font-size': 10.5, fill: '#3b424b',
+                          'text-anchor': 'middle',
+                          transform: 'rotate(-90 12 ' + H / 2 + ')' },
+                [txt(opts.ylabel)]));
+    }
+    return el('svg', { viewBox: '0 0 ' + W + ' ' + H, width: W, height: H,
+                       role: 'img', 'aria-label': opts.ylabel || '' }, g);
+  }
+
+  function pctLabel(conf) {
+    // 99.7% is 3 sigma and a real choice of level; rounding it to 100% would
+    // turn a stated interval into a claim of certainty
+    if (!conf) return '';
+    return Number((conf * 100).toPrecision(4)) + '%';
+  }
+
+  function swatch(colour, dash) {
+    var s = document.createElement('span');
+    s.className = 'key';
+    s.style.background = dash
+      ? 'repeating-linear-gradient(90deg,' + colour + ' 0 4px,transparent 4px 7px)'
+      : colour;
+    return s;
+  }
+
+  function open(index) {
+    load().then(function (d) {
+      var c = d.cells[index];
+      if (!c) return;
+      dlg.querySelector('h2').textContent = c.t;
+      dlg.querySelector('.meta').textContent =
+        c.m + (c.u ? ' (' + c.u + ')' : '');
+
+      var charts = dlg.querySelector('.charts');
+      charts.replaceChildren();
+
+      /* Chart 1: the paired difference in the metric's own units, with its
+         interval. Plotted in units rather than percent so the error bars are on
+         the same scale as the quantity -- the percentage is a ratio of two
+         uncertain numbers and its interval is not simply the scaled one. */
+      var haveDiffCI = c.vl && c.vu;
+      var f1 = document.createElement('figure');
+      var cap1 = document.createElement('figcaption');
+      var src = c.s || d.experiment;
+      cap1.textContent = 'Difference: ' + src + ' minus ' + d.control
+        + (c.u ? ' (' + c.u + ')' : '')
+        + (haveDiffCI ? ', paired ' + pctLabel(d.confidence) + ' interval' : '');
+      f1.append(cap1, chart({
+        x: d.labels, zeroLine: true, ylabel: c.u || 'difference',
+        series: [{ y: c.v || [], lo: c.vl, hi: c.vu, colour: COLOURS.diff }]
+      }));
+
+      var f2 = document.createElement('figure');
+      var cap2 = document.createElement('figcaption');
+      cap2.textContent = c.m + (c.u ? ' (' + c.u + ')' : '')
+        + ', each with its own ' + pctLabel(d.confidence) + ' interval';
+      f2.append(cap2, chart({
+        x: d.labels, ylabel: c.u || c.m,
+        series: [
+          { y: c.c, lo: c.cl, hi: c.cu, colour: COLOURS.control,
+            name: d.control },
+          { y: c.e, lo: c.el, hi: c.eu, colour: COLOURS.experiment,
+            name: src, dash: '5 3' }
+        ].filter(function (s) { return s.y; })
+      }));
+      /* A neutral cell -- the baseline's own row, or a card with no baseline --
+         has a score of its own but no difference to chart. */
+      if (c.v) charts.append(f1);
+      charts.append(f2);
+
+      var note = dlg.querySelector('.note');
+      note.replaceChildren();
+      if (c.c) note.append(swatch(COLOURS.control), txt(' ' + d.control + '   '));
+      note.append(swatch(COLOURS.experiment, true), txt(' ' + src));
+      var extra = document.createElement('div');
+      extra.style.marginTop = '6px';
+      extra.textContent = !c.v
+        ? 'This source’s own score, with its own interval over forecast cases. '
+          + 'It is not compared with anything, so nothing here is marked '
+          + 'significant.'
+        : haveDiffCI
+        ? 'The difference interval is paired: it is computed per forecast case '
+          + 'before averaging, so the error the two sources share cancels. It is '
+          + 'therefore much tighter than the two intervals on the right, and it '
+          + 'is the one that decides significance. Overlapping intervals on the '
+          + 'right do not mean the difference is insignificant.'
+        : 'Intervals on the right are each source’s own, over forecast cases. The '
+          + 'difference has none: that needs a paired resample, which this card '
+          + 'does not carry, so nothing here is marked significant and '
+          + 'overlapping intervals do not mean the difference is insignificant.';
+      note.append(extra);
+      if (c.n) {
+        var cases = document.createElement('div');
+        cases.style.marginTop = '4px';
+        cases.textContent = 'Cases per lead time: ' + c.n.join(', ') + '.';
+        note.append(cases);
+      }
+      dlg.showModal();
+    }).catch(function (err) {
+      console.error('drill-down unavailable:', err);
+    });
+  }
+
+  table.addEventListener('click', function (e) {
+    var td = e.target.closest('td.c[data-i]');
+    if (td) open(Number(td.dataset.i));
+  });
+  table.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    var td = e.target.closest('td.c[data-i]');
+    if (td) { e.preventDefault(); open(Number(td.dataset.i)); }
+  });
+  dlg.querySelector('.close').addEventListener('click', function () { dlg.close(); });
+  dlg.addEventListener('click', function (e) {
+    if (e.target === dlg) dlg.close();   // click the backdrop
+  });
+})();
+</script>
+</body></html>

@@ -2,6 +2,15 @@
 
 Weather forecasting scorecards for machine-learning weather prediction.
 
+![GraphCast vs IFS HRES scorecard: three surface variables in five regions, lead times 1 to 10 days, blue where GraphCast is better](docs/images/scorecard.png)
+
+*GraphCast compared with IFS HRES, both verified against ERA5, over 2020
+(WeatherBench 2 data on its 5.625° grid, so the Europe region is only a few grid
+points). Blue is better than HRES, red worse; a dark frame marks a significant
+difference. The interactive version, with a drill-down chart behind every cell, is
+[`docs/images/scorecard.html`](docs/images/scorecard.html) (download it and open
+it in a browser). Both are made by [`docs/example/`](docs/example/).*
+
 When a forecasting system changes, the question is rarely "is it good?" but "is it
 better than what we already have, and **where is it worse**?" The evidence runs to
 thousands of numbers — every variable, level, spatial region, metric and lead time —
@@ -379,6 +388,9 @@ Other notes on the shape:
 - [`PLAN.md`](PLAN.md): the design document. What the dataset conceptually
   contains, how `n` and the confidence intervals are produced, the layout
   vocabulary, the rendering approach, and the reasoning behind the API.
+- [`docs/example/`](docs/example/): the example at the top of this page, end to
+  end. It scores WeatherBench 2 forecasts into this package's input shape, then
+  draws the card.
 
 ## Related
 

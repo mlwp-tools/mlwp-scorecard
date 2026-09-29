@@ -11,16 +11,30 @@ import sys
 import textwrap
 
 
-def test_html_is_byte_identical_across_renders(verification, tmp_path):
-    from mlwp_scorecards import make_scorecard
+def test_html_is_byte_identical_across_renders(verification):
+    from mlwp_scorecards import ScoreCard
 
     kw = dict(
         colour_relative_to="persistence",
         select=dict(forecast_source=["drifting-persistence"]),
         title="t",
     )
-    a = make_scorecard(verification, html_path=tmp_path / "a.html", **kw)[0]
-    b = make_scorecard(verification, html_path=tmp_path / "b.html", **kw)[0]
+    a = ScoreCard(verification, **kw).to_html()
+    b = ScoreCard(verification, **kw).to_html()
+    assert a == b
+
+
+def test_svg_is_byte_identical_across_renders(verification, tmp_path):
+    from mlwp_scorecards import ScoreCard
+    from mlwp_scorecards.render.static import save_figure
+
+    kw = dict(
+        colour_relative_to="persistence",
+        select=dict(forecast_source=["drifting-persistence"]),
+        title="t",
+    )
+    a = save_figure(ScoreCard(verification, **kw).to_figure(), tmp_path / "a.svg")
+    b = save_figure(ScoreCard(verification, **kw).to_figure(), tmp_path / "b.svg")
     assert a.read_bytes() == b.read_bytes()
 
 
@@ -29,14 +43,16 @@ def test_html_is_identical_in_a_fresh_process(tmp_path):
     script = textwrap.dedent(
         f"""
         import sys
+        from pathlib import Path
         sys.path.insert(0, {str(tmp_path.parent.parent)!r})
         sys.path.insert(0, {str((__import__("pathlib").Path(__file__).parent))!r})
         from synthetic import make_verification_dataset
-        from mlwp_scorecards import make_scorecard
+        from mlwp_scorecards import ScoreCard
         ds = make_verification_dataset(n_case=32, drift=0.25, seed=3)
-        make_scorecard(ds, html_path=sys.argv[1], colour_relative_to="persistence",
-                       select=dict(forecast_source=["drifting-persistence"]), title="t",
-                       n_resamples=100)
+        score_card = ScoreCard(ds, colour_relative_to="persistence",
+                               select=dict(forecast_source=["drifting-persistence"]),
+                               title="t", n_resamples=100)
+        Path(sys.argv[1]).write_text(score_card.to_html(), encoding="utf-8")
         """
     )
     outs = []
@@ -52,7 +68,7 @@ def test_html_is_identical_in_a_fresh_process(tmp_path):
 
 
 def test_layout_resolution_is_stable(verification):
-    from mlwp_scorecards import build_layout
+    from mlwp_scorecards.api import build_layout
 
     kw = dict(
         colour_relative_to="persistence",

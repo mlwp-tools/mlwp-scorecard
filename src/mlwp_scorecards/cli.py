@@ -6,6 +6,7 @@ import argparse
 import os
 import subprocess
 import sys
+import warnings
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -15,12 +16,58 @@ import pandas as pd
 import xarray as xr
 from loguru import logger
 
-from .api import _output_paths, build_layout, render
+from .api import ScoreCard
 
 #: The only input formats. Anything else is refused by name rather than handed
 #: to ``xr.open_dataset`` to be sniffed: a mistyped path or a CSV should say so,
 #: not surface as whatever error the guessed engine happens to raise.
 _INPUT_SUFFIXES = {".nc", ".nc4", ".cdf", ".zarr"}
+
+_STATIC_SUFFIXES = {".png", ".pdf", ".svg", ".eps", ".jpg", ".jpeg", ".tif", ".tiff"}
+_HTML_SUFFIXES = {".html", ".htm"}
+
+
+def _output_paths(
+    html_path: str | Path | None,
+    image_path: Sequence[str | Path] | None,
+) -> list[Path]:
+    """Check the requested outputs before any work is done, and order them.
+
+    A suffix that contradicts the flag it was passed to is refused rather than
+    re-guessed: ``--html-path card.png`` is far more likely a slip than a request
+    for a PNG, and silently writing one would hide it.
+    """
+    if html_path is None and not image_path:
+        raise ValueError(
+            "nothing to write: pass --html-path, --image-path, or both "
+            "(or --validate-only)"
+        )
+    paths = []
+    if html_path is not None:
+        path = Path(html_path)
+        if path.suffix.lower() not in _HTML_SUFFIXES:
+            raise ValueError(f"--html-path {str(html_path)!r} does not end in .html")
+        paths.append(path)
+    for img in image_path or []:
+        path = Path(img)
+        if path.suffix.lower() not in _STATIC_SUFFIXES:
+            raise ValueError(
+                f"--image-path {str(img)!r}: expected one of "
+                f"{', '.join(sorted(_STATIC_SUFFIXES))}"
+            )
+        paths.append(path)
+    return paths
+
+
+def _write(score_card: ScoreCard, path: Path, *, dpi: int) -> Path:
+    """Write one output, its format by suffix (already checked by
+    :func:`_output_paths`)."""
+    if path.suffix.lower() in _HTML_SUFFIXES:
+        path.write_text(score_card.to_html(), encoding="utf-8")
+        return path
+    from .render.static import save_figure
+
+    return save_figure(score_card.to_figure(), path, dpi=dpi)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -230,9 +277,9 @@ def _build(
     args: argparse.Namespace,
     select: dict[str, Any],
     polarity: dict[str, str],
-):
-    """Call :func:`build_layout` with the parsed command line."""
-    return build_layout(
+) -> ScoreCard:
+    """Build the :class:`ScoreCard` the parsed command line asks for."""
+    return ScoreCard(
         ds,
         colour_relative_to=args.colour_relative_to,
         show_values=args.show_values,
@@ -255,7 +302,6 @@ def _build(
         title=args.title,
         subtitle=args.subtitle,
         strict=args.strict,
-        return_validation_report=True,
     )
 
 
@@ -302,19 +348,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         logger.error(str(e))
         return 1
 
+    # The card issues what it has to say about the data as UserWarnings; on the
+    # command line they belong in the log with everything else. Anything else
+    # caught is passed on untouched. A dataset that fails validation raises.
     try:
-        layout, report = _build(ds, args, select, polarity)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            score_card = _build(ds, args, select, polarity)
     except (KeyError, ValueError) as e:
         logger.error(e.args[0] if e.args else str(e))
         return 1
-    for w in report.warnings:
-        logger.warning(w)
-    if report.has_fails():
-        for f in report.fails:
-            logger.error(f)
-        return 1
+    for w in caught:
+        if w.category is UserWarning:
+            logger.warning(str(w.message))
+        else:
+            warnings.warn_explicit(w.message, w.category, w.filename, w.lineno)
 
-    s = layout.stats
+    s = score_card._layout.stats
     logger.info(
         f"{s.n_rows} rows x {s.n_cols} columns, {s.n_cells_present} populated, "
         f"{s.n_boxes} boxes"
@@ -324,7 +374,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     written = []
     for out in outputs:
-        written.append(render(layout, out, dpi=args.dpi))
+        written.append(_write(score_card, out, dpi=args.dpi))
         logger.info(f"wrote {written[-1]}")
     if args.open:
         for path in written:

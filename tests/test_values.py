@@ -15,8 +15,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from mlwp_scorecards import build_layout, make_scorecard
+from mlwp_scorecards import ScoreCard
+from mlwp_scorecards.api import build_layout
 from mlwp_scorecards.model import NEUTRAL, format_value
+from mlwp_scorecards.render.static import save_figure
 
 sys.path.insert(0, str(Path(__file__).parent))
 from test_sources import _dataset, _with_gaps  # noqa: E402
@@ -164,16 +166,11 @@ def test_neither_a_baseline_nor_values_is_refused():
 # --------------------------------------------------------------------------- #
 @pytest.mark.parametrize("baseline", ["base", None])
 def test_both_backends_render_the_numbers(tmp_path, baseline):
-    html, png = make_scorecard(
-        _dataset(),
-        colour_relative_to=baseline,
-        show_values=True,
-        html_path=tmp_path / "c.html",
-        image_path=tmp_path / "c.png",
-        rows=ROWS,
-        **KW,
+    score_card = ScoreCard(
+        _dataset(), colour_relative_to=baseline, show_values=True, rows=ROWS, **KW
     )
-    page = html.read_text()
+    page = score_card.to_html()
+    png = save_figure(score_card.to_figure(), tmp_path / "c.png")
     lay = _card(colour_relative_to=baseline, show_values=True)
     first = lay.sel(forecast_source="a", variable="2t", metric="rmse").steps[0].text
     assert re.search(rf'<i class="b [^"]*" title="[^"]*">{re.escape(first)}</i>', page)
@@ -184,8 +181,8 @@ def test_both_backends_render_the_numbers(tmp_path, baseline):
         assert "There is no" in page and "error metrics" not in page
 
 
-def test_a_card_with_values_is_byte_reproducible(tmp_path):
+def test_a_card_with_values_is_byte_reproducible():
     kw = dict(colour_relative_to="base", show_values=True, rows=ROWS, **KW)
-    a = make_scorecard(_dataset(), html_path=tmp_path / "a.html", **kw)[0]
-    b = make_scorecard(_dataset(), html_path=tmp_path / "b.html", **kw)[0]
-    assert a.read_bytes() == b.read_bytes()
+    assert ScoreCard(_dataset(), **kw).to_html() == (
+        ScoreCard(_dataset(), **kw).to_html()
+    )

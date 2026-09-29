@@ -42,6 +42,35 @@ def test_renders_both_formats(netcdf, tmp_path):
     assert out_png.stat().st_size > 2000
 
 
+def test_the_cards_warnings_are_logged_not_raised(netcdf, tmp_path):
+    """The card issues UserWarnings; on the command line they belong in the log."""
+    import warnings
+
+    from loguru import logger
+
+    logged = []
+    sink = logger.add(lambda m: logged.append(m.record), level="WARNING")
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            rc = main(
+                [
+                    str(netcdf),
+                    "--colour-relative-to",
+                    "persistence",
+                    "--html-path",
+                    str(tmp_path / "c.html"),
+                ]
+            )
+    finally:
+        logger.remove(sink)
+    assert rc == 0
+    assert any(
+        r["level"].name == "WARNING" and "too few for blocks" in r["message"]
+        for r in logged
+    ), logged
+
+
 @pytest.fixture(scope="module")
 def four_sources(tmp_path_factory):
     import sys

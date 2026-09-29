@@ -16,7 +16,9 @@ import numpy as np
 import xarray as xr
 from common import OUT
 
-from mlwp_scorecards import build_layout, make_scorecard
+from mlwp_scorecards import ScoreCard
+from mlwp_scorecards.api import build_layout
+from mlwp_scorecards.render.static import save_figure
 
 PAIRS = {
     "harmonie-vs-aifs": ("aifs", "harmonie-arome"),
@@ -46,12 +48,11 @@ def render(ds: xr.Dataset, name: str, baseline: str, forecast: str, scheme: str)
             f"{ds.attrs.get('n_stations', '?')} DMI stations, which are neutral."
         ),
     )
-    written = make_scorecard(
-        ds,
-        html_path=OUT / f"{name}.html",
-        image_path=[OUT / f"{name}.png", OUT / f"{name}.pdf"],
-        **kwargs,
-    )
+    score_card = ScoreCard(ds, **kwargs)
+    html = OUT / f"{name}.html"
+    html.write_text(score_card.to_html(), encoding="utf-8")
+    fig = score_card.to_figure()
+    written = [html] + [save_figure(fig, OUT / f"{name}.{s}") for s in ("png", "pdf")]
     layout = build_layout(
         ds, colour_relative_to=baseline, select=dict(forecast_source=[forecast]), **axes
     )

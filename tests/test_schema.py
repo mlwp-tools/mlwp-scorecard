@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from mlwp_scorecards import build_layout
+from mlwp_scorecards.api import build_layout
 from mlwp_scorecards.ingest import split_name
 
 N_CASE = 40

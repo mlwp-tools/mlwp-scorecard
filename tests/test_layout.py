@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from mlwp_scorecards import build_layout
+from mlwp_scorecards.api import build_layout
 
 
 def test_rows_follow_dataset_coordinate_order(verification, layout):

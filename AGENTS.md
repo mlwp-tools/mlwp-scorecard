@@ -23,7 +23,8 @@ Guidance for agents and contributors working in this repository.
 
 ## Interfaces
 
-- Python API: `make_scorecard(...)`, `build_layout(...)`, `render(...)`
+- Python API: `ScoreCard(ds, ...)`, then `.to_figure()` -> matplotlib `Figure`, `.to_html()` -> `str`. The caller saves.
+  `api.build_layout` and the `render/` functions are internal.
 - CLI: `mlwp.make_scorecard`
 
 ## Common commands

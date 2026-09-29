@@ -1,13 +1,16 @@
 """Public API.
 
-Everything the caller needs is passed as plain arguments — coordinate names,
-source names, output paths. There is no configuration object to construct.
+Everything the caller needs is passed as plain arguments — coordinate names and
+source names. There is no configuration object to construct: a
+:class:`ScoreCard` is built from the dataset, and gives the card as a matplotlib
+figure or an HTML page for the caller to save.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any, Mapping, Sequence
+import os
+import warnings
+from typing import TYPE_CHECKING, Any, Mapping, Sequence
 
 import numpy as np
 import xarray as xr
@@ -26,10 +29,11 @@ from .ingest import (
 from .layout import resolve
 from .model import Layout
 
+if TYPE_CHECKING:
+    from matplotlib.figure import Figure
+
 __all__ = [
-    "make_scorecard",
-    "build_layout",
-    "render",
+    "ScoreCard",
     "DEFAULT_ROWS",
     "DEFAULT_COLUMNS",
 ]
@@ -43,8 +47,7 @@ DEFAULT_ROWS = ("truth_source", VARIABLE_DIM, "level")
 #: synonym of ``spatial_region`` here only, for datasets that use the short name.
 DEFAULT_COLUMNS = ("spatial_region", "region", METRIC_DIM)
 
-_STATIC_SUFFIXES = {".png", ".pdf", ".svg", ".eps", ".jpg", ".jpeg", ".tif", ".tiff"}
-_HTML_SUFFIXES = {".html", ".htm"}
+_PACKAGE_DIR = os.path.dirname(__file__) + os.sep
 
 
 def _is_many(value: Any) -> bool:
@@ -200,80 +203,16 @@ def build_layout(
 ) -> Layout | tuple[Layout, ValidationReport]:
     """Resolve a verification dataset into a ready-to-render :class:`Layout`.
 
-    Parameters
-    ----------
-    data : xr.Dataset
-        Verification statistics: one variable per ``{metric}.{variable}`` pair.
-    colour_relative_to : str, optional
-        The member of ``forecast_source`` every forecast source is compared with;
-        the card colours ``forecast - baseline`` and marks significance. ``None``:
-        nothing is compared, every box is neutral, and ``show_values`` must be
-        True.
-    show_values : bool, optional
-        Print each source's own score in its boxes. With a baseline, the baseline
-        is also shown as a grey row of its own scores, first, and colours are
-        unchanged. ``forecast_source`` is then always on an axis -- outermost on
-        the rows unless placed -- even for a single forecast source.
-    select : mapping, optional
-        Selection along coordinates, one rule for every key, e.g.
-        ``select=dict(forecast_source=["GraphCast", ...], truth_source="analysis",
-        spatial_region=["europe", "n.hem"])``:
+    The engine behind :class:`ScoreCard`, and internal: the ``Layout`` is the
+    renderer contract, not something a caller needs. The parameters are those of
+    :class:`ScoreCard`, plus:
 
-        - a **single value** picks that member and drops the dimension, unless
-          the dimension is named in ``rows``, ``columns`` or ``cell``, where it is
-          kept at length one;
-        - a **list** keeps the dimension, subset **in the order given** -- which
-          is the order it is drawn in -- with at most one ``...`` for every other
-          value, in coordinate order;
-        - a **slice** keeps the dimension, as ``ds.sel`` would.
-
-        ``forecast_source`` defaults to every source but the baseline (every
-        source, with no baseline), and a ``...`` in it never includes the
-        baseline; naming the baseline there is an error. With several forecast sources, ``forecast_source`` becomes a
-        layout axis. ``variable`` and ``metric`` may be selected too, and always
-        stay on an axis.
-    cases : {"common", "pairwise"}, optional
-        Which forecast cases each comparison rests on. ``"common"``: only those
-        every selected source and the baseline scored, so rows are comparable with
-        one another. ``"pairwise"``: those each forecast source shares with the
-        baseline. Identical when there is one forecast source.
-    rows, columns : sequence of str, optional
-        Coordinate names to nest on each axis, outermost first. Inferred when omitted.
-    cell : str, optional
-        Coordinate drawn inside each cell, normally ``"lead_time"``.
-    metric_polarity : mapping, optional
-        Polarity for metrics not in the built-in table, e.g.
-        ``{"my_score": "higher_is_better"}``.
-    scheme : str or ColourScheme, optional
-        ``"cvd"`` (default, colour-vision-safe) or ``"ecmwf"``.
-    bootstrap : {"moving-block", "iid"}, optional
-        How to resample forecast cases. Consecutive forecasts share a weather
-        system, so an iid resample marks about 44% of truly-null cells as
-        significant against a nominal 5%; moving-block brings that to roughly 8%.
-        Used only when the input carries an ``init_time`` dimension.
-    block_length : int, optional
-        Block length in forecast **cases**, not hours. Derived from the
-        initialisation cadence when omitted, and the choice is reported.
-    n_resamples : int, optional
-    confidence_levels : sequence of float, optional
-        Fractions, so ``0.95`` rather than ``95``.
-    seed : int, optional
-        Fixed by default: two runs on the same file must agree, and an OS-seeded
-        default would flip borderline significance markings between them.
-    strict : bool, optional
-        Treat warnings as failures.
     return_validation_report : bool, optional
-        Also return the report rather than only raising on failure.
+        Also return the report, whose warnings would otherwise be lost.
 
     Returns
     -------
     Layout, or (Layout, ValidationReport)
-
-    Raises
-    ------
-    ValueError
-        If ``colour_relative_to`` is None and ``show_values`` is False: the card
-        would have nothing on it.
     """
     if colour_relative_to is None and not show_values:
         options = (
@@ -338,124 +277,184 @@ def build_layout(
     return layout
 
 
-def render(
-    layout: Layout,
-    path: str | Path,
-    *,
-    scheme: str | ColourScheme | None = None,
-    dpi: int = 200,
-) -> Path:
-    """Render a resolved layout to one file, by suffix."""
-    sch = (
-        SCHEMES[layout.scheme_name]
-        if scheme is None
-        else (SCHEMES[scheme] if isinstance(scheme, str) else scheme)
-    )
-    path = Path(path)
-    suffix = path.suffix.lower()
-    if suffix in _HTML_SUFFIXES:
-        from .render.html import render_html
+class ScoreCard:
+    """A scorecard, built from pre-computed verification statistics.
 
-        return render_html(layout, path, scheme=sch)
-    if suffix in _STATIC_SUFFIXES:
-        from .render.static import render_static
-
-        return render_static(layout, path, scheme=sch, dpi=dpi)
-    raise ValueError(
-        f"don't know how to render {suffix!r}; use .html, or "
-        f"{', '.join(sorted(_STATIC_SUFFIXES))}"
-    )
-
-
-def _output_paths(
-    html_path: str | Path | None,
-    image_path: str | Path | Sequence[str | Path] | None,
-) -> list[Path]:
-    """Check the requested outputs before any work is done, and order them.
-
-    A suffix that contradicts the argument it was passed to is refused rather than
-    re-guessed: ``html_path="card.png"`` is far more likely a slip than a request
-    for a PNG, and silently writing one would hide it.
-    """
-    if html_path is None and image_path is None:
-        raise ValueError("nothing to write: pass html_path=, image_path=, or both")
-    paths = []
-    if html_path is not None:
-        path = Path(html_path)
-        if path.suffix.lower() not in _HTML_SUFFIXES:
-            raise ValueError(f"html_path={str(html_path)!r} does not end in .html")
-        paths.append(path)
-    if image_path is None:
-        images = []
-    elif isinstance(image_path, (str, Path)):
-        images = [image_path]
-    else:
-        images = list(image_path)
-    for img in images:
-        path = Path(img)
-        if path.suffix.lower() not in _STATIC_SUFFIXES:
-            raise ValueError(
-                f"image_path={str(img)!r}: expected one of "
-                f"{', '.join(sorted(_STATIC_SUFFIXES))}"
-            )
-        paths.append(path)
-    return paths
-
-
-def make_scorecard(
-    data: xr.Dataset,
-    *,
-    colour_relative_to: str | None = None,
-    select: Mapping[str, Any] | None = None,
-    html_path: str | Path | None = None,
-    image_path: str | Path | Sequence[str | Path] | None = None,
-    dpi: int = 200,
-    **kwargs: Any,
-) -> list[Path]:
-    """Build a scorecard and write the interactive page, static figures, or both.
+    Building one does all the work -- selection, the paired differences, the
+    bootstrap, the layout -- and the result is then drawn with
+    :meth:`to_figure` or :meth:`to_html`, for the caller to save. Warnings about
+    the data (a block length chosen for you, too few cases for blocks, ...) are
+    issued as :class:`UserWarning` while it is built.
 
     Parameters
     ----------
     data : xr.Dataset
-        Verification statistics.
-    colour_relative_to : str
-        The source each is compared with.
+        Verification statistics: one variable per ``{metric}.{variable}`` pair.
+    colour_relative_to : str, optional
+        The member of ``forecast_source`` every forecast source is compared with;
+        the card colours ``forecast - baseline`` and marks significance. ``None``:
+        nothing is compared, every box is neutral, and ``show_values`` must be
+        True.
+    show_values : bool, optional
+        Print each source's own score in its boxes. With a baseline, the baseline
+        is also shown as a grey row of its own scores, first, and colours are
+        unchanged. ``forecast_source`` is then always on an axis -- outermost on
+        the rows unless placed -- even for a single forecast source.
     select : mapping, optional
-        Selection along coordinates, including which forecast sources to show;
-        see :func:`build_layout`.
-    html_path : path, optional
-        Where to write the self-contained interactive page. Must end in ``.html``.
-    image_path : path or sequence of paths, optional
-        Where to write the static figure. The format follows each suffix --
-        ``.png``, ``.pdf``, ``.svg`` and so on -- so several paths give several
-        formats of the same card.
-    dpi : int, optional
-        Raster resolution for ``image_path``; ignored by the HTML page.
-    **kwargs
-        Forwarded to :func:`build_layout`.
+        Selection along coordinates, one rule for every key, e.g.
+        ``select=dict(forecast_source=["GraphCast", ...], truth_source="analysis",
+        spatial_region=["europe", "n.hem"])``:
 
-    Returns
-    -------
-    list of Path
-        The files written: the page first, then the figures in the order given.
+        - a **single value** picks that member and drops the dimension, unless
+          the dimension is named in ``rows``, ``columns`` or ``cell``, where it is
+          kept at length one;
+        - a **list** keeps the dimension, subset **in the order given** -- which
+          is the order it is drawn in -- with at most one ``...`` for every other
+          value, in coordinate order;
+        - a **slice** keeps the dimension, as ``ds.sel`` would.
+
+        ``forecast_source`` defaults to every source but the baseline (every
+        source, with no baseline), and a ``...`` in it never includes the
+        baseline; naming the baseline there is an error. With several forecast sources, ``forecast_source`` becomes a
+        layout axis. ``variable`` and ``metric`` may be selected too, and always
+        stay on an axis.
+    cases : {"common", "pairwise"}, optional
+        Which forecast cases each comparison rests on. ``"common"``: only those
+        every selected source and the baseline scored, so rows are comparable with
+        one another. ``"pairwise"``: those each forecast source shares with the
+        baseline. Identical when there is one forecast source.
+    rows, columns : sequence of str, optional
+        Coordinate names to nest on each axis, outermost first. Inferred when omitted.
+    cell : str, optional
+        Coordinate drawn inside each cell, normally ``"lead_time"``.
+    metric_polarity : mapping, optional
+        Polarity for metrics not in the built-in table, e.g.
+        ``{"my_score": "higher_is_better"}``.
+    scheme : str or ColourScheme, optional
+        ``"cvd"`` (default, colour-vision-safe) or ``"ecmwf"``.
+    bootstrap : {"moving-block", "iid"}, optional
+        How to resample forecast cases. Consecutive forecasts share a weather
+        system, so an iid resample marks about 44% of truly-null cells as
+        significant against a nominal 5%; moving-block brings that to roughly 8%.
+        Used only when the input carries an ``init_time`` dimension.
+    block_length : int, optional
+        Block length in forecast **cases**, not hours. Derived from the
+        initialisation cadence when omitted, and the choice is reported.
+    n_resamples : int, optional
+    confidence_levels : sequence of float, optional
+        Fractions, so ``0.95`` rather than ``95``.
+    seed : int, optional
+        Fixed by default: two runs on the same file must agree, and an OS-seeded
+        default would flip borderline significance markings between them.
+    strict : bool, optional
+        Treat warnings as failures.
 
     Raises
     ------
     ValueError
-        If neither ``html_path`` nor ``image_path`` is given, or a suffix
-        contradicts the argument it was passed to. Checked before anything is
-        computed.
+        If ``colour_relative_to`` is None and ``show_values`` is False: the card
+        would have nothing on it. Also if the dataset fails validation.
 
     Examples
     --------
-    >>> make_scorecard(ds, colour_relative_to="IFS-HRES",
-    ...                select=dict(forecast_source=["GraphCast", ...]),
-    ...                html_path="card.html",
-    ...                image_path=["card.png", "card.pdf"])  # doctest: +SKIP
+    >>> score_card = ScoreCard(ds, colour_relative_to="IFS-HRES",
+    ...                        select=dict(forecast_source=["GraphCast", ...]))  # doctest: +SKIP
+    >>> score_card.to_figure().savefig("card.png", dpi=200)  # doctest: +SKIP
+    >>> Path("card.html").write_text(score_card.to_html())  # doctest: +SKIP
     """
-    paths = _output_paths(html_path, image_path)
-    layout = build_layout(
-        data, colour_relative_to=colour_relative_to, select=select, **kwargs
-    )
-    assert isinstance(layout, Layout)
-    return [render(layout, p, dpi=dpi) for p in paths]
+
+    def __init__(
+        self,
+        data: xr.Dataset,
+        *,
+        colour_relative_to: str | None = None,
+        show_values: bool = False,
+        select: Mapping[str, Any] | None = None,
+        cases: str = "common",
+        rows: Sequence[str] | None = None,
+        columns: Sequence[str] | None = None,
+        cell: str = "lead_time",
+        metric_polarity: Mapping[str, str] | None = None,
+        scheme: str | ColourScheme = "cvd",
+        title: str = "",
+        subtitle: str = "",
+        bootstrap: str = "moving-block",
+        block_length: int | None = None,
+        n_resamples: int = 2000,
+        confidence_levels: Sequence[float] = (0.68, 0.95, 0.997),
+        seed: int = 0,
+        strict: bool = False,
+    ) -> None:
+        layout, report = build_layout(
+            data,
+            colour_relative_to=colour_relative_to,
+            show_values=show_values,
+            select=select,
+            cases=cases,
+            rows=rows,
+            columns=columns,
+            cell=cell,
+            metric_polarity=metric_polarity,
+            scheme=scheme,
+            title=title,
+            subtitle=subtitle,
+            bootstrap=bootstrap,
+            block_length=block_length,
+            n_resamples=n_resamples,
+            confidence_levels=confidence_levels,
+            seed=seed,
+            strict=strict,
+            return_validation_report=True,
+        )
+        self._layout: Layout = layout
+        self._report: ValidationReport = report
+        self._scheme = SCHEMES[scheme] if isinstance(scheme, str) else scheme
+        # Attributed to the first line outside the package, however many package
+        # frames -- such as the CLI's -- sit in between.
+        for w in report.warnings:
+            warnings.warn(w, UserWarning, skip_file_prefixes=(_PACKAGE_DIR,))
+
+    def __repr__(self) -> str:
+        lay = self._layout
+        s = lay.stats
+        baseline = (
+            f", relative to {lay.baseline_source!r}" if lay.baseline_source else ""
+        )
+        return (
+            f"<ScoreCard: {', '.join(lay.forecast_sources)}{baseline}; "
+            f"{s.n_rows} rows x {s.n_cols} columns, {s.n_boxes} boxes>"
+        )
+
+    def to_figure(self) -> Figure:
+        """Draw the card as a matplotlib figure.
+
+        The figure is not registered with ``pyplot`` and the backend is left as
+        it was. Save it with ``fig.savefig(path)``, which uses the caller's
+        matplotlib settings: set ``pdf.fonttype=42`` and ``svg.fonttype="none"``
+        to keep PDF and SVG text selectable.
+
+        Returns
+        -------
+        matplotlib.figure.Figure
+        """
+        from .render.static import render_figure
+
+        return render_figure(self._layout, scheme=self._scheme)
+
+    def to_html(self, *, detail: bool = True) -> str:
+        """Render the card as a self-contained interactive HTML page.
+
+        Parameters
+        ----------
+        detail : bool, optional
+            Embed the click-through drill-down data. On a full-size card this is
+            the largest thing in the page; pass False for a table-only page.
+
+        Returns
+        -------
+        str
+            The page, to be written to a ``.html`` file.
+        """
+        from .render.html import render_html
+
+        return render_html(self._layout, scheme=self._scheme, detail=detail)

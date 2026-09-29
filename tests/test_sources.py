@@ -18,7 +18,9 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from mlwp_scorecards import build_layout, make_scorecard
+from mlwp_scorecards import ScoreCard
+from mlwp_scorecards.api import build_layout
+from mlwp_scorecards.render.static import save_figure
 
 SOURCES = ("base", "a", "b", "c")
 
@@ -269,26 +271,16 @@ def _payload(page: str) -> dict:
 
 
 def test_renders_with_each_cell_naming_its_source(tmp_path):
-    html, png = make_scorecard(
-        _dataset(),
-        html_path=tmp_path / "c.html",
-        image_path=tmp_path / "c.png",
-        select=dict(forecast_source=["a", "b"]),
-        **KW,
-    )
+    score_card = ScoreCard(_dataset(), select=dict(forecast_source=["a", "b"]), **KW)
+    png = save_figure(score_card.to_figure(), tmp_path / "c.png")
     assert png.stat().st_size > 2000
-    page = html.read_text()
+    page = score_card.to_html()
     payload = _payload(page)
     assert payload["control"] == "base"
     assert {cell["s"] for cell in payload["cells"]} == {"a", "b"}
     assert "each forecast source" in page
 
 
-def test_a_single_source_payload_does_not_repeat_the_source_per_cell(tmp_path):
-    (html,) = make_scorecard(
-        _dataset(),
-        html_path=tmp_path / "c.html",
-        select=dict(forecast_source=["a"]),
-        **KW,
-    )
-    assert all("s" not in cell for cell in _payload(html.read_text())["cells"])
+def test_a_single_source_payload_does_not_repeat_the_source_per_cell():
+    page = ScoreCard(_dataset(), select=dict(forecast_source=["a"]), **KW).to_html()
+    assert all("s" not in cell for cell in _payload(page)["cells"])

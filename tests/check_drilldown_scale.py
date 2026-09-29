@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from test_scale import _big_dataset  # noqa: E402
 
-from mlwp_scorecards import build_layout  # noqa: E402
+from mlwp_scorecards.api import build_layout  # noqa: E402
 from mlwp_scorecards.colours import SCHEMES  # noqa: E402
 from mlwp_scorecards.render.html import render_html  # noqa: E402
 
@@ -40,11 +40,9 @@ def main() -> None:
 
     sizes = {}
     for detail in (False, True):
-        p = render_html(
-            layout,
-            OUT / f"big-detail-{int(detail)}.html",
-            scheme=SCHEMES["cvd"],
-            detail=detail,
+        p = OUT / f"big-detail-{int(detail)}.html"
+        p.write_text(
+            render_html(layout, scheme=SCHEMES["cvd"], detail=detail), encoding="utf-8"
         )
         sizes[detail] = p.stat().st_size
 

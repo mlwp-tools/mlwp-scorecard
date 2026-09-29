@@ -11,8 +11,10 @@ import re
 
 import pytest
 
-from mlwp_scorecards import build_layout, make_scorecard
+from mlwp_scorecards import ScoreCard
+from mlwp_scorecards.api import build_layout
 from mlwp_scorecards.colours import Polarity, polarity_of
+from mlwp_scorecards.render.static import save_figure
 
 
 def test_experiment_is_worse_everywhere(layout):
@@ -90,75 +92,43 @@ def test_units_reach_the_cells(layout):
 
 
 def test_renders_html_and_static(verification, tmp_path):
-    """Both backends produce a file from the same layout."""
-    outs = make_scorecard(
+    """Both backends produce output from the same card."""
+    score_card = ScoreCard(
         verification,
-        html_path=tmp_path / "c.html",
-        image_path=[tmp_path / "c.png", tmp_path / "c.pdf"],
         colour_relative_to="persistence",
         select=dict(forecast_source=["drifting-persistence"]),
         title="t",
     )
-    assert [p.name for p in outs] == ["c.html", "c.png", "c.pdf"]
-    for p in outs:
+    assert len(score_card.to_html()) > 2000
+    fig = score_card.to_figure()
+    for suffix in ("png", "pdf"):
+        p = save_figure(fig, tmp_path / f"c.{suffix}")
         assert p.stat().st_size > 2000, p
 
 
-@pytest.mark.parametrize(
-    "outputs, match",
-    [
-        ({}, "nothing to write"),
-        ({"html_path": "c.png"}, "does not end in .html"),
-        ({"image_path": "c.html"}, "expected one of"),
-        ({"html_path": "c.html", "image_path": ["c.png", "c.txt"]}, "expected one of"),
-    ],
-)
-def test_outputs_are_checked_before_anything_is_computed(outputs, match):
-    """An empty dataset would fail validation; the output check must come first,
-    so a mistyped suffix never costs a full bootstrap to discover."""
-    import xarray as xr
-
-    with pytest.raises(ValueError, match=match):
-        make_scorecard(
-            xr.Dataset(),
-            colour_relative_to="a",
-            select=dict(forecast_source=["b"]),
-            **outputs,
-        )
-
-
-def test_html_has_no_external_requests(verification, tmp_path):
+def test_html_has_no_external_requests(verification):
     """No CDN, no analytics, no webfonts: the page must work offline."""
-    p = make_scorecard(
+    text = ScoreCard(
         verification,
-        html_path=tmp_path / "c.html",
         colour_relative_to="persistence",
         select=dict(forecast_source=["drifting-persistence"]),
-    )[0]
-    text = p.read_text()
+    ).to_html()
     assert not re.search(r'(?:src|href)\s*=\s*["\']https?://', text)
     assert "googletagmanager" not in text
 
 
-def test_every_column_header_level_is_on_the_page(verification, tmp_path):
+def test_every_column_header_level_is_on_the_page(verification):
     """With three column levels the middle one was dropped: only the outermost
     and leaf header rows were written."""
-    lay = build_layout(
+    score_card = ScoreCard(
         verification,
         colour_relative_to="persistence",
         rows=["variable", "level"],
         columns=["truth_source", "spatial_region", "metric"],
         n_resamples=50,
     )
-    p = make_scorecard(
-        verification,
-        html_path=tmp_path / "c.html",
-        colour_relative_to="persistence",
-        rows=["variable", "level"],
-        columns=["truth_source", "spatial_region", "metric"],
-        n_resamples=50,
-    )[0]
-    thead = re.search(r"<thead>(.*?)</thead>", p.read_text(), re.S).group(1)
+    lay = score_card._layout
+    thead = re.search(r"<thead>(.*?)</thead>", score_card.to_html(), re.S).group(1)
     rows = re.findall(r"<tr>(.*?)</tr>", thead, re.S)
     assert len(rows) == 3
     for depth, blocks in enumerate(lay.column_headers):
@@ -167,16 +137,15 @@ def test_every_column_header_level_is_on_the_page(verification, tmp_path):
         assert [x for x in labels if x] == want, (depth, labels)
 
 
-def test_html_box_count_matches_the_layout(layout, verification, tmp_path):
-    p = make_scorecard(
+def test_html_box_count_matches_the_layout(layout, verification):
+    page = ScoreCard(
         verification,
-        html_path=tmp_path / "c.html",
         rows=layout.row_dims,
         columns=layout.column_dims,
         colour_relative_to="persistence",
         select=dict(forecast_source=["drifting-persistence"]),
-    )[0]
-    assert p.read_text().count('<i class="b') == layout.stats.n_boxes
+    ).to_html()
+    assert page.count('<i class="b') == layout.stats.n_boxes
 
 
 def test_unknown_metric_refuses_to_guess(verification, tmp_path):

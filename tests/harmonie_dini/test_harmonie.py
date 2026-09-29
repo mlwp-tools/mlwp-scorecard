@@ -33,7 +33,7 @@ def summary():
 
 
 def card(summary, baseline: str, forecast: str, levels=CONFIDENCE_LEVELS):
-    from mlwp_scorecards import build_layout
+    from mlwp_scorecards.api import build_layout
 
     return build_layout(
         summary,
@@ -313,12 +313,11 @@ def test_case_counts_are_the_number_of_initialisations(summary):
 
 
 def test_renders_both_formats(summary, tmp_path):
-    from mlwp_scorecards import make_scorecard
+    from mlwp_scorecards import ScoreCard
+    from mlwp_scorecards.render.static import save_figure
 
-    outs = make_scorecard(
+    score_card = ScoreCard(
         summary,
-        html_path=tmp_path / "c.html",
-        image_path=tmp_path / "c.png",
         colour_relative_to="aifs",
         select=dict(forecast_source=["harmonie-arome"]),
         rows=["truth_source", "variable"],
@@ -326,6 +325,8 @@ def test_renders_both_formats(summary, tmp_path):
         cell="lead_time",
         title="HARMONIE-AROME vs AIFS",
     )
-    for p in outs:
-        assert p.stat().st_size > 2000
-    assert "harmonie-arome" in outs[0].read_text()
+    page = score_card.to_html()
+    png = save_figure(score_card.to_figure(), tmp_path / "c.png")
+    assert len(page) > 2000
+    assert png.stat().st_size > 2000
+    assert "harmonie-arome" in page

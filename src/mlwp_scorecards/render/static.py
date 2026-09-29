@@ -10,11 +10,38 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ..colours import ColourScheme
 from ..model import Layout
 
-__all__ = ["Geometry", "render_figure", "render_static"]
+if TYPE_CHECKING:
+    from matplotlib.figure import Figure
+
+__all__ = ["Geometry", "render_figure", "save_figure"]
+
+#: Applied both while drawing and while saving. Some are read when an artist is
+#: made (the font), others only when a file is written (the font types, the SVG
+#: salt), so a figure saved outside these -- by the caller's own ``savefig`` --
+#: gets the caller's settings for the latter.
+_RC = {
+    "pdf.fonttype": 42,  # embed TrueType so PDF text stays selectable
+    "ps.fonttype": 42,
+    "svg.fonttype": "none",  # keep SVG text as text, not glyph paths
+    "svg.hashsalt": "mlwp-scorecards",
+    "font.family": "DejaVu Sans",
+    "figure.autolayout": False,
+    "path.simplify": False,
+}
+
+
+def _require_matplotlib() -> None:
+    try:
+        import matplotlib  # noqa: F401
+    except ModuleNotFoundError as exc:  # pragma: no cover
+        raise ImportError(
+            "the static backend needs matplotlib: install mlwp-scorecards[static]"
+        ) from exc
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,18 +78,52 @@ def _label_widths(layout: Layout, geom: Geometry) -> list[float]:
 
 def render_figure(
     layout: Layout, *, scheme: ColourScheme, geometry: Geometry | None = None
-):
+) -> Figure:
     """Draw ``layout`` into a new matplotlib ``Figure``.
+
+    The figure is not registered with ``pyplot`` and the backend is left alone:
+    nothing accumulates in pyplot's figure list over repeated calls, and an
+    interactive session keeps its backend.
 
     Returns
     -------
     matplotlib.figure.Figure
     """
+    _require_matplotlib()
     import matplotlib
 
-    matplotlib.use("Agg", force=False)
-    import matplotlib.pyplot as plt
+    with matplotlib.rc_context(_RC):
+        return _draw(layout, scheme, geometry)
+
+
+def save_figure(fig: Figure, path: str | Path, *, dpi: int = 200) -> Path:
+    """Write ``fig`` to ``path`` with this package's font and SVG settings, which
+    keep PDF and SVG text as text and make the output byte-reproducible.
+
+    The format follows the suffix, as for ``Figure.savefig``.
+    """
+    import matplotlib
+
+    path = Path(path)
+    with matplotlib.rc_context(_RC):
+        fig.savefig(
+            path,
+            dpi=dpi,
+            facecolor="white",
+            metadata=_NO_CLOCK.get(path.suffix.lower().lstrip(".")),
+        )
+    return path
+
+
+#: matplotlib stamps the wall-clock time into these formats unless told not to.
+_NO_CLOCK = {"svg": {"Date": None}, "pdf": {"CreationDate": None}}
+
+
+def _draw(layout: Layout, scheme: ColourScheme, geometry: Geometry | None) -> Figure:
+    """The body of :func:`render_figure`, run inside its rc settings."""
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
     from matplotlib.collections import PatchCollection
+    from matplotlib.figure import Figure
     from matplotlib.patches import Rectangle
 
     g = geometry or Geometry()
@@ -130,7 +191,8 @@ def render_figure(
     )
     H = title_h + head_h + g.row_h * layout.stats.n_rows + legend_h
 
-    fig = plt.figure(figsize=(W / 72.0, H / 72.0), dpi=100)
+    fig = Figure(figsize=(W / 72.0, H / 72.0), dpi=100)
+    FigureCanvasAgg(fig)
     ax = fig.add_axes((0, 0, 1, 1))
     ax.set_xlim(0, W)
     ax.set_ylim(H, 0)  # inverted: row 0 at the top, as in the HTML
@@ -372,38 +434,3 @@ def render_figure(
     ax.text(4, ly + 15, foot, fontsize=g.font_pt - 1, color="#5b6470", va="center")
     ax.text(4, ly + 27, caveat, fontsize=g.font_pt - 1, color="#8a6d1f", va="center")
     return fig
-
-
-def render_static(
-    layout: Layout,
-    path: str | Path,
-    *,
-    scheme: ColourScheme,
-    dpi: int = 200,
-    geometry: Geometry | None = None,
-) -> Path:
-    """Render ``layout`` to PNG, SVG or PDF, inferred from the suffix."""
-    try:
-        import matplotlib  # noqa: F401
-    except ModuleNotFoundError as exc:  # pragma: no cover
-        raise ImportError(
-            "the static backend needs matplotlib: install mlwp-scorecards[static]"
-        ) from exc
-
-    import matplotlib.pyplot as plt
-
-    path = Path(path)
-    rc = {
-        "pdf.fonttype": 42,  # embed TrueType so PDF text stays selectable
-        "ps.fonttype": 42,
-        "svg.fonttype": "none",  # keep SVG text as text, not glyph paths
-        "svg.hashsalt": "mlwp-scorecards",
-        "font.family": "DejaVu Sans",
-        "figure.autolayout": False,
-        "path.simplify": False,
-    }
-    with plt.rc_context(rc):
-        fig = render_figure(layout, scheme=scheme, geometry=geometry)
-        fig.savefig(path, dpi=dpi, facecolor="white")
-        plt.close(fig)
-    return path

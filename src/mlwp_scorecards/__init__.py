@@ -7,32 +7,24 @@ between their scores.
 Examples
 --------
 >>> import xarray as xr
->>> from mlwp_scorecards import make_scorecard
+>>> from pathlib import Path
+>>> from mlwp_scorecards import ScoreCard
 >>> ds = xr.open_dataset("verification_summary.nc")        # doctest: +SKIP
->>> make_scorecard(ds, colour_relative_to="IFS-HRES",           # doctest: +SKIP
-...                select=dict(forecast_source=["GraphCast"]),
-...                html_path="card.html", image_path="card.png")
+>>> score_card = ScoreCard(ds, colour_relative_to="IFS-HRES",   # doctest: +SKIP
+...                        select=dict(forecast_source=["GraphCast"]))
+>>> score_card.to_figure().savefig("card.png", dpi=200)        # doctest: +SKIP
+>>> Path("card.html").write_text(score_card.to_html())         # doctest: +SKIP
 """
 
 from importlib.metadata import version
 
-from .api import DEFAULT_COLUMNS, DEFAULT_ROWS, build_layout, make_scorecard, render
-from .colours import SCHEMES, Polarity
-from .ingest import ValidationReport
-from .model import Cell, Layout, Line, Step
+from .api import DEFAULT_COLUMNS, DEFAULT_ROWS, ScoreCard
+from .colours import SCHEMES
 
 __all__ = [
     "__version__",
-    "make_scorecard",
-    "build_layout",
-    "render",
-    "Layout",
-    "Cell",
-    "Line",
-    "Step",
-    "Polarity",
+    "ScoreCard",
     "SCHEMES",
-    "ValidationReport",
     "DEFAULT_ROWS",
     "DEFAULT_COLUMNS",
 ]

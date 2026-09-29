@@ -17,6 +17,16 @@ Design and rationale are documented in [`PLAN.md`](PLAN.md).
 
 ### Changed
 
+- **A card is a `ScoreCard`, and saving it is the caller's.**
+  `ScoreCard(ds, ...)` takes the arguments `build_layout` took and does all the
+  work; `.to_figure()` returns a matplotlib `Figure` and `.to_html()` the page as
+  a `str`. It replaces `make_scorecard(ds, html_path=..., image_path=...)`, which
+  wrote files. The CLI, `mlwp.make_scorecard`, is unchanged.
+- **Validation warnings are issued as `UserWarning`** while the card is built,
+  attributed to the caller's line. Before, the API dropped them unless asked for
+  the report.
+- The figure is no longer registered with `pyplot`, and building it no longer
+  switches the matplotlib backend to Agg, which broke `plt.show()` afterwards.
 - **`control=` / `experiment=` are gone.** The baseline is `colour_relative_to=`
   (`--colour-relative-to`): it decides the colouring, and the significance, and
   nothing else. The sources compared with it are a selection like any other,
@@ -112,6 +122,9 @@ Design and rationale are documented in [`PLAN.md`](PLAN.md).
 
 ### Fixed
 
+- **SVG and PDF output carried the wall-clock time** in their metadata, so they
+  were not byte-reproducible; only the HTML was tested for it. Both are now
+  written without it, and a test covers SVG.
 - **The HTML page dropped middle column-header levels.** Only the outermost and
   leaf header rows were written, so `columns=["forecast_source",
   "spatial_region", "metric"]` lost the region headings (the static figure had
@@ -160,6 +173,11 @@ Design and rationale are documented in [`PLAN.md`](PLAN.md).
 
 ### Removed
 
+- `make_scorecard()`, superseded by `ScoreCard(...)`; there is no alias.
+- `build_layout` and `render` from the public API: a `Layout` is the renderer
+  contract, not something a caller needs. `Layout`, `Cell`, `Line`, `Step`,
+  `Polarity` and `ValidationReport` are no longer re-exported from the package
+  root (they remain importable from their modules). There is no alias.
 - The undocumented-but-advertised support for tidy `pandas.DataFrame` inputs,
   record sequences and pre-flattened cubes. None of it was ever implemented; the
   README claimed it. `pandas` is no longer a declared dependency, since the

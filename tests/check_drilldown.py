@@ -18,7 +18,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from synthetic import make_verification_dataset  # noqa: E402
 
-from mlwp_scorecards import build_layout, make_scorecard  # noqa: E402
+from mlwp_scorecards import ScoreCard  # noqa: E402
+from mlwp_scorecards.render.static import save_figure  # noqa: E402
 
 OUT = Path(__file__).resolve().parents[1] / "tmp"
 
@@ -34,11 +35,11 @@ def main() -> None:
         title="drifting-persistence vs persistence",
         subtitle="synthetic reanalysis - click any cell for the full series",
     )
-    layout = build_layout(ds, **kwargs)
-    written = make_scorecard(
-        ds, html_path=OUT / "card.html", image_path=OUT / "card.png", **kwargs
-    )
-    page = written[0].read_text()
+    score_card = ScoreCard(ds, **kwargs)
+    layout = score_card._layout
+    page = score_card.to_html()
+    (OUT / "card.html").write_text(page, encoding="utf-8")
+    save_figure(score_card.to_figure(), OUT / "card.png")
 
     print(f"page {len(page) / 1024:.0f} kB")
     print(f"cells {layout.stats.n_cells_present}, boxes {layout.stats.n_boxes}")
@@ -84,7 +85,7 @@ def main() -> None:
     print("dialog, lazy inflate and modal open are all present")
 
     check_javascript(page)
-    print(f"\nopen {written[0]}")
+    print(f"\nopen {OUT / 'card.html'}")
 
 
 def check_javascript(page: str) -> None:

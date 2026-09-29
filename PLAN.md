@@ -764,7 +764,7 @@ mlwp-scorecards/
 ├── .github/workflows/{ci,pre-commit}.yml
 ├── src/mlwp_scorecards/
 │   ├── __init__.py        version + public re-exports
-│   ├── api.py             make_scorecard / build_layout / render
+│   ├── api.py             ScoreCard (build_layout internal)
 │   ├── cli.py             mlwp.make_scorecard entry point
 │   ├── model.py           HeaderCell, Line, Step, Cell, LayoutStats, Layout
 │   ├── ingest.py          CF Dataset -> uniform cube; schema constants; ValidationReport
@@ -1005,27 +1005,30 @@ half-pixel edges.
 ## Public API
 
 ```python
-make_scorecard(data, *,
-               colour_relative_to=None, select=None,                 # baseline; every selection
-               html_path=None, image_path=None, dpi=200,      # at least one output
-               **build_layout_kwargs) -> list[Path]
-
-build_layout(data, *,
-             colour_relative_to=None, show_values=False, select=None, cases="common",
-             rows=None, columns=None, cell="lead_time",
-             metric_polarity=None,
-             scheme="cvd", title="", subtitle="",
-             bootstrap="moving-block", block_length=None, n_resamples=2000,
-             confidence_levels=(0.68, 0.95, 0.997), seed=0,
-             strict=False, return_validation_report=False) -> Layout | (Layout, ValidationReport)
-
-render(layout, path, *, scheme=None, dpi=200) -> Path       # format by suffix
+score_card = ScoreCard(data, *,
+                 colour_relative_to=None, show_values=False, select=None, cases="common",
+                 rows=None, columns=None, cell="lead_time",
+                 metric_polarity=None,
+                 scheme="cvd", title="", subtitle="",
+                 bootstrap="moving-block", block_length=None, n_resamples=2000,
+                 confidence_levels=(0.68, 0.95, 0.997), seed=0,
+                 strict=False)
+score_card.to_figure() -> matplotlib.figure.Figure    # not registered with pyplot
+score_card.to_html(*, detail=True) -> str             # the self-contained page
 ```
 
 There is no configuration object: everything is a plain argument (see AGENTS.md).
-Re-exported from `__init__.py`: `make_scorecard`, `build_layout`, `render`, `Layout`,
-`Cell`, `Line`, `Step`, `Polarity`, `SCHEMES`, `ValidationReport`, `DEFAULT_ROWS`,
-`DEFAULT_COLUMNS`.
+Re-exported from `__init__.py`: `ScoreCard`, `SCHEMES`,
+`DEFAULT_ROWS`, `DEFAULT_COLUMNS`. Validation warnings are issued as `UserWarning`
+while the card is built.
+
+The CLI builds a `ScoreCard` too, and logs its warnings through loguru. Internally,
+`api.build_layout(...)` returns the `Layout` (and, on request, the
+`ValidationReport`); the layout tests use it directly. The renderers are
+`render.static.render_figure(layout, scheme=) -> Figure`, with
+`render.static.save_figure(fig, path, dpi=)` applying the font and SVG settings
+that keep output selectable and byte-reproducible, and
+`render.html.render_html(layout, scheme=) -> str`.
 
 `select=dict(forecast_source=["GraphCast", ...], truth_source="analysis", ...)`: one
 rule for every coordinate, described under *API changes of 2026-09-27*, item 7.
@@ -1237,7 +1240,7 @@ row. That is the price of not making the Brightband mistake (see
 
 ### 4. Outputs as explicit keywords
 
-See *Public API* above for the signature.
+The Python half is superseded by item 8; the CLI still works this way.
 
 - Everything after `data` is keyword-only, and the positional `output` went.
 - At least one of `html_path` / `image_path` is required.
@@ -1302,28 +1305,57 @@ Superseded and extended by item 7.
   the coordinate's type (`level=500` → 500.0). It replaces `--predictions-from` and
   `--truth-source`.
 
+### 8. A `ScoreCard` object; the caller saves
+
+Supersedes the Python half of item 4; the CLI keeps `--html-path` / `--image-path`.
+
+- `ScoreCard(ds, ...)` takes what `build_layout` took and does all the work in
+  `__init__`, and it is the only way in. There is no `from_dataset` and no
+  `make_scorecard`: with `__init__` taking the dataset, either would be a second
+  spelling of the same thing. (`make_scorecard` was briefly kept as an alias
+  returning a `ScoreCard`; an old call would then have failed obscurely rather
+  than with an `ImportError`.) The CLI command keeps the name
+  `mlwp.make_scorecard`.
+- `.to_figure()` returns a plain matplotlib `Figure` and `.to_html()` a `str`,
+  after pandas' `to_html`. "render" was considered and left to the internal
+  backends: a `Figure` is not rendered until it is drawn or saved.
+- **No `save()`.** Choosing a format by suffix is only the CLI's need, and
+  writing a file is `fig.savefig(path)` or `Path(path).write_text(page)`, which
+  the caller already knows.
+- **No `Figure` subclass.** matplotlib reads `pdf.fonttype`, `svg.fonttype` and
+  `svg.hashsalt` when a file is written, so a caller's own `savefig` uses their
+  settings. A subclass overriding `savefig` would carry ours along, at the price
+  of patching a matplotlib method; instead the internal
+  `render.static.save_figure` applies them for the CLI and the tests, and the
+  README says which settings to use.
+- The figure is built with `Figure(...)` rather than `plt.figure`, so pyplot never
+  holds it, and `matplotlib.use("Agg")` is gone — it broke `plt.show()` for anyone
+  who had built a card.
+- `.layout` and `.report` are not public. The layout is the renderer contract;
+  what a user needs from the report is its warnings, which are now issued as
+  `UserWarning` (attributed past the package's own frames) instead of being dropped
+  unless `return_validation_report=True` was passed.
+
 ### Examples
 
 ```python
 # two sources, analysis and observations on one card
-make_scorecard(ds, colour_relative_to="IFS-HRES", select=dict(forecast_source=["GraphCast"]),
-               html_path="graphcast_vs_hres.html",
-               image_path=["graphcast_vs_hres.png", "graphcast_vs_hres.pdf"],
-               rows=["truth_source", "variable", "level"], columns=["spatial_region", "metric"])
+score_card = ScoreCard(ds, colour_relative_to="IFS-HRES", select=dict(forecast_source=["GraphCast"]),
+                 rows=["truth_source", "variable", "level"], columns=["spatial_region", "metric"])
+score_card.to_figure().savefig("graphcast_vs_hres.png")
+Path("graphcast_vs_hres.html").write_text(score_card.to_html())
 
 # several sources against one baseline, Europe only, analysis only
-make_scorecard(ds, colour_relative_to="IFS-HRES",
-               select=dict(forecast_source=["GraphCast", "AIFS", "Aurora"],
-                           truth_source="analysis", spatial_region="europe", metric="rmse"),
-               html_path="sources_vs_hres.html",
-               rows=["forecast_source"], columns=["variable", "level", "metric"])
+ScoreCard(ds, colour_relative_to="IFS-HRES",
+          select=dict(forecast_source=["GraphCast", "AIFS", "Aurora"],
+                      truth_source="analysis", spatial_region="europe", metric="rmse"),
+          rows=["forecast_source"], columns=["variable", "level", "metric"])
 
 # every source but the baseline, both truths: two blocks of rows
-make_scorecard(ds, colour_relative_to="IFS-HRES",
-               select=dict(spatial_region="europe", metric="rmse"),
-               html_path="all_vs_hres.html",
-               rows=["truth_source", "forecast_source"],
-               columns=["variable", "level", "metric"])
+ScoreCard(ds, colour_relative_to="IFS-HRES",
+          select=dict(spatial_region="europe", metric="rmse"),
+          rows=["truth_source", "forecast_source"],
+          columns=["variable", "level", "metric"])
 ```
 
 `metric` stays on the columns even when one is selected: `variable` and `metric`

@@ -12,7 +12,9 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from mlwp_scorecards import build_layout, make_scorecard
+from mlwp_scorecards import ScoreCard
+from mlwp_scorecards.api import build_layout
+from mlwp_scorecards.render.static import save_figure
 
 
 def _big_dataset(
@@ -74,28 +76,28 @@ def test_full_size_card_renders_quickly(tmp_path):
     assert t_layout < 10, f"layout took {t_layout:.1f}s"
 
     t0 = time.perf_counter()
-    html, png = make_scorecard(
+    score_card = ScoreCard(
         ds,
-        html_path=tmp_path / "b.html",
-        image_path=tmp_path / "b.png",
         colour_relative_to="ctl",
         select=dict(forecast_source=["exp"]),
         rows=["truth_source", "variable", "level"],
         columns=["spatial_region", "metric"],
         n_resamples=500,
     )
+    page = score_card.to_html()
+    png = save_figure(score_card.to_figure(), tmp_path / "b.png")
     t_render = time.perf_counter() - t0
     assert t_render < 60, f"render took {t_render:.1f}s"
 
     # the reference card of this shape is 7.4 MB; ours should be far under
-    assert html.stat().st_size < 3_000_000, html.stat().st_size
+    assert len(page.encode()) < 3_000_000, len(page.encode())
     assert png.stat().st_size > 10_000
 
 
 @pytest.mark.slow
-def test_full_size_html_box_count(tmp_path):
+def test_full_size_html_box_count():
     ds = _big_dataset()
-    layout = build_layout(
+    score_card = ScoreCard(
         ds,
         colour_relative_to="ctl",
         select=dict(forecast_source=["exp"]),
@@ -103,16 +105,7 @@ def test_full_size_html_box_count(tmp_path):
         columns=["spatial_region", "metric"],
         n_resamples=200,
     )
-    p = make_scorecard(
-        ds,
-        html_path=tmp_path / "b.html",
-        colour_relative_to="ctl",
-        select=dict(forecast_source=["exp"]),
-        rows=["truth_source", "variable", "level"],
-        columns=["spatial_region", "metric"],
-        n_resamples=200,
-    )[0]
-    assert p.read_text().count('<i class="b') == layout.stats.n_boxes
+    assert score_card.to_html().count('<i class="b') == score_card._layout.stats.n_boxes
 
 
 @pytest.mark.slow

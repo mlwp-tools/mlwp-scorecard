@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import html
 import json
-from pathlib import Path
 
 from jinja2 import Template
 
@@ -557,18 +556,16 @@ def _pct(conf: float | None) -> str:
 
 def render_html(
     layout: Layout,
-    path: str | Path,
     *,
     scheme: ColourScheme,
     detail: bool = True,
     precision: int = 4,
-) -> Path:
-    """Write ``layout`` as a self-contained interactive HTML page.
+) -> str:
+    """Render ``layout`` as a self-contained interactive HTML page.
 
     Parameters
     ----------
     layout : Layout
-    path : str or Path
     scheme : ColourScheme
     detail : bool, optional
         Embed the click-through drill-down data. On a full-size card this is the
@@ -579,10 +576,9 @@ def render_html(
 
     Returns
     -------
-    Path
-        The file written.
+    str
+        The page.
     """
-    path = Path(path)
 
     def esc(v: object) -> str:
         return html.escape(str(v), quote=True)
@@ -720,7 +716,7 @@ def render_html(
             f"({raw_bytes / packed_bytes:.1f}x compressed)."
         )
 
-    page = _PAGE.render(
+    return _PAGE.render(
         title=layout.title or "Scorecard",
         subtitle=layout.subtitle,
         css=_CSS.format(
@@ -758,5 +754,3 @@ def render_html(
         colkeys_json=json.dumps(col_keys),
         sep_json=json.dumps(SEP),
     )
-    path.write_text(page, encoding="utf-8")
-    return path

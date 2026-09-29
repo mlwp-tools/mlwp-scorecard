@@ -18,23 +18,20 @@ from pathlib import Path
 
 import pytest
 
-from mlwp_scorecards import build_layout, make_scorecard
+from mlwp_scorecards import ScoreCard
 from mlwp_scorecards.render.payload import build_payload, pack
 
 HARNESS = Path(__file__).parent / "drilldown_harness.mjs"
 
 
 @pytest.fixture(scope="module")
-def page(verification, tmp_path_factory) -> str:
-    out = tmp_path_factory.mktemp("drill") / "card.html"
-    make_scorecard(
+def page(verification) -> str:
+    return ScoreCard(
         verification,
-        html_path=out,
         colour_relative_to="persistence",
         select=dict(forecast_source=["drifting-persistence"]),
         title="t",
-    )
-    return out.read_text()
+    ).to_html()
 
 
 def _payload(page: str) -> dict:
@@ -93,26 +90,20 @@ def test_payload_refuses_to_emit_bare_nan(layout):
     json.loads(raw)  # and it must actually parse
 
 
-def test_detail_can_be_switched_off(verification, tmp_path):
+def test_detail_can_be_switched_off(verification):
     """On a full-size card this is the largest thing in the file."""
-    from mlwp_scorecards.colours import SCHEMES
-    from mlwp_scorecards.render.html import render_html
-
-    layout = build_layout(
+    score_card = ScoreCard(
         verification,
         colour_relative_to="persistence",
         select=dict(forecast_source=["drifting-persistence"]),
     )
-    with_ = render_html(layout, tmp_path / "a.html", scheme=SCHEMES["cvd"])
-    without = render_html(
-        layout, tmp_path / "b.html", scheme=SCHEMES["cvd"], detail=False
-    )
+    with_, without = score_card.to_html(), score_card.to_html(detail=False)
     # the payload *element*, not the getElementById call that looks for it
     element = re.compile(r'<script[^>]*id="sc-data"')
-    assert element.search(with_.read_text())
-    assert not element.search(without.read_text())
-    assert "<dialog" not in without.read_text()
-    assert without.stat().st_size < with_.stat().st_size
+    assert element.search(with_)
+    assert not element.search(without)
+    assert "<dialog" not in without
+    assert len(without) < len(with_)
 
 
 def test_page_still_makes_no_external_requests(page):
@@ -138,13 +129,13 @@ def test_drilldown_actually_draws(verification, tmp_path):
     no other coverage of the SVG generation.
     """
     out = tmp_path / "card.html"
-    make_scorecard(
+    score_card = ScoreCard(
         verification,
-        html_path=out,
         colour_relative_to="persistence",
         select=dict(forecast_source=["drifting-persistence"]),
         title="t",
     )
+    out.write_text(score_card.to_html(), encoding="utf-8")
     r = subprocess.run(["node", str(HARNESS), str(out)], capture_output=True, text=True)
     assert r.returncode == 0, f"{r.stdout}\n{r.stderr}"
     assert "dialog opened      : true" in r.stdout

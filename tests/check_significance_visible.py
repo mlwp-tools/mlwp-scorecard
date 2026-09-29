@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from synthetic import make_verification_dataset  # noqa: E402
 
-from mlwp_scorecards import build_layout  # noqa: E402
+from mlwp_scorecards.api import build_layout  # noqa: E402
 from mlwp_scorecards.colours import SCHEMES, contrast_ratio  # noqa: E402
 from mlwp_scorecards.render.html import render_html  # noqa: E402
 
@@ -58,8 +58,8 @@ def main() -> None:
     if s.n_significant == 0:
         print("  (no paired difference input, so nothing can be marked -- expected)")
 
-    p = render_html(layout, OUT / "sig.html", scheme=scheme)
-    page = p.read_text()
+    page = render_html(layout, scheme=scheme)
+    (OUT / "sig.html").write_text(page, encoding="utf-8")
     marked = len(re.findall(r'class="b [pnz]\d* sig"', page))
     print(f"  page carries {marked} boxes with the sig class")
 

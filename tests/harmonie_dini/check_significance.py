@@ -15,7 +15,7 @@ import numpy as np
 import xarray as xr
 from common import CONFIDENCE_LEVELS, N_BOOT, OUT
 
-from mlwp_scorecards import build_layout
+from mlwp_scorecards.api import build_layout
 
 
 def main() -> None:

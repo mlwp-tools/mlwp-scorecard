@@ -29,26 +29,39 @@ uv add "mlwp-scorecards[static]"  # + matplotlib PNG/SVG/PDF
 ## Use
 
 ```python
+from pathlib import Path
+
 import xarray as xr
-from mlwp_scorecards import make_scorecard
+from mlwp_scorecards import ScoreCard
 
 ds = xr.open_dataset("verification_summary.nc")
 
-make_scorecard(
+score_card = ScoreCard(
     ds,
     colour_relative_to="IFS-HRES",
     select=dict(forecast_source=["GraphCast"]),
-    html_path="scorecard.html",
-    image_path="scorecard.png",
     title="GraphCast vs IFS HRES",
 )
+fig = score_card.to_figure()                             # a matplotlib Figure
+fig.savefig("scorecard.png", dpi=200)
+Path("scorecard.html").write_text(score_card.to_html())  # a self-contained page
 ```
+
+Building the card does all the work; `to_figure()` and `to_html()` only draw it,
+and saving is yours to do. Anything worth knowing about the data — a block length
+chosen for you, too few cases to block — is issued as a `UserWarning` while the
+card is built.
+
+The figure is not registered with `pyplot`, so it does not pile up over repeated
+builds, and it saves with your matplotlib settings. For PDF and SVG text that
+stays selectable, set `pdf.fonttype=42` and `svg.fonttype="none"` (the command
+line does this for you).
 
 Rows and columns are inferred from the dataset, or named explicitly:
 
 ```python
-make_scorecard(
-    ds, html_path="scorecard.html",
+score_card = ScoreCard(
+    ds,
     colour_relative_to="IFS-HRES", select=dict(forecast_source=["GraphCast"]),
     rows=["truth_source", "variable", "level"],
     columns=["spatial_region", "metric"],
@@ -95,8 +108,8 @@ the rows unless you place it — with one block of rows per source, each compare
 with the `colour_relative_to` baseline:
 
 ```python
-make_scorecard(
-    ds, html_path="scorecard.html",
+score_card = ScoreCard(
+    ds,
     colour_relative_to="IFS-HRES",
     select=dict(forecast_source=["GraphCast", "AIFS", "Aurora"],
                 truth_source="analysis"),
@@ -134,10 +147,9 @@ Brightband's OWB scorecard does:
 | None | False | an error: there would be nothing on the card |
 
 ```python
-make_scorecard(ds, colour_relative_to="IFS-HRES", show_values=True,
-               select=dict(forecast_source=["GraphCast", "AIFS"]),
-               html_path="scorecard.html")
-make_scorecard(ds, show_values=True, html_path="scores.html")   # every source, no baseline
+ScoreCard(ds, colour_relative_to="IFS-HRES", show_values=True,
+          select=dict(forecast_source=["GraphCast", "AIFS"]))
+ScoreCard(ds, show_values=True)   # every source, no baseline
 ```
 
 With values shown every source has a row of its own, so `forecast_source` is on an
@@ -147,8 +159,8 @@ The baseline's grey row is over the same cases the other rows were compared on
 under `cases="common"`, and over all of its own cases under `"pairwise"`. With no
 baseline, `cases="common"` averages every source over the cases all of them scored.
 
-There is no configuration object to build: coordinate names, source names and output
-paths are all the API has.
+There is no configuration object to build: coordinate names and source names are
+all the API has. The command line takes the same arguments, plus where to write:
 
 ```bash
 mlwp.make_scorecard verification_summary.nc \
@@ -163,11 +175,11 @@ value, commas make a list (`--select forecast_source=GraphCast,...`), and a
 trailing comma makes a list of one (`--select spatial_region=europe,`). Values
 are read as the coordinate's type, so `--select level=500` selects 500.0.
 
-`html_path=` is the interactive page and must end in `.html`. `image_path=` is
-the static figure, and takes one path or several; each one's format follows its
-suffix (`.png`, `.pdf`, `.svg`, ...), so `image_path=["card.png", "card.pdf"]`
+`--html-path` is the interactive page and must end in `.html`. `--image-path` is
+the static figure, and is repeatable; each one's format follows its suffix
+(`.png`, `.pdf`, `.svg`, ...), so `--image-path card.png --image-path card.pdf`
 writes both. At least one of the two is required, and a suffix that contradicts
-its argument is refused before anything is computed.
+its flag is refused before anything is computed.
 
 The HTML page is self-contained — no CDN, no analytics, no webfonts, so it works
 offline and from `file://`. Hover a box for its value, use the checkboxes to filter
@@ -235,13 +247,13 @@ package does this one**, because doing it well requires the per-case numbers:
 Both choices are arguments, and both are printed on the card:
 
 ```python
-make_scorecard(ds, html_path="scorecard.html",
-               colour_relative_to="IFS-HRES", select=dict(forecast_source=["GraphCast"]),
-               bootstrap="moving-block",   # or "iid"
-               block_length=None,          # in CASES; derived from the cadence
-               n_resamples=2000,
-               confidence_levels=(0.68, 0.95, 0.997),
-               seed=0)
+ScoreCard(ds,
+          colour_relative_to="IFS-HRES", select=dict(forecast_source=["GraphCast"]),
+          bootstrap="moving-block",   # or "iid"
+          block_length=None,          # in CASES; derived from the cadence
+          n_resamples=2000,
+          confidence_levels=(0.68, 0.95, 0.997),
+          seed=0)
 ```
 
 `seed` is fixed rather than drawn from the OS, so two runs on one file agree.
@@ -263,7 +275,7 @@ Data variables:
 ```
 
 ```python
-make_scorecard(ds, html_path="scorecard.html", colour_relative_to="IFS-HRES")
+ScoreCard(ds, colour_relative_to="IFS-HRES")
 ```
 
 With only two sources, every source but the baseline is GraphCast, so no `select=`
@@ -274,12 +286,12 @@ layout is `rows=["variable"]`, `columns=["metric"]` — two rows and one column.
 Adding `mae.2t` and `mae.msl` would give a second column.
 
 `init_time` may be absent too, if all you have is means. Then you get a card
-coloured by magnitude with no error bars, no borders and no case counts, and the
-report says so:
+coloured by magnitude with no error bars, no borders and no case counts, and a
+warning says so:
 
 ```
-warning no 'init_time' dimension: values are read as already-collapsed means,
-        with no interval and nothing marked significant
+UserWarning: no 'init_time' dimension: values are read as already-collapsed means,
+             with no interval and nothing marked significant
 ```
 
 Set `units` on each variable either way — it reaches the drill-down axes, and
@@ -304,8 +316,8 @@ dimension the package has never heard of behaves exactly the same way:
 
 ```python
 # season and threshold are not special; they are just axes
-make_scorecard(
-    ds, html_path="scorecard.html",
+ScoreCard(
+    ds,
     colour_relative_to="IFS-HRES",
     rows=["season", "variable"],
     columns=["threshold", "metric"],
@@ -318,8 +330,8 @@ that quietly averaged over your thresholds would look entirely normal and be
 wrong. If you do not want a dimension on the card, pick one value:
 
 ```python
-make_scorecard(ds, select=dict(season="DJF"), ...)   # drops the dimension
-make_scorecard(ds.sel(season="DJF"), ...)            # the same
+ScoreCard(ds, select=dict(season="DJF"), ...)   # drops the dimension
+ScoreCard(ds.sel(season="DJF"), ...)            # the same
 ```
 
 A list keeps the dimension, subset, so it still needs a place on the card:

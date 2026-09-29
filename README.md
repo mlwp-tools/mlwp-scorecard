@@ -31,9 +31,24 @@ to happen before the averaging, and cannot be recovered afterwards.
 
 ## Install
 
+Not on PyPI yet, so install from GitHub:
+
 ```bash
-uv add mlwp-scorecard            # HTML output
-uv add "mlwp-scorecard[static]"  # + matplotlib PNG/SVG/PDF
+uv add "mlwp-scorecard @ git+https://github.com/mlwp-tools/mlwp-scorecard"          # HTML output
+uv add "mlwp-scorecard[static] @ git+https://github.com/mlwp-tools/mlwp-scorecard"  # + matplotlib PNG/SVG/PDF
+```
+
+With pip, the same requirement works: `pip install "mlwp-scorecard[static] @
+git+https://github.com/mlwp-tools/mlwp-scorecard"`. The `netcdf` and `zarr`
+extras add the readers for those input formats, e.g. `mlwp-scorecard[static,netcdf]`.
+
+To only run the command line tool, `uvx` fetches it from GitHub and runs it without
+installing anything into your project:
+
+```bash
+uvx --from "mlwp-scorecard[static,netcdf] @ git+https://github.com/mlwp-tools/mlwp-scorecard" \
+    mlwp.make_scorecard verification_summary.nc --baseline IFS-HRES \
+    --html-path scorecard.html --image-path scorecard.png
 ```
 
 ## Use

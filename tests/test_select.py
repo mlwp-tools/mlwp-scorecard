@@ -19,6 +19,8 @@ COLUMNS = ["spatial_region", "metric"]
 
 def _card(ds, **kw):
     kw.setdefault("n_resamples", 50)
+    # A slice of init_time can leave too few cases for the default blocks.
+    kw.setdefault("bootstrap", "iid")
     return build_layout(ds, colour_relative_to="persistence", **kw)
 
 

@@ -8,8 +8,6 @@ figure or an HTML page for the caller to save.
 
 from __future__ import annotations
 
-import os
-import warnings
 from typing import TYPE_CHECKING, Any, Mapping, Sequence
 
 import numpy as np
@@ -22,7 +20,6 @@ from .ingest import (
     FORECAST_DIM,
     METRIC_DIM,
     VARIABLE_DIM,
-    ValidationReport,
     prepare,
     split_name,
 )
@@ -46,8 +43,6 @@ DEFAULT_ROWS = ("truth_source", VARIABLE_DIM, "level")
 #: Preferred nesting when ``columns`` is not given. ``region`` is accepted as a
 #: synonym of ``spatial_region`` here only, for datasets that use the short name.
 DEFAULT_COLUMNS = ("spatial_region", "region", METRIC_DIM)
-
-_PACKAGE_DIR = os.path.dirname(__file__) + os.sep
 
 
 def _is_many(value: Any) -> bool:
@@ -269,29 +264,23 @@ def build_layout(  # numpydoc ignore=PR01
     n_resamples: int = 2000,
     confidence_levels: Sequence[float] = (0.68, 0.95, 0.997),
     seed: int = 0,
-    strict: bool = False,
-    return_validation_report: bool = False,
-) -> Layout | tuple[Layout, ValidationReport]:
+) -> Layout:
     """Resolve a verification dataset into a ready-to-render :class:`Layout`.
 
     The engine behind :class:`ScoreCard`, and internal: the ``Layout`` is the
-    renderer contract, not something a caller needs. Every parameter but the last
-    is documented on :class:`ScoreCard`, and is not repeated here -- hence the
+    renderer contract, not something a caller needs. The parameters are
+    documented on :class:`ScoreCard`, and are not repeated here -- hence the
     ``numpydoc ignore`` on the signature.
 
     Parameters
     ----------
     data : xr.Dataset
         Verification statistics: one variable per ``{metric}.{variable}`` pair.
-    return_validation_report : bool, optional
-        Also return the report, whose warnings would otherwise be lost.
 
     Returns
     -------
-    layout : Layout
+    Layout
         The resolved card.
-    report : ValidationReport
-        What validation found; only when ``return_validation_report`` is True.
     """
     if colour_relative_to is None and not show_values:
         options = (
@@ -319,15 +308,9 @@ def build_layout(  # numpydoc ignore=PR01
         data, rows, columns, cell, len(sources), lay_out_sources=show_values
     )
 
-    cube = prepare(
-        data,
-        row_dims=row_dims,
-        column_dims=col_dims,
-        cell_dim=cell,
-        strict=strict,
-    )
+    score, units = prepare(data, row_dims=row_dims, column_dims=col_dims, cell_dim=cell)
     agg = aggregate(
-        cube,
+        score,
         forecast_source=sources,
         baseline_source=colour_relative_to,
         cases=cases,
@@ -338,8 +321,8 @@ def build_layout(  # numpydoc ignore=PR01
         confidence_levels=confidence_levels,
         seed=seed,
     )
-    layout = resolve(
-        cube,
+    return resolve(
+        units,
         agg=agg,
         row_dims=row_dims,
         column_dims=col_dims,
@@ -351,9 +334,6 @@ def build_layout(  # numpydoc ignore=PR01
         subtitle=subtitle,
         show_values=show_values,
     )
-    if return_validation_report:
-        return layout, cube.report
-    return layout
 
 
 class ScoreCard:
@@ -361,9 +341,10 @@ class ScoreCard:
 
     Building one does all the work -- selection, the paired differences, the
     bootstrap, the layout -- and the result is then drawn with
-    :meth:`to_figure` or :meth:`to_html`, for the caller to save. Warnings about
-    the data (a block length chosen for you, too few cases for blocks, ...) are
-    issued as :class:`UserWarning` while it is built.
+    :meth:`to_figure` or :meth:`to_html`, for the caller to save. Nothing is
+    guessed or quietly relaxed along the way: input the card cannot honestly be
+    drawn from raises, naming the choice that would resolve it, and every choice
+    that was made -- the resample, the case set -- is printed on the card.
 
     Parameters
     ----------
@@ -420,7 +401,10 @@ class ScoreCard:
         Used only when the input carries an ``init_time`` dimension.
     block_length : int, optional
         Block length in forecast **cases**, not hours. Derived from the
-        initialisation cadence when omitted, and the choice is reported.
+        initialisation cadence when omitted: blocks spanning 10 days, which
+        needs at least four blocks' worth of cases. With fewer, or no readable
+        cadence, building the card raises rather than falling back to ``"iid"``
+        -- pass a block length, or ``bootstrap="iid"``, to choose.
     n_resamples : int, optional
         Bootstrap resamples of the forecast cases.
     confidence_levels : sequence of float, optional
@@ -428,14 +412,13 @@ class ScoreCard:
     seed : int, optional
         Fixed by default: two runs on the same file must agree, and an OS-seeded
         default would flip borderline significance markings between them.
-    strict : bool, optional
-        Treat warnings as failures.
 
     Raises
     ------
     ValueError
         If ``colour_relative_to`` is None and ``show_values`` is False: the card
-        would have nothing on it. Also if the dataset fails validation.
+        would have nothing on it. Also if the dataset is not in the documented
+        shape, or ``block_length`` is omitted and cannot be derived.
 
     Examples
     --------
@@ -465,9 +448,8 @@ class ScoreCard:
         n_resamples: int = 2000,
         confidence_levels: Sequence[float] = (0.68, 0.95, 0.997),
         seed: int = 0,
-        strict: bool = False,
     ) -> None:
-        layout, report = build_layout(
+        self._layout: Layout = build_layout(
             data,
             colour_relative_to=colour_relative_to,
             show_values=show_values,
@@ -485,16 +467,8 @@ class ScoreCard:
             n_resamples=n_resamples,
             confidence_levels=confidence_levels,
             seed=seed,
-            strict=strict,
-            return_validation_report=True,
         )
-        self._layout: Layout = layout
-        self._report: ValidationReport = report
         self._scheme = SCHEMES[scheme] if isinstance(scheme, str) else scheme
-        # Attributed to the first line outside the package, however many package
-        # frames -- such as the CLI's -- sit in between.
-        for w in report.warnings:
-            warnings.warn(w, UserWarning, skip_file_prefixes=(_PACKAGE_DIR,))
 
     def __repr__(self) -> str:
         """Name the sources and the card's size.

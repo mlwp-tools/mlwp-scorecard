@@ -45,6 +45,8 @@ def card(summary, baseline: str, forecast: str, levels=CONFIDENCE_LEVELS):
         confidence_levels=levels,
         n_resamples=N_BOOT,
         seed=0,
+        # Five initialisations: far too few for blocks, so iid is chosen outright.
+        bootstrap="iid",
     )
 
 
@@ -324,6 +326,7 @@ def test_renders_both_formats(summary, tmp_path):
         columns=["metric"],
         cell="lead_time",
         title="HARMONIE-AROME vs AIFS",
+        bootstrap="iid",
     )
     page = score_card.to_html()
     png = save_figure(score_card.to_figure(), tmp_path / "c.png")

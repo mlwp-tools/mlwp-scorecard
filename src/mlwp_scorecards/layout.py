@@ -1,4 +1,4 @@
-"""Resolve a prepared cube plus a layout declaration into a :class:`Layout`.
+"""Resolve collapsed scores plus a layout declaration into a :class:`Layout`.
 
 The ordering rule is one global order per dimension, filtered by presence within
 each parent branch. Verified against the ECMWF reference: a single variable list
@@ -17,7 +17,7 @@ import xarray as xr
 
 from .aggregate import Aggregated
 from .colours import ColourScheme, FixedScaling, Polarity, family_of, polarity_of
-from .ingest import FORECAST_DIM, METRIC_DIM, VARIABLE_DIM, PreparedCube
+from .ingest import FORECAST_DIM, METRIC_DIM, VARIABLE_DIM
 from .model import (
     NEUTRAL,
     Cell,
@@ -336,7 +336,7 @@ def _headers_for(headers: list[list[HeaderCell]], index: int) -> tuple[HeaderCel
 
 
 def resolve(
-    cube: PreparedCube,
+    units: Mapping[tuple[str, str], str | None],
     *,
     row_dims: Sequence[str],
     column_dims: Sequence[str],
@@ -353,8 +353,9 @@ def resolve(
 
     Parameters
     ----------
-    cube : PreparedCube
-        The prepared scores; only its units are read here.
+    units : mapping of (str, str) to str or None
+        Units keyed by ``(metric, variable)``, from
+        :func:`~mlwp_scorecards.ingest.prepare`.
     row_dims : sequence of str
         The dimensions nested on the rows, outermost first.
     column_dims : sequence of str
@@ -478,7 +479,7 @@ def resolve(
         dif = {c: (_first(lo), _first(hi)) for c, (lo, hi) in dif.items()}
 
     return _lay_out(
-        cube=cube,
+        units=units,
         row_dims=row_dims,
         column_dims=column_dims,
         cell_dim=cell_dim,
@@ -508,7 +509,7 @@ def resolve(
 
 def _lay_out(
     *,
-    cube: PreparedCube,
+    units: Mapping[tuple[str, str], str | None],
     row_dims: Sequence[str],
     column_dims: Sequence[str],
     cell_dim: str,
@@ -545,8 +546,8 @@ def _lay_out(
 
     Parameters
     ----------
-    cube : PreparedCube
-        The prepared scores; only its units are read.
+    units : mapping of (str, str) to str or None
+        Units keyed by ``(metric, variable)``.
     row_dims : sequence of str
         The dimensions nested on the rows, outermost first.
     column_dims : sequence of str
@@ -719,8 +720,8 @@ def _lay_out(
             source = str(pos.get(FORECAST_DIM, agg.forecast_sources[0]))
             is_base = baseline_key is not None and source == baseline_key
             compared = coloured and not is_base
-            units = cube.units.get((metric, variable))
-            u = f" {units}" if units else ""
+            unit = units.get((metric, variable))
+            u = f" {unit}" if unit else ""
             pol = polarity_of(metric, metric_polarity)
             fam = family_of(pol) if compared else NEUTRAL
 
@@ -902,7 +903,7 @@ def _lay_out(
                 col_key=cl.key,
                 cell_id=f"{rl.slug}__{cl.slug}",
                 metric=metric,
-                units=units,
+                units=unit,
                 steps=tuple(steps),
                 forecast_source=source,
                 is_baseline=is_base,
@@ -925,6 +926,11 @@ def _lay_out(
     }
 
     notes = []
+    if agg.already_means:
+        notes.append(
+            "The input has no forecast cases: each value is a mean as given, so "
+            "there are no intervals and nothing is marked significant."
+        )
     block = (
         f"blocks of {agg.block_length} cases"
         if agg.block_length > 1

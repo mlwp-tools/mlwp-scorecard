@@ -1011,20 +1011,20 @@ score_card = ScoreCard(data, *,
                  metric_polarity=None,
                  scheme="cvd", title="", subtitle="",
                  bootstrap="moving-block", block_length=None, n_resamples=2000,
-                 confidence_levels=(0.68, 0.95, 0.997), seed=0,
-                 strict=False)
+                 confidence_levels=(0.68, 0.95, 0.997), seed=0)
 score_card.to_figure() -> matplotlib.figure.Figure    # not registered with pyplot
 score_card.to_html(*, detail=True) -> str             # the self-contained page
 ```
 
 There is no configuration object: everything is a plain argument (see AGENTS.md).
 Re-exported from `__init__.py`: `ScoreCard`, `SCHEMES`,
-`DEFAULT_ROWS`, `DEFAULT_COLUMNS`. Validation warnings are issued as `UserWarning`
-while the card is built.
+`DEFAULT_ROWS`, `DEFAULT_COLUMNS`. Nothing warns: input the card cannot honestly
+be drawn from raises, and every choice made is printed on the card.
 
-The CLI builds a `ScoreCard` too, and logs its warnings through loguru. Internally,
-`api.build_layout(...)` returns the `Layout` (and, on request, the
-`ValidationReport`); the layout tests use it directly. The renderers are
+The CLI builds a `ScoreCard` too. Internally,
+`api.build_layout(...)` returns the `Layout`; the layout tests use it directly.
+`ingest.prepare` returns the per-case score array and its units, and
+`aggregate.aggregate` takes the score array. The renderers are
 `render.static.render_figure(layout, scheme=) -> Figure`, with
 `render.static.save_figure(fig, path, dpi=)` applying the font and SVG settings
 that keep output selectable and byte-reproducible, and
@@ -1248,7 +1248,8 @@ The Python half is superseded by item 8; the CLI still works this way.
   formats. A suffix that contradicts the argument raises, e.g.
   `html_path="card.png"`, and this is checked before anything is computed.
 - The CLI follows the same pattern: `--colour-relative-to`, `--html-path`, and
-  `--image-path` (repeatable). `--validate-only` needs no output.
+  `--image-path` (repeatable). (`--validate-only`, which needed no output, went
+  later: see item 8.)
 - `build_layout()` and `render(layout, path)` stay as the lower-level route, with
   `render` still choosing the format by suffix.
 - A clean break, with a CHANGELOG entry and no deprecated alias.
@@ -1331,10 +1332,26 @@ Supersedes the Python half of item 4; the CLI keeps `--html-path` / `--image-pat
 - The figure is built with `Figure(...)` rather than `plt.figure`, so pyplot never
   holds it, and `matplotlib.use("Agg")` is gone — it broke `plt.show()` for anyone
   who had built a card.
-- `.layout` and `.report` are not public. The layout is the renderer contract;
-  what a user needs from the report is its warnings, which are now issued as
-  `UserWarning` (attributed past the package's own frames) instead of being dropped
-  unless `return_validation_report=True` was passed.
+- `.layout` is not public: it is the renderer contract. There was briefly a
+  `.report` too, whose warnings were dropped unless `return_validation_report=True`
+  was passed; the next two points explain why nothing replaced it.
+- **No "validation", no warnings, no `strict`.** There was never a validation
+  step: structural problems with the input always raised, and besides those the
+  package issued exactly three warnings. Each is now either refused or printed on
+  the card, so nothing is left to warn about:
+  - too few cases for the default 10-day blocks, or no readable cadence: the
+    card is **refused**, naming `block_length=` and `bootstrap="iid"`. Falling
+    back to iid quietly would mark far more as significant than it should
+    (~44% false positives against a nominal 5%), so, like a metric's polarity,
+    it has to be the caller's choice;
+  - no `init_time`: a documented input shape, so it is accepted, and the card
+    **says so** in its notes (`Aggregated.already_means`).
+  `strict=` / `--strict` then has nothing to act on, and `--validate-only` only
+  ever built the whole card and threw it away; both went.
+- **`ValidationReport` and `PreparedCube` are gone.** In `prepare` the report
+  only ever held one failure before raising it, so failures are plain
+  `ValueError`s. Without the report, `PreparedCube` was a pair: `prepare` returns
+  `(score, units)`, `aggregate` takes the scores and `resolve` the units.
 
 ### Examples
 

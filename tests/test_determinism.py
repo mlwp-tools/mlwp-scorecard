@@ -48,7 +48,7 @@ def test_html_is_identical_in_a_fresh_process(tmp_path):
         sys.path.insert(0, {str((__import__("pathlib").Path(__file__).parent))!r})
         from synthetic import make_verification_dataset
         from mlwp_scorecards import ScoreCard
-        ds = make_verification_dataset(n_case=32, drift=0.25, seed=3)
+        ds = make_verification_dataset(n_case=80, drift=0.25, seed=3)
         score_card = ScoreCard(ds, colour_relative_to="persistence",
                                select=dict(forecast_source=["drifting-persistence"]),
                                title="t", n_resamples=100)

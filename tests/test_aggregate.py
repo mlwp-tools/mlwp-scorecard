@@ -33,7 +33,8 @@ def _per_case(n_case=60, n_lead=4, seed=0, rho=0.9, drift=0.15):
     ctl = 2.0 + rho * common + (1 - rho) * rng.normal(0, 1, (n_case, n_lead))
     exp = ctl + drift + (1 - rho) * rng.normal(0, 1, (n_case, n_lead))
     lead = np.arange(1, n_lead + 1).astype("timedelta64[D]")
-    init = np.datetime64("2024-01-01") + np.arange(n_case) * np.timedelta64(12, "h")
+    # Daily, so the default 60 cases take the default 10-day blocks.
+    init = np.datetime64("2024-01-01") + np.arange(n_case) * np.timedelta64(24, "h")
     return xr.Dataset(
         {
             "rmse.2t": xr.DataArray(
@@ -48,10 +49,11 @@ def _per_case(n_case=60, n_lead=4, seed=0, rho=0.9, drift=0.15):
     )
 
 
-def _cube(ds):
-    return prepare(
+def _score(ds):
+    score, _ = prepare(
         ds, row_dims=["variable"], column_dims=["metric"], cell_dim="lead_time"
     )
+    return score
 
 
 # --------------------------------------------------------------------------- #
@@ -136,7 +138,7 @@ def test_the_paired_interval_is_tighter_than_treating_the_sources_as_independent
     less than the data supports.
     """
     agg = aggregate(
-        _cube(_per_case(rho=0.95)),
+        _score(_per_case(rho=0.95)),
         baseline_source="ctl",
         forecast_source="exp",
         n_resamples=500,
@@ -155,7 +157,7 @@ def test_the_paired_interval_is_tighter_than_treating_the_sources_as_independent
 
 def test_intervals_nest_with_the_confidence_level():
     agg = aggregate(
-        _cube(_per_case()),
+        _score(_per_case()),
         baseline_source="ctl",
         forecast_source="exp",
         n_resamples=500,
@@ -177,7 +179,7 @@ def test_the_mean_is_the_plain_mean_over_cases():
     bootstrap. Only the interval around it is resampled."""
     ds = _per_case()
     agg = aggregate(
-        _cube(ds), baseline_source="ctl", forecast_source="exp", n_resamples=50, seed=0
+        _score(ds), baseline_source="ctl", forecast_source="exp", n_resamples=50, seed=0
     )
     want = ds["rmse.2t"].sel(forecast_source="ctl").mean("init_time")
     assert np.allclose(agg.baseline.values.ravel(), want.values.ravel())
@@ -190,7 +192,12 @@ def test_counts_are_the_cases_where_both_sources_scored():
     ds["rmse.2t"][0, :4] = np.nan  # control missing four cases
     ds["rmse.2t"][1, 3:6] = np.nan  # experiment missing three, one overlapping
     agg = aggregate(
-        _cube(ds), baseline_source="ctl", forecast_source="exp", n_resamples=50, seed=0
+        _score(ds),
+        baseline_source="ctl",
+        forecast_source="exp",
+        n_resamples=50,
+        seed=0,
+        bootstrap="iid",  # 20 cases: too few for the default blocks
     )
     assert set(np.unique(agg.counts.values)) == {20 - 6}
 
@@ -208,7 +215,11 @@ def test_the_means_use_only_the_cases_both_sources_scored():
     ds["rmse.2t"][0, 20:] = 5.0  # control: bad on the second half
     ds["rmse.2t"][1, 20:] = np.nan  # experiment: missing the second half
     agg = aggregate(
-        _cube(ds), baseline_source="ctl", forecast_source="exp", n_resamples=200, seed=0
+        _score(ds),
+        baseline_source="ctl",
+        forecast_source="exp",
+        n_resamples=200,
+        seed=0,
     )
 
     assert np.allclose(agg.baseline.values, 1.0)
@@ -224,16 +235,16 @@ def test_the_means_use_only_the_cases_both_sources_scored():
 def test_the_same_seed_gives_the_same_interval_and_a_different_one_does_not():
     """`test_determinism` asserts byte-identical HTML, which an OS-seeded RNG
     would break intermittently and in a way that looks like a rendering bug."""
-    cube = _cube(_per_case())
+    score = _score(_per_case())
     kw = dict(
         baseline_source="ctl",
         forecast_source="exp",
         n_resamples=200,
         confidence_levels=(0.95,),
     )
-    a = aggregate(cube, seed=0, **kw).paired[0.95][0].values
-    b = aggregate(cube, seed=0, **kw).paired[0.95][0].values
-    c = aggregate(cube, seed=1, **kw).paired[0.95][0].values
+    a = aggregate(score, seed=0, **kw).paired[0.95][0].values
+    b = aggregate(score, seed=0, **kw).paired[0.95][0].values
+    c = aggregate(score, seed=1, **kw).paired[0.95][0].values
     assert np.array_equal(a, b)
     assert not np.array_equal(a, c)
 
@@ -241,28 +252,40 @@ def test_the_same_seed_gives_the_same_interval_and_a_different_one_does_not():
 def test_the_block_length_is_derived_from_the_cadence_and_recorded():
     """A block length silently chosen for you is not something a reader can
     check, so it is derived from the initialisation cadence and carried out."""
-    cube = _cube(_per_case(n_case=120))  # 12-hourly -> 10 days is 20 cases
+    score = _score(_per_case(n_case=120))  # daily -> 10 days is 10 cases
     agg = aggregate(
-        cube, baseline_source="ctl", forecast_source="exp", n_resamples=50, seed=0
+        score, baseline_source="ctl", forecast_source="exp", n_resamples=50, seed=0
     )
     assert agg.method == "moving-block"
-    assert agg.block_length == 20
+    assert agg.block_length == 10
     assert agg.n_resamples == 50 and agg.seed == 0
 
 
-def test_too_few_cases_for_blocks_falls_back_to_iid_and_says_so():
-    cube = _cube(_per_case(n_case=12))
-    agg = aggregate(
-        cube, baseline_source="ctl", forecast_source="exp", n_resamples=50, seed=0
-    )
-    assert agg.block_length == 1
-    assert any("too few for blocks" in w for w in cube.report.warnings), cube.report
+@pytest.mark.parametrize(
+    "init_time, match",
+    [
+        (np.arange(12), "not a time axis"),
+        (np.full(60, np.datetime64("2024-01-01", "ns")), "repeats values"),
+        (None, "12 forecast cases is too few"),
+    ],
+)
+def test_no_derivable_block_length_is_refused_not_quietly_iid(init_time, match):
+    """An iid resample marks far too much as significant, so falling back to it
+    has to be the caller's choice -- and the message says how to make it."""
+    ds = _per_case(n_case=12 if init_time is None else len(init_time))
+    if init_time is not None:
+        ds = ds.assign_coords(init_time=init_time)
+    kw = dict(baseline_source="ctl", forecast_source="exp", n_resamples=50, seed=0)
+    with pytest.raises(ValueError, match=rf"(?s){match}.*bootstrap='iid'"):
+        aggregate(_score(ds), **kw)
+    # and choosing it explicitly is accepted
+    assert aggregate(_score(ds), bootstrap="iid", **kw).block_length == 1
 
 
 def test_a_percentage_confidence_level_is_refused():
     with pytest.raises(ValueError, match="strictly between 0 and 1"):
         aggregate(
-            _cube(_per_case()),
+            _score(_per_case()),
             baseline_source="ctl",
             forecast_source="exp",
             confidence_levels=(68, 95),
@@ -273,11 +296,9 @@ def test_no_case_dimension_means_the_values_are_already_means():
     """The magnitude-only card: a documented input shape, not a failure."""
     ds = _per_case()
     collapsed = ds.mean("init_time", keep_attrs=True)
-    cube = _cube(collapsed)
-    agg = aggregate(cube, baseline_source="ctl", forecast_source="exp", seed=0)
+    score = _score(collapsed)
+    agg = aggregate(score, baseline_source="ctl", forecast_source="exp", seed=0)
+    assert agg.already_means
     assert agg.paired == {}
     assert agg.confidence_levels == ()
     assert agg.baseline_lower is None
-    assert any(
-        "already-collapsed means" in w for w in cube.report.warnings
-    ), cube.report

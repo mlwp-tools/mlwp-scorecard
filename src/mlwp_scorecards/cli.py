@@ -6,7 +6,6 @@ import argparse
 import os
 import subprocess
 import sys
-import warnings
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -55,10 +54,7 @@ def _output_paths(
         If nothing is asked for, or a suffix does not match its flag.
     """
     if html_path is None and not image_path:
-        raise ValueError(
-            "nothing to write: pass --html-path, --image-path, or both "
-            "(or --validate-only)"
-        )
+        raise ValueError("nothing to write: pass --html-path, --image-path, or both")
     paths = []
     if html_path is not None:
         path = Path(html_path)
@@ -225,12 +221,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--title", default="")
     p.add_argument("--subtitle", default="")
     p.add_argument("--dpi", type=int, default=200)
-    p.add_argument("--strict", action="store_true", help="treat warnings as errors")
-    p.add_argument(
-        "--validate-only",
-        action="store_true",
-        help="report problems and exit without rendering",
-    )
     p.add_argument(
         "--open",
         action="store_true",
@@ -403,7 +393,6 @@ def _build(
         scheme=args.scheme,
         title=args.title,
         subtitle=args.subtitle,
-        strict=args.strict,
     )
 
 
@@ -419,19 +408,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     Returns
     -------
     int
-        0 on success, 1 if the dataset failed validation.
+        0 on success, 1 if the arguments or the dataset cannot make a card.
     """
     args = build_parser().parse_args(argv)
 
     # Checked before the dataset is even opened: a mistyped suffix should not cost
-    # a full bootstrap first. Validating writes nothing, so it needs no output.
-    outputs = []
-    if not args.validate_only:
-        try:
-            outputs = _output_paths(args.html_path, args.image_path)
-        except ValueError as e:
-            logger.error(str(e))
-            return 1
+    # a full bootstrap first.
+    try:
+        outputs = _output_paths(args.html_path, args.image_path)
+    except ValueError as e:
+        logger.error(str(e))
+        return 1
 
     path = Path(args.dataset)
     suffix = path.suffix.lower()
@@ -455,29 +442,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         logger.error(str(e))
         return 1
 
-    # The card issues what it has to say about the data as UserWarnings; on the
-    # command line they belong in the log with everything else. Anything else
-    # caught is passed on untouched. A dataset that fails validation raises.
     try:
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            score_card = _build(ds, args, select, polarity)
+        score_card = _build(ds, args, select, polarity)
     except (KeyError, ValueError) as e:
         logger.error(e.args[0] if e.args else str(e))
         return 1
-    for w in caught:
-        if w.category is UserWarning:
-            logger.warning(str(w.message))
-        else:
-            warnings.warn_explicit(w.message, w.category, w.filename, w.lineno)
 
     s = score_card._layout.stats
     logger.info(
         f"{s.n_rows} rows x {s.n_cols} columns, {s.n_cells_present} populated, "
         f"{s.n_boxes} boxes"
     )
-    if args.validate_only:
-        return 0
 
     written = []
     for out in outputs:

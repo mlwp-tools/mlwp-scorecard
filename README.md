@@ -48,9 +48,9 @@ Path("scorecard.html").write_text(score_card.to_html())  # a self-contained page
 ```
 
 Building the card does all the work; `to_figure()` and `to_html()` only draw it,
-and saving is yours to do. Anything worth knowing about the data — a block length
-chosen for you, too few cases to block — is issued as a `UserWarning` while the
-card is built.
+and saving is yours to do. Nothing is guessed or quietly relaxed on the way:
+input the card cannot honestly be drawn from raises an error naming the choice
+that would resolve it, and every choice that was made is printed on the card.
 
 The figure is not registered with `pyplot`, so it does not pile up over repeated
 builds, and it saves with your matplotlib settings. For PDF and SVG text that
@@ -250,7 +250,8 @@ Both choices are arguments, and both are printed on the card:
 ScoreCard(ds,
           colour_relative_to="IFS-HRES", select=dict(forecast_source=["GraphCast"]),
           bootstrap="moving-block",   # or "iid"
-          block_length=None,          # in CASES; derived from the cadence
+          block_length=None,          # in CASES; derived from the cadence,
+                                      # an error if there are too few
           n_resamples=2000,
           confidence_levels=(0.68, 0.95, 0.997),
           seed=0)
@@ -268,7 +269,7 @@ Dimensions:          (forecast_source: 2, lead_time: 8, init_time: 40)
 Coordinates:
   * forecast_source  (forecast_source) <U9    'IFS-HRES' 'GraphCast'
   * lead_time        (lead_time)       m8[ns] 0 days 06:00:00 ... 2 days
-  * init_time        (init_time)       M8[ns] 2024-01-01 ... 2024-01-20
+  * init_time        (init_time)       M8[ns] 2024-01-01 ... 2024-02-09
 Data variables:
     rmse.2t          (forecast_source, lead_time, init_time) f8
     rmse.msl         (forecast_source, lead_time, init_time) f8
@@ -281,18 +282,19 @@ ScoreCard(ds, colour_relative_to="IFS-HRES")
 With only two sources, every source but the baseline is GraphCast, so no `select=`
 is needed.
 
+Forty daily initialisations is also the fewest the default resample accepts: it
+blocks cases 10 days at a time and wants four blocks. With fewer, building the
+card stops and says so, rather than quietly falling back to resampling cases
+independently -- which marks far more as significant than it should. Pass
+`block_length=` or `bootstrap="iid"` to choose.
+
 `truth_source`, `level` and `spatial_region` are all absent, so the inferred
 layout is `rows=["variable"]`, `columns=["metric"]` — two rows and one column.
 Adding `mae.2t` and `mae.msl` would give a second column.
 
 `init_time` may be absent too, if all you have is means. Then you get a card
-coloured by magnitude with no error bars, no borders and no case counts, and a
-warning says so:
-
-```
-UserWarning: no 'init_time' dimension: values are read as already-collapsed means,
-             with no interval and nothing marked significant
-```
+coloured by magnitude with no error bars, no borders and no case counts, and the
+card says so in its notes.
 
 Set `units` on each variable either way — it reaches the drill-down axes, and
 nothing else supplies it.

@@ -17,7 +17,6 @@ import xarray as xr
 from common import OUT
 
 from mlwp_scorecards import ScoreCard
-from mlwp_scorecards.api import build_layout
 from mlwp_scorecards.render.static import save_figure
 
 PAIRS = {
@@ -40,6 +39,8 @@ def render(ds: xr.Dataset, name: str, baseline: str, forecast: str, scheme: str)
         select=dict(forecast_source=[forecast]),
         scheme=scheme,
         **axes,
+        # a handful of initialisations: far too few for blocks
+        bootstrap="iid",
         title=f"{forecast} vs {baseline}",
         subtitle=(
             f"{n_init} initialisations, 2026-09-04 to 09-05, lead times "
@@ -53,9 +54,7 @@ def render(ds: xr.Dataset, name: str, baseline: str, forecast: str, scheme: str)
     html.write_text(score_card.to_html(), encoding="utf-8")
     fig = score_card.to_figure()
     written = [html] + [save_figure(fig, OUT / f"{name}.{s}") for s in ("png", "pdf")]
-    layout = build_layout(
-        ds, colour_relative_to=baseline, select=dict(forecast_source=[forecast]), **axes
-    )
+    layout = score_card._layout
 
     print(f"\n{name}: {layout.stats.n_rows} rows x {layout.stats.n_cols} columns")
     for p in written:

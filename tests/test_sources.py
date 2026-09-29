@@ -52,7 +52,9 @@ def _dataset(n_case=60, n_lead=4, seed=0):
     )
 
 
-KW = dict(colour_relative_to="base", n_resamples=300, seed=0)
+#: The hand-built data here is too short for the default blocks, so the
+#: resample is chosen explicitly.
+KW = dict(colour_relative_to="base", n_resamples=300, seed=0, bootstrap="iid")
 
 
 def _card(ds, sources, **kw):

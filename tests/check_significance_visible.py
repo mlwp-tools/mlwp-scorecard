@@ -45,7 +45,8 @@ def main() -> None:
         )
 
     # does the marking survive into the page?
-    ds = make_verification_dataset(n_case=60, n_boot=200, drift=0.25)
+    # 80 12-hourly cases: the fewest the default 10-day blocks (20 cases) accept.
+    ds = make_verification_dataset(n_case=80, n_boot=200, drift=0.25)
     layout = build_layout(
         ds,
         colour_relative_to="persistence",

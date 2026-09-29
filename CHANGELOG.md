@@ -22,9 +22,14 @@ Design and rationale are documented in [`PLAN.md`](PLAN.md).
   work; `.to_figure()` returns a matplotlib `Figure` and `.to_html()` the page as
   a `str`. It replaces `make_scorecard(ds, html_path=..., image_path=...)`, which
   wrote files. The CLI, `mlwp.make_scorecard`, is unchanged.
-- **Validation warnings are issued as `UserWarning`** while the card is built,
-  attributed to the caller's line. Before, the API dropped them unless asked for
-  the report.
+- **No warnings, no "validation": what cannot be drawn honestly is refused.**
+  When the default block length cannot be had -- too few forecast cases for
+  10-day blocks, or no readable cadence -- building the card raises, naming
+  `block_length=` and `bootstrap="iid"` (`--block-length`, `--bootstrap iid`),
+  instead of quietly resampling independently, which marks far more as
+  significant than it should. Input with no `init_time` is taken as means, as
+  before, and the card says so in its notes. The API used to drop these
+  warnings unless the report was asked for.
 - The figure is no longer registered with `pyplot`, and building it no longer
   switches the matplotlib backend to Agg, which broke `plt.show()` afterwards.
 - **`control=` / `experiment=` are gone.** The baseline is `colour_relative_to=`
@@ -53,7 +58,7 @@ Design and rationale are documented in [`PLAN.md`](PLAN.md).
   ...)`, and everything after `data` is keyword-only. At least one output is
   required, and a suffix contradicting its argument (`html_path="card.png"`) is
   refused before anything is computed. The CLI's `-o/--output` becomes
-  `--html-path` and a repeatable `--image-path`; `--validate-only` needs neither.
+  `--html-path` and a repeatable `--image-path`.
 
 - **The input is now one score per forecast case**, and the package performs the
   collapse over cases itself: the mean, the per-source bootstrap intervals, the
@@ -174,6 +179,13 @@ Design and rationale are documented in [`PLAN.md`](PLAN.md).
 ### Removed
 
 - `make_scorecard()`, superseded by `ScoreCard(...)`; there is no alias.
+- **`strict=` (`--strict`) and `--validate-only`.** There is nothing left for
+  either to do: nothing warns, and what used to is either refused or printed on
+  the card. `strict` never worked anyway -- it promoted only the warnings found
+  while reading the dataset, and there were none. `--validate-only` built the
+  whole card and threw it away.
+- `ValidationReport` and `PreparedCube` (internal). Problems with the dataset
+  raise `ValueError`; `prepare` returns the score array and its units.
 - `build_layout` and `render` from the public API: a `Layout` is the renderer
   contract, not something a caller needs. `Layout`, `Cell`, `Line`, `Step`,
   `Polarity` and `ValidationReport` are no longer re-exported from the package

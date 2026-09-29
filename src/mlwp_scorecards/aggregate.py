@@ -35,7 +35,7 @@ from typing import Any, Sequence
 import numpy as np
 import xarray as xr
 
-from .ingest import CASE_DIM, FORECAST_DIM, PreparedCube, ValidationReport
+from .ingest import CASE_DIM, FORECAST_DIM
 
 __all__ = [
     "Aggregated",
@@ -138,6 +138,9 @@ class Aggregated:
         Bootstrap resamples drawn.
     seed : int
         The seed the resamples were drawn from; -1 when a generator was passed.
+    already_means : bool
+        The input had no ``init_time``: the values are means as given, and
+        nothing was resampled.
     """
 
     baseline: xr.DataArray | None
@@ -169,6 +172,7 @@ class Aggregated:
     block_length: int = 1
     n_resamples: int = 0
     seed: int = 0
+    already_means: bool = False
 
     @property
     def has_intervals(self) -> bool:
@@ -449,56 +453,69 @@ def _percentile_bounds(
     return {c: (q[i], q[i + n]) for i, c in enumerate(levels)}
 
 
-def derive_block_length(cases: np.ndarray, report: ValidationReport) -> int:
+def derive_block_length(cases: np.ndarray) -> int:
     """Derive a block length in **forecast cases** from the initialisation cadence.
 
     The cadence is visible in the data; the decorrelation time is not. So this
-    targets a fixed span rather than pretending to estimate one, and says what it
-    chose -- a block length silently picked for you is not something a reader can
-    check.
+    targets a fixed span rather than pretending to estimate one, and the card says
+    what it chose. When no such block can be had, falling back to an iid resample
+    is not done silently: iid treats consecutive forecasts as unrelated weather
+    and marks far too much as significant, so it must be the caller's choice.
 
     Parameters
     ----------
     cases : np.ndarray
         The ``init_time`` coordinate values.
-    report : ValidationReport
-        Where to warn when falling back to an iid resample.
 
     Returns
     -------
     int
-        Cases per block, covering :data:`BLOCK_TARGET`; 1 (an iid resample) when
-        the cadence cannot be read or there are too few cases for such blocks.
+        Cases per block, covering :data:`BLOCK_TARGET`.
+
+    Raises
+    ------
+    ValueError
+        If the cadence cannot be read -- ``init_time`` is not a time axis, or its
+        values repeat -- or there are too few cases for blocks that long.
     """
     n_case = len(cases)
     if n_case < 2 or not np.issubdtype(np.asarray(cases).dtype, np.datetime64):
-        report.warn(
-            f"block length 1 (an iid resample): {CASE_DIM!r} is not a time axis, "
-            f"so the initialisation cadence cannot be read. Consecutive forecasts "
-            f"share weather, so the intervals below are optimistic; pass "
-            f"block_length= if you know the cadence"
+        raise ValueError(
+            f"{CASE_DIM!r} is not a time axis, so the block length for the "
+            f"bootstrap cannot be derived from the initialisation cadence. "
+            + _CHOOSE_BLOCKS
         )
-        return 1
     spacing = np.median(np.diff(np.sort(np.asarray(cases))))
     # dividing two timedelta64s gives a bare float, and an infinite one means a
     # zero cadence -- duplicate initialisation times, which say nothing about
     # decorrelation
     span = BLOCK_TARGET / spacing
     if not np.isfinite(span) or span <= 0:
-        return 1
+        raise ValueError(
+            f"{CASE_DIM!r} repeats values, so the block length for the bootstrap "
+            f"cannot be derived from the initialisation cadence. " + _CHOOSE_BLOCKS
+        )
     block = max(1, int(math.ceil(span)))
     if n_case < 4 * block:
-        report.warn(
-            f"block length 1 (an iid resample): {n_case} forecast cases is too "
-            f"few for blocks of {block}. The intervals below are optimistic, "
-            f"because consecutive forecasts share weather"
+        raise ValueError(
+            f"{n_case} forecast cases is too few for the bootstrap's blocks of "
+            f"{block} cases ({BLOCK_TARGET / np.timedelta64(1, 'D'):g} days; at "
+            f"least {4 * block} cases are needed). " + _CHOOSE_BLOCKS
         )
-        return 1
     return block
 
 
+#: The remedy every refusal in :func:`derive_block_length` ends with.
+_CHOOSE_BLOCKS = (
+    "Pass block_length= (in forecast cases; --block-length on the command line), "
+    "or bootstrap='iid' (--bootstrap iid) to accept an independent resample -- "
+    "which treats consecutive forecasts as unrelated weather, so the card will "
+    "mark more as significant than it should."
+)
+
+
 def aggregate(
-    cube: PreparedCube,
+    score: xr.DataArray,
     *,
     forecast_source: str | Sequence[str],
     baseline_source: str | None,
@@ -510,12 +527,15 @@ def aggregate(
     confidence_levels: Sequence[float] = (0.68, 0.95, 0.997),
     seed: int | np.random.Generator = 0,
 ) -> Aggregated:
-    """Collapse a per-case cube over its forecast cases, against a baseline.
+    """Collapse per-case scores over their forecast cases, against a baseline.
+
+    With no ``init_time`` the values are taken as already-collapsed means: no
+    intervals, and nothing to mark significant.
 
     Parameters
     ----------
-    cube : PreparedCube
-        From :func:`~mlwp_scorecards.ingest.prepare`.
+    score : xr.DataArray
+        One score per forecast case, from :func:`~mlwp_scorecards.ingest.prepare`.
     forecast_source : str or sequence of str
         Members of ``forecast_source`` to compare with the baseline; ``...`` is
         expanded as in :func:`resolve_sources`.
@@ -552,14 +572,14 @@ def aggregate(
     Raises
     ------
     ValueError
-        If ``cases`` or ``bootstrap`` is not a known policy, or a confidence
-        level is not a fraction.
+        If ``cases`` or ``bootstrap`` is not a known policy, a confidence level
+        is not a fraction, or ``block_length`` is omitted and cannot be derived
+        (see :func:`derive_block_length`).
     KeyError
         If the dataset has no ``forecast_source`` dimension, or a source is not
         in it.
     """
-    report = cube.report
-    da = cube.score
+    da = score
     if cases not in CASE_POLICIES:
         raise ValueError(f"cases must be one of {CASE_POLICIES}, got {cases!r}")
 
@@ -610,11 +630,8 @@ def aggregate(
         )
 
     # No case axis: the values are already means, so there is nothing to resample.
+    # A documented input shape, and the card says what it means for the reader.
     if CASE_DIM not in da.dims:
-        report.warn(
-            f"no {CASE_DIM!r} dimension: values are read as already-collapsed "
-            f"means, with no interval and nothing marked significant"
-        )
         empty = xr.full_like(fc_da, np.nan)
         row = None
         if row_da is not None:
@@ -630,6 +647,7 @@ def aggregate(
             counts=empty,
             confidence_levels=(),
             baseline_row=row,
+            already_means=True,
             **provenance,
         )
 
@@ -641,7 +659,7 @@ def aggregate(
     case_times = da.coords[CASE_DIM].values
     n_case = len(case_times)
     block = (
-        derive_block_length(case_times, report)
+        derive_block_length(case_times)
         if block_length is None and bootstrap == "moving-block"
         else max(1, int(block_length or 1))
     )

@@ -23,7 +23,9 @@ from mlwp_scorecards.render.static import save_figure
 sys.path.insert(0, str(Path(__file__).parent))
 from test_sources import _dataset, _with_gaps  # noqa: E402
 
-KW = dict(n_resamples=200, seed=0, columns=["metric"])
+#: The hand-built data here is too short for the default blocks, so the
+#: resample is chosen explicitly.
+KW = dict(n_resamples=200, seed=0, columns=["metric"], bootstrap="iid")
 ROWS = ["forecast_source", "variable"]
 
 
@@ -109,6 +111,7 @@ def test_values_need_forecast_source_on_an_axis():
             select=dict(forecast_source=["a"]),
             rows=["variable"],
             columns=["metric"],
+            bootstrap="iid",
         )
 
 

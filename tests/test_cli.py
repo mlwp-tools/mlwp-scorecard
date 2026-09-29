@@ -15,7 +15,7 @@ def netcdf(tmp_path_factory, request):
     sys.path.insert(0, str(Path(__file__).parent))
     from synthetic import make_verification_dataset
 
-    ds = make_verification_dataset(n_case=32, n_boot=40, drift=0.25, seed=3)
+    ds = make_verification_dataset(n_case=80, n_boot=40, drift=0.25, seed=3)
     ds["lead_time"] = ds["lead_time"].astype("timedelta64[ns]")
     p = tmp_path_factory.mktemp("cli") / "v.nc"
     ds.to_netcdf(p)
@@ -42,33 +42,26 @@ def test_renders_both_formats(netcdf, tmp_path):
     assert out_png.stat().st_size > 2000
 
 
-def test_the_cards_warnings_are_logged_not_raised(netcdf, tmp_path):
-    """The card issues UserWarnings; on the command line they belong in the log."""
-    import warnings
-
+def test_too_few_cases_for_blocks_is_refused_naming_the_flag(netcdf, tmp_path):
+    """An iid resample is the caller's choice, and the error says how to make it."""
+    import xarray as xr
     from loguru import logger
 
+    short = tmp_path / "short.nc"
+    with xr.open_dataset(netcdf) as ds:
+        ds.isel(init_time=slice(0, 30)).to_netcdf(short)
+    out = tmp_path / "c.html"
+    argv = [str(short), "--colour-relative-to", "persistence", "--html-path", str(out)]
+
     logged = []
-    sink = logger.add(lambda m: logged.append(m.record), level="WARNING")
+    sink = logger.add(lambda m: logged.append(m.record["message"]), level="ERROR")
     try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", UserWarning)
-            rc = main(
-                [
-                    str(netcdf),
-                    "--colour-relative-to",
-                    "persistence",
-                    "--html-path",
-                    str(tmp_path / "c.html"),
-                ]
-            )
+        assert main(argv) == 1
     finally:
         logger.remove(sink)
-    assert rc == 0
-    assert any(
-        r["level"].name == "WARNING" and "too few for blocks" in r["message"]
-        for r in logged
-    ), logged
+    assert not out.exists()
+    assert any("--bootstrap iid" in m for m in logged), logged
+    assert main(argv + ["--bootstrap", "iid", "--n-resamples", "50"]) == 0
 
 
 @pytest.fixture(scope="module")
@@ -97,7 +90,8 @@ def test_several_forecast_sources_give_a_block_of_rows_each(
 ):
     out = tmp_path / "c.html"
     argv = [str(four_sources), "--colour-relative-to", "base", "--html-path", str(out)]
-    assert main(argv + select + ["--cases", "pairwise", "--n-resamples", "50"]) == 0
+    argv += ["--cases", "pairwise", "--n-resamples", "50", "--bootstrap", "iid"]
+    assert main(argv + select) == 0
     assert out.read_text().count('<i class="b') == 3 * 2 * 4  # sources x vars x leads
 
 
@@ -164,9 +158,7 @@ def test_a_malformed_select_exits_nonzero(netcdf, tmp_path, select):
     assert not out.exists()
 
 
-def test_open_opens_every_file_written_and_nothing_when_validating(
-    netcdf, tmp_path, monkeypatch
-):
+def test_open_opens_every_file_written(netcdf, tmp_path, monkeypatch):
     import mlwp_scorecards.cli as cli
 
     opened = []
@@ -176,10 +168,6 @@ def test_open_opens_every_file_written_and_nothing_when_validating(
     argv += ["--n-resamples", "50"]
     assert main(argv + ["--html-path", str(html), "--image-path", str(png)]) == 0
     assert opened == [html, png]
-
-    opened.clear()
-    assert main(argv + ["--validate-only"]) == 0
-    assert opened == []
 
 
 def test_neither_a_baseline_nor_values_is_a_clear_error(netcdf, tmp_path):
@@ -202,38 +190,6 @@ def test_selecting_a_dimension_the_dataset_lacks_exits_nonzero(netcdf, tmp_path)
     out = tmp_path / "c.html"
     argv = [str(netcdf), "--colour-relative-to", "persistence", "--html-path", str(out)]
     assert main(argv + ["--select", "nonsuch=1"]) == 1
-    assert not out.exists()
-
-
-def test_validate_only_needs_no_output(netcdf):
-    rc = main(
-        [
-            str(netcdf),
-            "--colour-relative-to",
-            "persistence",
-            "--select",
-            "forecast_source=drifting-persistence",
-            "--validate-only",
-        ]
-    )
-    assert rc == 0
-
-
-def test_validate_only_writes_nothing(netcdf, tmp_path):
-    out = tmp_path / "c.html"
-    rc = main(
-        [
-            str(netcdf),
-            "--colour-relative-to",
-            "persistence",
-            "--select",
-            "forecast_source=drifting-persistence",
-            "--html-path",
-            str(out),
-            "--validate-only",
-        ]
-    )
-    assert rc == 0
     assert not out.exists()
 
 
@@ -302,7 +258,7 @@ def zarr_store(tmp_path_factory):
     sys.path.insert(0, str(Path(__file__).parent))
     from synthetic import make_verification_dataset
 
-    ds = make_verification_dataset(n_case=32, n_boot=40, drift=0.25, seed=3)
+    ds = make_verification_dataset(n_case=80, n_boot=40, drift=0.25, seed=3)
     p = tmp_path_factory.mktemp("cli") / "v.zarr"
     ds.to_zarr(p)
     return p

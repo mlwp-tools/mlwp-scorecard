@@ -14,9 +14,10 @@ import xarray as xr
 from mlwp_scorecards.api import build_layout
 from mlwp_scorecards.ingest import split_name
 
+#: 40 daily cases: the fewest the default 10-day blocks accept.
 N_CASE = 40
 LEAD = np.array([24, 48], dtype="timedelta64[h]")
-INIT = np.datetime64("2024-01-01") + np.arange(N_CASE) * np.timedelta64(12, "h")
+INIT = np.datetime64("2024-01-01") + np.arange(N_CASE) * np.timedelta64(24, "h")
 
 
 def _score(value: float, *, gap: float = 0.2, noise: float = 0.05, seed=0, **attrs):
@@ -410,9 +411,10 @@ def test_a_dataset_with_no_init_time_is_read_as_already_collapsed():
     ds = _dataset(**{"rmse.2t": _score(2.0, units="K")}).mean(
         "init_time", keep_attrs=True
     )
-    lay, report = _card(ds, return_validation_report=True)
+    lay = _card(ds)
 
-    assert any("already-collapsed means" in w for w in report.warnings), report
+    # The card says so, rather than a warning the reader of the card never sees.
+    assert any("no forecast cases" in n for n in lay.notes), lay.notes
     assert lay.confidence_levels == ()
     steps = [s for _, _, cell in lay.iter_cells() for s in cell.steps]
     assert steps and all(s.value is not None for s in steps)

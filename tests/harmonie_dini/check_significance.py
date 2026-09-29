@@ -36,6 +36,8 @@ def main() -> None:
             confidence_levels=levels,
             n_resamples=N_BOOT,
             seed=0,
+            # a handful of initialisations: far too few for blocks
+            bootstrap="iid",
         )
 
     print(

@@ -15,15 +15,12 @@ grid, so downstream code sees one array.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from typing import Any, Sequence
 
 import numpy as np
 import xarray as xr
 
 __all__ = [
-    "ValidationReport",
-    "PreparedCube",
     "prepare",
     "split_name",
     "METRIC_DIM",
@@ -86,129 +83,6 @@ def split_name(name: str) -> tuple[str, str]:
             f"(for example 'rmse.2t'); rename it or pass it as an ancillary"
         )
     return metric, variable
-
-
-@dataclass
-class ValidationReport:
-    """Accumulated problems found while reading a dataset.
-
-    Attributes
-    ----------
-    fails : list of str
-        Problems that stop the dataset being read.
-    warnings : list of str
-        Problems the card can still be drawn with.
-    """
-
-    fails: list[str] = field(default_factory=list)
-    warnings: list[str] = field(default_factory=list)
-
-    def fail(self, msg: str) -> None:
-        """Record a problem that stops the dataset being read.
-
-        Parameters
-        ----------
-        msg : str
-            What is wrong.
-        """
-        self.fails.append(msg)
-
-    def warn(self, msg: str) -> None:
-        """Record a problem the card can still be drawn with.
-
-        Parameters
-        ----------
-        msg : str
-            What is wrong.
-        """
-        self.warnings.append(msg)
-
-    def has_fails(self) -> bool:
-        """Report whether any failure has been recorded.
-
-        Returns
-        -------
-        bool
-            True if :meth:`fail` has been called.
-        """
-        return bool(self.fails)
-
-    def __iadd__(self, other: "ValidationReport") -> "ValidationReport":
-        """Append another report's failures and warnings to this one.
-
-        Parameters
-        ----------
-        other : ValidationReport
-            The report to take problems from.
-
-        Returns
-        -------
-        ValidationReport
-            This report, extended.
-        """
-        self.fails += other.fails
-        self.warnings += other.warnings
-        return self
-
-    def __str__(self) -> str:
-        """List the problems, one per line, failures first.
-
-        Returns
-        -------
-        str
-            The problems, or ``"no problems found"``.
-        """
-        lines = [f"ERROR   {m}" for m in self.fails]
-        lines += [f"warning {m}" for m in self.warnings]
-        return "\n".join(lines) or "no problems found"
-
-    def raise_if_failed(self) -> None:
-        """Raise if any failure has been recorded.
-
-        Raises
-        ------
-        ValueError
-            Listing every problem, if there is a failure among them.
-        """
-        if self.has_fails():
-            raise ValueError("dataset validation failed:\n" + str(self))
-
-
-@dataclass(frozen=True, slots=True)
-class PreparedCube:
-    """A verification dataset flattened to a single score array.
-
-    Attributes
-    ----------
-    score : xr.DataArray
-        One score per forecast case, ``(metric, variable, ..., lead_time,
-        init_time)``.
-    units : dict of (str, str) to str or None
-        Units keyed by ``(metric, variable)``.
-    report : ValidationReport
-        What was found while reading the dataset.
-    """
-
-    #: One score per forecast case: ``(metric, variable, ..., lead_time,
-    #: init_time)``. The collapse over cases has not happened yet -- that is
-    #: :mod:`~mlwp_scorecards.aggregate`'s job, and the reason this package can
-    #: pair the two sources at all.
-    score: xr.DataArray
-    #: Units keyed by ``(metric, variable)``. Metric-dependent by construction:
-    #: RMSE of temperature is in K while its ACC is dimensionless.
-    units: dict[tuple[str, str], str | None]
-    report: ValidationReport
-
-    @property
-    def dims(self) -> tuple[str, ...]:
-        """Return the score array's dimension names.
-
-        Returns
-        -------
-        tuple of str
-            The dimensions of :attr:`score`, in order.
-        """
-        return tuple(self.score.dims)
 
 
 def _optional_index(ds: xr.Dataset, scores: Sequence[str], dim: str) -> np.ndarray:
@@ -340,8 +214,7 @@ def prepare(
     row_dims: Sequence[str],
     column_dims: Sequence[str],
     cell_dim: str,
-    strict: bool = False,
-) -> PreparedCube:
+) -> tuple[xr.DataArray, dict[tuple[str, str], str | None]]:
     """Validate a verification dataset and flatten it to one score array.
 
     Parameters
@@ -352,18 +225,23 @@ def prepare(
         Coordinate names nested on the rows and columns.
     cell_dim : str
         The within-cell coordinate, normally ``"lead_time"``.
-    strict : bool, optional
-        Promote warnings to failures.
 
     Returns
     -------
-    PreparedCube
-        The stacked per-case scores, their units, and what was found wrong.
+    score : xr.DataArray
+        One score per forecast case: ``(metric, variable, ..., lead_time,
+        init_time)``. The collapse over cases has not happened yet -- that is
+        :mod:`~mlwp_scorecards.aggregate`'s job, and the reason this package can
+        pair the two sources at all.
+    units : dict of (str, str) to str or None
+        Units keyed by ``(metric, variable)``. Metric-dependent by construction:
+        RMSE of temperature is in K while its ACC is dimensionless.
 
     Raises
     ------
     ValueError
-        If validation fails.
+        If the dataset already has ``variable`` or ``metric`` dimensions, has no
+        score variables, or a score variable's name is not ``{metric}.{variable}``.
     KeyError
         If a layout dimension is missing from the dataset, or a dataset
         dimension is placed nowhere.
@@ -373,26 +251,22 @@ def prepare(
     The schema's other dimension names are fixed, not arguments: see the
     ``*_DIM`` constants above. There is one documented input shape.
     """
-    report = ValidationReport()
-
     # `variable` and `metric` are produced here, so finding either already on the
     # input means the caller has a differently-shaped dataset -- a flat cube,
     # most likely. Say that, rather than letting `split_name` further down
     # complain that a variable name has no dot in it.
     already = [d for d in (VARIABLE_DIM, METRIC_DIM) if d in ds.dims]
     if already:
-        report.fail(
+        raise ValueError(
             f"dataset already has {' and '.join(repr(d) for d in already)} as "
             f"dimension(s). This package takes one data variable per "
             f"'{{metric}}.{{variable}}' name -- 'rmse.2t', 'crps.z' -- and builds "
             f"those two dimensions itself. See the Input section of README.md."
         )
-        report.raise_if_failed()
 
     scores = [str(n) for n in ds.data_vars]
     if not scores:
-        report.fail("dataset has no score variables")
-        report.raise_if_failed()
+        raise ValueError("dataset has no score variables")
 
     # First-appearance order, never a set: `test_determinism` renders the same
     # card in a fresh process with a different PYTHONHASHSEED and demands the same
@@ -453,11 +327,4 @@ def prepare(
         padded[parsed[s]] = da.rename(None)
         template_for.setdefault(parsed[s][1], padded[parsed[s]])
 
-    score = _stack(padded, metrics, variables, template_for)
-
-    if strict and report.warnings:
-        report.fails.extend(report.warnings)
-        report.warnings.clear()
-    report.raise_if_failed()
-
-    return PreparedCube(score, units, report)
+    return _stack(padded, metrics, variables, template_for), units

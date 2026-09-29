@@ -5,7 +5,6 @@ from __future__ import annotations
 import warnings
 
 import pytest
-from test_schema import _dataset, _score
 
 from mlwp_scorecards import ScoreCard
 
@@ -19,9 +18,7 @@ KW = dict(
 
 @pytest.fixture(scope="module")
 def score_card(verification):
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        return ScoreCard(verification, **KW)
+    return ScoreCard(verification, **KW)
 
 
 def test_to_figure_is_a_figure_pyplot_does_not_know_about(score_card):
@@ -56,16 +53,19 @@ def test_repr_names_the_sources(score_card):
     assert "drifting-persistence" in r and "persistence" in r
 
 
-def test_validation_warnings_are_issued_not_dropped():
-    """Before, a caller saw these only by asking for the report."""
-    ds = _dataset(**{"rmse.2t": _score(2.0, units="K")}).mean(
-        "init_time", keep_attrs=True
-    )
-    with pytest.warns(UserWarning, match="already-collapsed means"):
-        ScoreCard(
-            ds,
-            colour_relative_to="ctl",
-            select=dict(forecast_source=["exp"]),
-            rows=["truth_source", "variable"],
-            columns=["metric"],
-        )
+def test_building_a_card_issues_no_warnings(verification):
+    """Nothing is quietly relaxed: what the card cannot honestly show raises,
+    and every choice made is printed on the card, so there is nothing left to
+    warn about."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        ScoreCard(verification, **KW)
+
+
+def test_too_few_cases_for_blocks_is_refused_naming_the_choice(verification):
+    """Falling back to an iid resample used to be a warning; it marks far too
+    much as significant, so it is now the caller's choice to make."""
+    short = verification.isel(init_time=slice(0, 30))
+    with pytest.raises(ValueError, match="(?s)30 forecast cases.*bootstrap='iid'"):
+        ScoreCard(short, **KW)
+    assert "iid" in ScoreCard(short, bootstrap="iid", **KW)._layout.resampling

@@ -71,7 +71,12 @@ def _card(ds, sources, **kw):
 # the property the whole feature rests on
 # --------------------------------------------------------------------------- #
 def test_each_row_is_exactly_the_two_source_card_for_that_source():
-    """One resample shared by every pair, so stacking changes nothing."""
+    """One resample shared by every pair, so stacking changes nothing.
+
+    Nothing but floating-point rounding: the bootstrap is a matrix product, and
+    BLAS may sum a three-source stack in a different order from one source alone
+    (OpenBLAS on Linux does), which moves an interval bound in its last bits.
+    """
     ds = _dataset()
     multi = _card(ds, ["a", "b", "c"])
     for source in ("a", "b", "c"):
@@ -88,7 +93,9 @@ def test_each_row_is_exactly_the_two_source_card_for_that_source():
             assert got.forecast_source == source
             for g, w in zip(got.steps, want.steps):
                 assert g.value == w.value
-                assert (g.value_lower, g.value_upper) == (w.value_lower, w.value_upper)
+                assert (g.value_lower, g.value_upper) == pytest.approx(
+                    (w.value_lower, w.value_upper), rel=1e-12
+                )
                 assert g.significant_at == w.significant_at
                 assert g.n == w.n
 

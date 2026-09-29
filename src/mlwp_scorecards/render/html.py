@@ -757,7 +757,10 @@ def render_html(
             for cell in (layout.isel(row=r, col=c) for c in range(len(layout.columns)))
             if cell is not None
         )
-        body.append(f"<tr{' class=\"base\"' if is_base else ''}>{''.join(tds)}</tr>")
+        # Outside the f-string: a backslash in its expression part is a syntax
+        # error before Python 3.12, and the pre-commit hooks run on 3.11 in CI.
+        tr = '<tr class="base">' if is_base else "<tr>"
+        body.append(f"{tr}{''.join(tds)}</tr>")
 
     table = (
         f'<table class="sc" id="sc-table">'

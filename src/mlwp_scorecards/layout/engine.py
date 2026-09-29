@@ -1,6 +1,7 @@
-"""Resolve collapsed scores plus a layout declaration into a :class:`Layout`.
+"""The layout engine: collapsed scores plus a layout declaration in, a :class:`Layout` out.
 
-The ordering rule is one global order per dimension, filtered by presence within
+Stateless: :func:`create_layout` is a pure function of its arguments. The
+ordering rule is one global order per dimension, filtered by presence within
 each parent branch. Verified against the ECMWF reference: a single variable list
 reproduces both its ``an`` and ``ob`` row sequences with no per-branch ordering.
 """
@@ -15,9 +16,9 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 import xarray as xr
 
-from .aggregate import Aggregated
-from .colours import ColourScheme, FixedScaling, Polarity, family_of, polarity_of
-from .ingest import FORECAST_DIM, METRIC_DIM, VARIABLE_DIM
+from ..aggregate import Aggregated
+from ..colours import ColourScheme, FixedScaling, Polarity, family_of, polarity_of
+from ..ingest import FORECAST_DIM, METRIC_DIM, VARIABLE_DIM
 from .model import (
     NEUTRAL,
     Cell,
@@ -30,7 +31,7 @@ from .model import (
     format_value,
 )
 
-__all__ = ["resolve"]
+__all__ = ["create_layout"]
 
 _SLUG_RE = re.compile(r"[^A-Za-z0-9]+")
 
@@ -335,7 +336,7 @@ def _headers_for(headers: list[list[HeaderCell]], index: int) -> tuple[HeaderCel
     return tuple(out)
 
 
-def resolve(
+def create_layout(
     units: Mapping[tuple[str, str], str | None],
     *,
     row_dims: Sequence[str],
@@ -349,7 +350,14 @@ def resolve(
     subtitle: str = "",
     show_values: bool = False,
 ) -> Layout:
-    """Difference each forecast source from the baseline and lay the result out.
+    """Create the :class:`Layout` for scores already collapsed over cases.
+
+    Differences each forecast source from the baseline, then places everything
+    on rows, columns and cells -- order, header spans, each box's colour,
+    significance, tooltip and printed value -- with the card's notes and counts.
+    The result is the whole card as plain values: a renderer only draws it.
+    Where :func:`~mlwp_scorecards.api.build_layout` goes from a dataset to a
+    ``Layout``, this goes from the aggregated numbers.
 
     Parameters
     ----------
@@ -387,7 +395,7 @@ def resolve(
     Returns
     -------
     Layout
-        The resolved card.
+        The card, with everything a renderer needs decided.
 
     Raises
     ------
@@ -408,7 +416,7 @@ def resolve(
             f"{FORECAST_DIM!r} is on neither rows nor columns; add it to one of them"
         )
 
-    def _placed(da: xr.DataArray | None) -> xr.DataArray | None:
+    def _drop_unplaced_source(da: xr.DataArray | None) -> xr.DataArray | None:
         """Drop the forecast-source dimension when no axis carries it.
 
         Parameters
@@ -427,17 +435,24 @@ def resolve(
         return da.squeeze(FORECAST_DIM, drop=True)
 
     coloured = agg.baseline is not None
-    ctl, exp = _placed(agg.baseline), _placed(agg.forecast)
+    ctl, exp = _drop_unplaced_source(agg.baseline), _drop_unplaced_source(agg.forecast)
     if coloured:
         diff = exp - ctl
         with np.errstate(divide="ignore", invalid="ignore"):
             rel = diff / np.abs(ctl)
     else:
         diff = rel = xr.full_like(exp, np.nan)
-    ctl_lo, ctl_hi = _placed(agg.baseline_lower), _placed(agg.baseline_upper)
-    exp_lo, exp_hi = _placed(agg.forecast_lower), _placed(agg.forecast_upper)
-    dif = {c: (_placed(lo), _placed(hi)) for c, (lo, hi) in agg.paired.items()}
-    counts = _placed(agg.counts)
+    ctl_lo, ctl_hi = _drop_unplaced_source(agg.baseline_lower), _drop_unplaced_source(
+        agg.baseline_upper
+    )
+    exp_lo, exp_hi = _drop_unplaced_source(agg.forecast_lower), _drop_unplaced_source(
+        agg.forecast_upper
+    )
+    dif = {
+        c: (_drop_unplaced_source(lo), _drop_unplaced_source(hi))
+        for c, (lo, hi) in agg.paired.items()
+    }
+    counts = _drop_unplaced_source(agg.counts)
     levels = tuple(agg.confidence_levels)
     chart_conf = max(levels) if levels else None
 
@@ -478,7 +493,7 @@ def resolve(
         ctl_lo, ctl_hi = _first(ctl_lo), _first(ctl_hi)
         dif = {c: (_first(lo), _first(hi)) for c, (lo, hi) in dif.items()}
 
-    return _lay_out(
+    return _place(
         units=units,
         row_dims=row_dims,
         column_dims=column_dims,
@@ -507,7 +522,7 @@ def resolve(
     )
 
 
-def _lay_out(
+def _place(
     *,
     units: Mapping[tuple[str, str], str | None],
     row_dims: Sequence[str],

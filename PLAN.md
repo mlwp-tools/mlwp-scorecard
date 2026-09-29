@@ -766,9 +766,12 @@ mlwp-scorecards/
 │   ├── __init__.py        version + public re-exports
 │   ├── api.py             ScoreCard (build_layout internal)
 │   ├── cli.py             mlwp.make_scorecard entry point
-│   ├── model.py           HeaderCell, Line, Step, Cell, LayoutStats, Layout
-│   ├── ingest.py          CF Dataset -> uniform cube; schema constants; ValidationReport
-│   ├── layout.py          resolve(cube, ...) -> Layout
+│   ├── ingest.py          CF Dataset -> per-case scores + units; schema constants
+│   ├── aggregate.py       collapse over cases: means, bootstrap, paired differences
+│   ├── layout/
+│   │   ├── __init__.py    re-exports the model types, never the engine
+│   │   ├── model.py       HeaderCell, Line, Step, Cell, LayoutStats, Layout
+│   │   └── engine.py      create_layout(units, agg=..., ...) -> Layout
 │   ├── colours.py         Swatch, Ramp, Family, ColourScheme, Scaling, SCHEMES
 │   └── render/
 │       ├── __init__.py    lazy backend import
@@ -1023,8 +1026,10 @@ be drawn from raises, and every choice made is printed on the card.
 
 The CLI builds a `ScoreCard` too. Internally,
 `api.build_layout(...)` returns the `Layout`; the layout tests use it directly.
-`ingest.prepare` returns the per-case score array and its units, and
-`aggregate.aggregate` takes the score array. The renderers are
+`ingest.prepare` returns the per-case score array and its units,
+`aggregate.aggregate` takes the score array, and the layout engine
+`layout.engine.create_layout` takes the aggregate and the units and returns the
+`Layout` (see DEVELOPING.md, *Code structure*). The renderers are
 `render.static.render_figure(layout, scheme=) -> Figure`, with
 `render.static.save_figure(fig, path, dpi=)` applying the font and SVG settings
 that keep output selectable and byte-reproducible, and
@@ -1351,7 +1356,14 @@ Supersedes the Python half of item 4; the CLI keeps `--html-path` / `--image-pat
 - **`ValidationReport` and `PreparedCube` are gone.** In `prepare` the report
   only ever held one failure before raising it, so failures are plain
   `ValueError`s. Without the report, `PreparedCube` was a pair: `prepare` returns
-  `(score, units)`, `aggregate` takes the scores and `resolve` the units.
+  `(score, units)`, `aggregate` takes the scores and the engine the units.
+- **`layout/` is a package: `layout.model` and `layout.engine`.** `model.py`
+  read as "the package's models" when it was the layout's. The engine's entry
+  point went from `resolve()` to `create_layout()`, a stateless function named
+  for what it returns. It was not made an engine object: that would be built and
+  called once, and nothing reuses its configuration. `layout/__init__` re-exports
+  the model and never the engine, so renderers importing `mlwp_scorecards.layout`
+  get the types alone.
 
 ### Examples
 

@@ -135,3 +135,23 @@ def test_lead_times_are_labelled_the_same_at_every_time_resolution(unit):
     assert layout.lead_labels == ("T+6", "T+12", "T+18", "T+24")
     assert layout.lead_times == (6.0, 12.0, 18.0, 24.0)
     assert layout.sel(variable="2t", metric="rmse").steps[0].tooltip.startswith("T+6 ")
+
+
+def test_the_layout_package_exposes_the_types_without_the_engine():
+    """Renderers import `mlwp_scorecards.layout`, and Python runs its `__init__`
+    before any submodule: importing the engine there would hand every renderer
+    xarray and the aggregation code. Checked on the source, because at runtime
+    the top-level package imports the engine anyway (through `api`)."""
+    import ast
+    from pathlib import Path
+
+    import mlwp_scorecards.layout as pkg
+
+    tree = ast.parse(Path(pkg.__file__).read_text())
+    imported = [
+        (node.level, node.module)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module != "__future__"
+    ]
+    assert imported == [(1, "model")], imported
+    assert not any(isinstance(node, ast.Import) for node in ast.walk(tree))

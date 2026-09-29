@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..colours import ColourScheme
-from ..model import Layout
+from ..layout import Layout
 
 if TYPE_CHECKING:
     from matplotlib.figure import Figure

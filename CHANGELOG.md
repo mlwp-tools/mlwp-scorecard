@@ -17,6 +17,11 @@ Design and rationale are documented in [`PLAN.md`](PLAN.md).
 
 ### Changed
 
+- Internal modules reorganised into a `layout` package. `mlwp_scorecards.model`
+  becomes `mlwp_scorecards.layout.model`, with the types also importable from
+  `mlwp_scorecards.layout`. The layout engine is
+  `mlwp_scorecards.layout.engine`, and its entry point `resolve()` is now
+  `create_layout()`. DEVELOPING.md now describes how the modules fit together.
 - **A card is a `ScoreCard`, and saving it is the caller's.**
   `ScoreCard(ds, ...)` takes the arguments `build_layout` took and does all the
   work; `.to_figure()` returns a matplotlib `Figure` and `.to_html()` the page as

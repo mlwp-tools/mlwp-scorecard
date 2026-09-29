@@ -23,8 +23,7 @@ from .ingest import (
     prepare,
     split_name,
 )
-from .layout import resolve
-from .model import Layout
+from .layout import Layout, engine
 
 if TYPE_CHECKING:
     from matplotlib.figure import Figure
@@ -265,10 +264,13 @@ def build_layout(  # numpydoc ignore=PR01
     confidence_levels: Sequence[float] = (0.68, 0.95, 0.997),
     seed: int = 0,
 ) -> Layout:
-    """Resolve a verification dataset into a ready-to-render :class:`Layout`.
+    """Turn a verification dataset into a ready-to-render :class:`Layout`.
 
-    The engine behind :class:`ScoreCard`, and internal: the ``Layout`` is the
-    renderer contract, not something a caller needs. The parameters are
+    The whole pipeline behind :class:`ScoreCard` -- selection,
+    :func:`~mlwp_scorecards.ingest.prepare`,
+    :func:`~mlwp_scorecards.aggregate.aggregate`, then
+    :func:`~mlwp_scorecards.layout.engine.create_layout` -- and internal: the
+    ``Layout`` is the renderer contract, not something a caller needs. The parameters are
     documented on :class:`ScoreCard`, and are not repeated here -- hence the
     ``numpydoc ignore`` on the signature.
 
@@ -321,7 +323,7 @@ def build_layout(  # numpydoc ignore=PR01
         confidence_levels=confidence_levels,
         seed=seed,
     )
-    return resolve(
+    return engine.create_layout(
         units,
         agg=agg,
         row_dims=row_dims,

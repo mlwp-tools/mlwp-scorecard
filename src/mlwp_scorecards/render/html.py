@@ -20,7 +20,7 @@ import json
 from jinja2 import Template
 
 from ..colours import ColourScheme
-from ..model import Layout
+from ..layout import Layout
 from .payload import payload_for
 
 __all__ = ["render_html"]

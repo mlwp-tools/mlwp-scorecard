@@ -26,7 +26,7 @@ import base64
 import gzip
 import json
 
-from ..model import Layout
+from ..layout import Layout
 
 __all__ = ["build_payload", "pack", "payload_for"]
 
@@ -85,7 +85,7 @@ def build_payload(layout: Layout, *, precision: int = 4) -> dict:
     -------
     dict
         ``lead`` (hours), ``labels``, and ``cells``: one entry per populated cell,
-        in the same order as :meth:`~mlwp_scorecards.model.Layout.iter_cells`.
+        in the same order as :meth:`~mlwp_scorecards.layout.model.Layout.iter_cells`.
     """
     cells = []
     for _, _, cell in layout.iter_cells():

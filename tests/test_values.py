@@ -17,7 +17,7 @@ import pytest
 
 from mlwp_scorecards import ScoreCard
 from mlwp_scorecards.api import build_layout
-from mlwp_scorecards.model import NEUTRAL, format_value
+from mlwp_scorecards.layout import NEUTRAL, format_value
 from mlwp_scorecards.render.static import save_figure
 
 sys.path.insert(0, str(Path(__file__).parent))

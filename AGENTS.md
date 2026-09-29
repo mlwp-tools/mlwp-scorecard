@@ -39,10 +39,13 @@ Guidance for agents and contributors working in this repository.
 
 - Design document: `PLAN.md` — read this first; it defines the input schema and the
   layout vocabulary.
+- How the modules fit together: `DEVELOPING.md`, *Code structure*.
 - Public API: `src/mlwp_scorecards/api.py`, `cli.py`
 - Input handling: `src/mlwp_scorecards/ingest.py`
-- Layout types (the renderer contract): `src/mlwp_scorecards/model.py`
-- Layout engine: `src/mlwp_scorecards/layout.py`
+- Collapse over forecast cases (means, bootstrap, paired differences):
+  `src/mlwp_scorecards/aggregate.py`
+- Layout types (the renderer contract): `src/mlwp_scorecards/layout/model.py`
+- Layout engine (`create_layout`): `src/mlwp_scorecards/layout/engine.py`
 - Colour, scaling and metric polarity: `src/mlwp_scorecards/colours.py`
 - Renderers: `src/mlwp_scorecards/render/html.py`, `render/static.py`
 - Synthetic test data: `tests/synthetic.py`
@@ -51,11 +54,13 @@ Guidance for agents and contributors working in this repository.
 ## Development expectations
 
 - **`Layout` is the sole renderer contract.** Modules under `render/` may import
-  `model`, `colours` and `geometry` only — never `xarray`, never the raw spec. If a
-  renderer needs something absent from `Layout`, extend `model.py` rather than adding
-  a backend-specific code path.
-- **No user-facing configuration object.** The API takes coordinate names, source
-  names and output paths. Do not reintroduce a spec/config class into the public
+  `mlwp_scorecards.layout` (the types), `colours` and each other only — never
+  `layout.engine`, never `xarray`, never the input dataset. `layout/__init__.py`
+  therefore re-exports the model and must never import the engine (a test checks).
+  If a renderer needs something absent from `Layout`, extend `layout/model.py`
+  rather than adding a backend-specific code path.
+- **No user-facing configuration object.** The API takes coordinate names and
+  source names. Do not reintroduce a spec/config class into the public
   surface; internal dataclasses are fine.
 - **One input shape, and its dimension names are constants.** The package reads a
   netCDF or Zarr dataset in the schema documented in README.md — per-case scores,

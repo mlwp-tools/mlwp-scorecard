@@ -28,7 +28,7 @@ def main() -> None:
     def card(truth: str):
         return build_layout(
             ds,
-            colour_relative_to="aifs",
+            baseline="aifs",
             # truth_source is on the rows, so the single value keeps a one-row block
             select=dict(forecast_source=["harmonie-arome"], truth_source=truth),
             rows=["truth_source", "variable"],

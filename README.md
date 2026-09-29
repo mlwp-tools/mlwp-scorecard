@@ -38,7 +38,7 @@ ds = xr.open_dataset("verification_summary.nc")
 
 score_card = ScoreCard(
     ds,
-    colour_relative_to="IFS-HRES",
+    baseline="IFS-HRES",
     select=dict(forecast_source=["GraphCast"]),
     title="GraphCast vs IFS HRES",
 )
@@ -77,7 +77,7 @@ Rows and columns are inferred from the dataset, or named explicitly:
 ```python
 score_card = ScoreCard(
     ds,
-    colour_relative_to="IFS-HRES", select=dict(forecast_source=["GraphCast"]),
+    baseline="IFS-HRES", select=dict(forecast_source=["GraphCast"]),
     rows=["truth_source", "variable", "level"],
     columns=["spatial_region", "metric"],
     cell="lead_time",
@@ -120,12 +120,12 @@ out of every `...` automatically, and naming it explicitly is an error. Leaving
 
 Select several sources and `forecast_source` becomes a layout axis — outermost on
 the rows unless you place it — with one block of rows per source, each compared
-with the `colour_relative_to` baseline:
+with the `baseline`:
 
 ```python
 score_card = ScoreCard(
     ds,
-    colour_relative_to="IFS-HRES",
+    baseline="IFS-HRES",
     select=dict(forecast_source=["GraphCast", "AIFS", "Aurora"],
                 truth_source="analysis"),
     rows=["forecast_source", "variable", "level"],
@@ -150,11 +150,11 @@ With one forecast source the two are the same.
 
 ### Showing values, and cards with no baseline
 
-`colour_relative_to=` decides the colouring (and the significance) and nothing
-else. `show_values=True` prints each source's own score in its boxes, as
+`baseline=` decides the comparison -- the colouring and the significance -- and
+nothing else. `show_values=True` prints each source's own score in its boxes, as
 Brightband's OWB scorecard does:
 
-| `colour_relative_to` | `show_values` | card |
+| `baseline` | `show_values` | card |
 |---|---|---|
 | `"IFS-HRES"` | False | boxes coloured by the paired difference from IFS-HRES |
 | `"IFS-HRES"` | True | the same colours and borders, each box printing its own score, and IFS-HRES as a grey row of its own scores, first |
@@ -162,7 +162,7 @@ Brightband's OWB scorecard does:
 | None | False | an error: there would be nothing on the card |
 
 ```python
-ScoreCard(ds, colour_relative_to="IFS-HRES", show_values=True,
+ScoreCard(ds, baseline="IFS-HRES", show_values=True,
           select=dict(forecast_source=["GraphCast", "AIFS"]))
 ScoreCard(ds, show_values=True)   # every source, no baseline
 ```
@@ -179,11 +179,11 @@ all the API has. The command line takes the same arguments, plus where to write:
 
 ```bash
 mlwp.make_scorecard verification_summary.nc \
-    --colour-relative-to IFS-HRES --select forecast_source=GraphCast \
+    --baseline IFS-HRES --select forecast_source=GraphCast \
     --html-path scorecard.html --image-path scorecard.png
 ```
 
-`--show-values` prints values; leave out `--colour-relative-to` with it for a card
+`--show-values` prints values; leave out `--baseline` with it for a card
 of absolute scores. `--open` opens each file written in the system's default
 viewer. `--select DIM=V1,V2` is repeatable and follows the same rule: no comma is a single
 value, commas make a list (`--select forecast_source=GraphCast,...`), and a
@@ -263,7 +263,7 @@ Both choices are arguments, and both are printed on the card:
 
 ```python
 ScoreCard(ds,
-          colour_relative_to="IFS-HRES", select=dict(forecast_source=["GraphCast"]),
+          baseline="IFS-HRES", select=dict(forecast_source=["GraphCast"]),
           bootstrap="moving-block",   # or "iid"
           block_length=None,          # in CASES; derived from the cadence,
                                       # an error if there are too few
@@ -291,7 +291,7 @@ Data variables:
 ```
 
 ```python
-ScoreCard(ds, colour_relative_to="IFS-HRES")
+ScoreCard(ds, baseline="IFS-HRES")
 ```
 
 With only two sources, every source but the baseline is GraphCast, so no `select=`
@@ -322,7 +322,7 @@ only when there are several forecast sources.
 
 | Name | Required | What it does |
 |---|---|---|
-| `forecast_source` | yes | The sources being compared: the baseline named at call time by `colour_relative_to=`, the others chosen with `select=dict(forecast_source=[...])` (every other source by default). The card shows `forecast - baseline`. With one forecast source the dimension is collapsed by differencing; with several it is laid out like any other axis. |
+| `forecast_source` | yes | The sources being compared: the baseline named at call time by `baseline=`, the others chosen with `select=dict(forecast_source=[...])` (every other source by default). The card shows `forecast - baseline`. With one forecast source the dimension is collapsed by differencing; with several it is laid out like any other axis. |
 | `init_time` | no | The forecast cases. Collapsed by the bootstrap, which is where the intervals and the significance come from. Absent, the values are read as already-collapsed means. |
 | `variable`, `metric` | never | **Produced** by splitting the `{metric}.{variable}` names. Supplying either as an input dimension is an error. |
 
@@ -335,7 +335,7 @@ dimension the package has never heard of behaves exactly the same way:
 # season and threshold are not special; they are just axes
 ScoreCard(
     ds,
-    colour_relative_to="IFS-HRES",
+    baseline="IFS-HRES",
     rows=["season", "variable"],
     columns=["threshold", "metric"],
 )

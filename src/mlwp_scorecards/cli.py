@@ -136,12 +136,12 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
-        "--colour-relative-to",
+        "--baseline",
         metavar="NAME",
         help=(
-            "colour each box by its difference from this baseline source, and mark "
-            "significance. Leave it out, with --show-values, for a card of each "
-            "source's own scores"
+            "compare every forecast source with this baseline source: each box "
+            "shows the difference from it, and significance is marked. Leave it "
+            "out, with --show-values, for a card of each source's own scores"
         ),
     )
     p.add_argument(
@@ -400,7 +400,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         score_card = ScoreCard(
             ds,
-            colour_relative_to=args.colour_relative_to,
+            baseline=args.baseline,
             show_values=args.show_values,
             select=select or None,
             cases=args.cases,

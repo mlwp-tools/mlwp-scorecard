@@ -103,7 +103,7 @@ def _select_names(data: xr.Dataset, dim: str, value: Any) -> xr.Dataset:
 def _apply_selection(
     data: xr.Dataset,
     select: Mapping[str, Any] | None,
-    colour_relative_to: str | None,
+    baseline: str | None,
     placed: set[str],
 ) -> tuple[xr.Dataset, tuple[str, ...]]:
     """Apply ``select=`` to the dataset, before any layout is inferred.
@@ -121,7 +121,7 @@ def _apply_selection(
         The verification statistics.
     select : mapping or None
         The caller's ``select=``.
-    colour_relative_to : str or None
+    baseline : str or None
         The baseline source, which always stays in the data.
     placed : set of str
         Dimensions the caller named in ``rows``, ``columns`` or ``cell``.
@@ -163,9 +163,7 @@ def _apply_selection(
 
     if FORECAST_DIM not in data.dims:
         raise KeyError(f"{FORECAST_DIM!r} is not a dimension of the dataset")
-    sources = resolve_sources(
-        source_sel, colour_relative_to, data.coords[FORECAST_DIM].values
-    )
+    sources = resolve_sources(source_sel, baseline, data.coords[FORECAST_DIM].values)
     return data, sources
 
 
@@ -248,7 +246,7 @@ def _infer_axes(
 def build_layout(  # numpydoc ignore=PR01
     data: xr.Dataset,
     *,
-    colour_relative_to: str | None = None,
+    baseline: str | None = None,
     show_values: bool = False,
     select: Mapping[str, Any] | None = None,
     cases: str = "common",
@@ -284,15 +282,15 @@ def build_layout(  # numpydoc ignore=PR01
     Layout
         The resolved card.
     """
-    if colour_relative_to is None and not show_values:
+    if baseline is None and not show_values:
         options = (
             [str(s) for s in data.coords[FORECAST_DIM].values]
             if FORECAST_DIM in data.coords
             else []
         )
         raise ValueError(
-            "nothing to show: pass colour_relative_to= to colour by the difference "
-            "from a baseline (--colour-relative-to on the command line)"
+            "nothing to show: pass baseline= to compare every source with a "
+            "baseline source (--baseline on the command line)"
             + (f", one of: {', '.join(options)}," if options else "")
             + " or show_values=True (--show-values) to print each source's scores"
         )
@@ -301,7 +299,7 @@ def build_layout(  # numpydoc ignore=PR01
     # placing a dimension: inferred axes have not been chosen yet, and could not
     # decide this without the selection deciding them in turn.
     placed = set(rows or ()) | set(columns or ()) | {cell}
-    data, sources = _apply_selection(data, select, colour_relative_to, placed)
+    data, sources = _apply_selection(data, select, baseline, placed)
 
     # With values shown every source is a row of its own -- the baseline too -- so
     # forecast_source is laid out even when there is only one forecast source.
@@ -313,9 +311,9 @@ def build_layout(  # numpydoc ignore=PR01
     agg = aggregate(
         score,
         forecast_source=sources,
-        baseline_source=colour_relative_to,
+        baseline_source=baseline,
         cases=cases,
-        baseline_row=show_values and colour_relative_to is not None,
+        baseline_row=show_values and baseline is not None,
         bootstrap=bootstrap,
         block_length=block_length,
         n_resamples=n_resamples,
@@ -350,11 +348,13 @@ class ScoreCard:
     ----------
     data : xr.Dataset
         Verification statistics: one variable per ``{metric}.{variable}`` pair.
-    colour_relative_to : str, optional
-        The member of ``forecast_source`` every forecast source is compared with;
-        the card colours ``forecast - baseline`` and marks significance. ``None``:
-        nothing is compared, every box is neutral, and ``show_values`` must be
-        True.
+    baseline : str, optional
+        The member of ``forecast_source`` every forecast source is compared with:
+        the card shows each one's paired difference ``forecast - baseline`` (as
+        colour) and marks where it is significant. It decides the comparison
+        only -- with ``show_values`` the printed numbers are each source's own
+        scores. ``None``: nothing is compared, every box is neutral, and
+        ``show_values`` must be True.
     show_values : bool, optional
         Print each source's own score in its boxes. With a baseline, the baseline
         is also shown as a grey row of its own scores, first, and colours are
@@ -414,13 +414,13 @@ class ScoreCard:
     Raises
     ------
     ValueError
-        If ``colour_relative_to`` is None and ``show_values`` is False: the card
+        If ``baseline`` is None and ``show_values`` is False: the card
         would have nothing on it. Also if the dataset is not in the documented
         shape, or ``block_length`` is omitted and cannot be derived.
 
     Examples
     --------
-    >>> score_card = ScoreCard(ds, colour_relative_to="IFS-HRES",
+    >>> score_card = ScoreCard(ds, baseline="IFS-HRES",
     ...                        select=dict(forecast_source=["GraphCast", ...]))  # doctest: +SKIP
     >>> score_card.to_figure().savefig("card.png", dpi=200)  # doctest: +SKIP
     >>> Path("card.html").write_text(score_card.to_html())  # doctest: +SKIP
@@ -430,7 +430,7 @@ class ScoreCard:
         self,
         data: xr.Dataset,
         *,
-        colour_relative_to: str | None = None,
+        baseline: str | None = None,
         show_values: bool = False,
         select: Mapping[str, Any] | None = None,
         cases: str = "common",
@@ -448,7 +448,7 @@ class ScoreCard:
     ) -> None:
         self._layout: Layout = build_layout(
             data,
-            colour_relative_to=colour_relative_to,
+            baseline=baseline,
             show_values=show_values,
             select=select,
             cases=cases,

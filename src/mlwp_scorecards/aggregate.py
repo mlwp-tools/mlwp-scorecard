@@ -268,7 +268,7 @@ def expand_selection(
 
 def resolve_sources(
     forecast_source: Any,
-    colour_relative_to: str | None,
+    baseline: str | None,
     available: Sequence[str],
 ) -> tuple[str, ...]:
     """Expand and validate the forecast sources to show.
@@ -283,7 +283,7 @@ def resolve_sources(
     ----------
     forecast_source : str, ``...``, or sequence of str and at most one ``...``
         The forecast sources asked for.
-    colour_relative_to : str or None
+    baseline : str or None
         The baseline.
     available : sequence of str
         The members of ``forecast_source``, in coordinate order.
@@ -311,17 +311,15 @@ def resolve_sources(
     else:
         items = list(forecast_source)
 
-    if colour_relative_to is not None and colour_relative_to not in have:
-        raise KeyError(
-            f"colour_relative_to={colour_relative_to!r} is not in {FORECAST_DIM} (have: {have})"
-        )
-    if colour_relative_to is not None and colour_relative_to in items:
+    if baseline is not None and baseline not in have:
+        raise KeyError(f"baseline={baseline!r} is not in {FORECAST_DIM} (have: {have})")
+    if baseline is not None and baseline in items:
         raise ValueError(
-            f"colour_relative_to={colour_relative_to!r} is also named in "
+            f"baseline={baseline!r} is also named in "
             f"select=dict({FORECAST_DIM}=...); the baseline is what every forecast "
             f"source is compared against, so it cannot also be one of them"
         )
-    sources = expand_selection(FORECAST_DIM, items, have, exclude=[colour_relative_to])
+    sources = expand_selection(FORECAST_DIM, items, have, exclude=[baseline])
     if not sources:
         raise ValueError(
             f"select=dict({FORECAST_DIM}=...) leaves no forecast source to show"

@@ -17,6 +17,13 @@ Design and rationale are documented in [`PLAN.md`](PLAN.md).
 
 ### Changed
 
+- **`colour_relative_to=` is now `baseline=`** (`--colour-relative-to` is
+  `--baseline`). It names what the argument is -- the source everything is
+  compared with -- rather than one way the comparison is drawn, so it stays
+  right if the difference is later also shown by shape or marker. It was
+  `relative_to=` before `colour_relative_to=`, renamed because with
+  `show_values=True` the printed numbers are each source's own, not relative;
+  `baseline=` suggests neither. There is no alias.
 - **The palette is chosen when drawing, not when building:**
   `score_card.to_html(colour_scheme="ecmwf")` and
   `to_figure(colour_scheme=...)`, and `--colour-scheme` on the command line,
@@ -47,12 +54,12 @@ Design and rationale are documented in [`PLAN.md`](PLAN.md).
   warnings unless the report was asked for.
 - The figure is no longer registered with `pyplot`, and building it no longer
   switches the matplotlib backend to Agg, which broke `plt.show()` afterwards.
-- **`control=` / `experiment=` are gone.** The baseline is `colour_relative_to=`
-  (`--colour-relative-to`): it decides the colouring, and the significance, and
-  nothing else. The sources compared with it are a selection like any other,
-  `select=dict(forecast_source=["GraphCast", ...])`, and default to every source
-  but the baseline. A baseline is often not a model at all, hence "relative to"
-  rather than "control". `Step.control*` /
+- **`control=` / `experiment=` are gone.** The baseline is `baseline=`
+  (`--baseline`): it decides the comparison -- the colouring, and the
+  significance -- and nothing else. The sources compared with it are a selection
+  like any other, `select=dict(forecast_source=["GraphCast", ...])`, and default
+  to every source but the baseline. A baseline is often not a model at all,
+  hence "baseline" rather than "control". `Step.control*` /
   `Step.experiment*` become `Step.baseline*` / `Step.forecast*`, and
   `Layout.control` / `Layout.experiment` become `Layout.baseline_source` /
   `Layout.forecast_sources`. There is no alias for the old names.
@@ -122,7 +129,7 @@ Design and rationale are documented in [`PLAN.md`](PLAN.md).
   boxes, formatted by one helper (`model.format_value`). With a baseline the
   colours and significance borders are unchanged, and the baseline appears as a
   grey row of its own scores, first; `forecast_source` is then always on an axis.
-- **Cards with no baseline.** `colour_relative_to=None` with `show_values=True`
+- **Cards with no baseline.** `baseline=None` with `show_values=True`
   shows every source's own scores on grey, with their own intervals in the
   tooltip and drill-down, and nothing compared or marked significant. Neither
   a baseline nor values is an error naming the available sources.

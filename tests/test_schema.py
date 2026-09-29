@@ -51,7 +51,7 @@ def _card(ds, **kwargs):
     kwargs.setdefault("n_resamples", 300)
     return build_layout(
         ds,
-        colour_relative_to="ctl",
+        baseline="ctl",
         select=dict(forecast_source=["exp"]),
         rows=["truth_source", "variable"],
         columns=["metric"],
@@ -143,7 +143,7 @@ def test_a_variable_may_omit_a_dimension_that_does_not_apply_to_it():
     )
     lay = build_layout(
         ds,
-        colour_relative_to="ctl",
+        baseline="ctl",
         select=dict(forecast_source=["exp"]),
         rows=["truth_source", "variable", "level"],
         columns=["metric"],
@@ -183,7 +183,7 @@ def test_a_string_dimension_a_variable_lacks_is_blank_not_nan():
     """
     lay = build_layout(
         _ragged_strings(),
-        colour_relative_to="ctl",
+        baseline="ctl",
         rows=["truth_source", "variable", "band"],
         columns=["metric"],
         n_resamples=50,
@@ -199,7 +199,7 @@ def test_a_dimension_only_some_variables_have_keeps_its_order():
     """Combining the variables must not sort the coordinate: rows follow the
     dataset's order, and so a select= list's order."""
     kw = dict(
-        colour_relative_to="ctl",
+        baseline="ctl",
         rows=["truth_source", "variable", "band"],
         columns=["metric"],
         n_resamples=50,
@@ -249,7 +249,7 @@ def test_an_unreserved_dimension_is_just_an_axis():
     """
     lay = build_layout(
         _seasonal(),
-        colour_relative_to="ctl",
+        baseline="ctl",
         select=dict(forecast_source=["exp"]),
         rows=["season", "variable"],
         columns=["threshold", "metric"],
@@ -265,7 +265,7 @@ def test_an_unplaced_dimension_is_an_error_naming_a_remedy_that_works():
     with pytest.raises(KeyError, match=r"ds\.sel\(season=\.\.\.\)") as excinfo:
         build_layout(
             ds,
-            colour_relative_to="ctl",
+            baseline="ctl",
             select=dict(forecast_source=["exp"]),
             rows=["variable"],
             columns=["metric"],
@@ -276,7 +276,7 @@ def test_an_unplaced_dimension_is_an_error_naming_a_remedy_that_works():
 
     # `exp` is the only source besides the baseline, so it is the default selection
     kw = dict(
-        colour_relative_to="ctl",
+        baseline="ctl",
         rows=["variable"],
         columns=["metric"],
         n_resamples=100,
@@ -300,14 +300,14 @@ def test_a_list_in_select_keeps_the_dimension():
     with pytest.raises(KeyError, match="assigned to neither"):
         build_layout(
             ds,
-            colour_relative_to="ctl",
+            baseline="ctl",
             rows=["variable"],
             columns=["metric"],
             select=dict(season=["DJF"], threshold=1.0),
         )
     lay = build_layout(
         ds,
-        colour_relative_to="ctl",
+        baseline="ctl",
         rows=["season", "variable"],
         columns=["metric"],
         select=dict(season=["DJF"], threshold=1.0),
@@ -318,7 +318,7 @@ def test_a_list_in_select_keeps_the_dimension():
 
 def test_select_on_a_name_that_is_not_a_dimension_is_refused():
     with pytest.raises(KeyError, match="not dimensions"):
-        build_layout(_seasonal(), colour_relative_to="ctl", select=dict(nonsuch=1))
+        build_layout(_seasonal(), baseline="ctl", select=dict(nonsuch=1))
 
 
 def test_init_time_and_forecast_source_need_no_home_on_an_axis():
@@ -333,7 +333,7 @@ def test_inference_places_unknown_dimensions_on_the_columns_in_order():
     renders the same card in a fresh process and demands identical bytes."""
     lay = build_layout(
         _seasonal(),
-        colour_relative_to="ctl",
+        baseline="ctl",
         select=dict(forecast_source=["exp"]),
         n_resamples=100,
     )
@@ -383,12 +383,8 @@ def test_swapping_baseline_and_forecast_source_negates_the_card():
     kw = dict(
         rows=["truth_source", "variable"], columns=["metric"], n_resamples=300, seed=0
     )
-    a = build_layout(
-        ds, colour_relative_to="ctl", select=dict(forecast_source=["exp"]), **kw
-    )
-    b = build_layout(
-        ds, colour_relative_to="exp", select=dict(forecast_source=["ctl"]), **kw
-    )
+    a = build_layout(ds, baseline="ctl", select=dict(forecast_source=["exp"]), **kw)
+    b = build_layout(ds, baseline="exp", select=dict(forecast_source=["ctl"]), **kw)
     for sa, sb in zip(
         a.sel(truth_source="analysis", variable="2t", metric="rmse").steps,
         b.sel(truth_source="analysis", variable="2t", metric="rmse").steps,
@@ -442,7 +438,7 @@ def test_the_minimal_readme_example_renders_as_documented():
     ds = _dataset(**{"rmse.2t": series(1.2, "K"), "rmse.msl": series(80.0, "Pa")})
     lay = build_layout(
         ds,
-        colour_relative_to="IFS-HRES",
+        baseline="IFS-HRES",
         select=dict(forecast_source=["GraphCast"]),
         n_resamples=200,
     )

@@ -9,7 +9,7 @@ import pytest
 from mlwp_scorecards import ScoreCard
 
 KW = dict(
-    colour_relative_to="persistence",
+    baseline="persistence",
     select=dict(forecast_source=["drifting-persistence"]),
     title="t",
     n_resamples=100,

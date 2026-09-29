@@ -95,7 +95,7 @@ def test_renders_html_and_static(verification, tmp_path):
     """Both backends produce output from the same card."""
     score_card = ScoreCard(
         verification,
-        colour_relative_to="persistence",
+        baseline="persistence",
         select=dict(forecast_source=["drifting-persistence"]),
         title="t",
     )
@@ -110,7 +110,7 @@ def test_html_has_no_external_requests(verification):
     """No CDN, no analytics, no webfonts: the page must work offline."""
     text = ScoreCard(
         verification,
-        colour_relative_to="persistence",
+        baseline="persistence",
         select=dict(forecast_source=["drifting-persistence"]),
     ).to_html()
     assert not re.search(r'(?:src|href)\s*=\s*["\']https?://', text)
@@ -122,7 +122,7 @@ def test_every_column_header_level_is_on_the_page(verification):
     and leaf header rows were written."""
     score_card = ScoreCard(
         verification,
-        colour_relative_to="persistence",
+        baseline="persistence",
         rows=["variable", "level"],
         columns=["truth_source", "spatial_region", "metric"],
         n_resamples=50,
@@ -142,7 +142,7 @@ def test_html_box_count_matches_the_layout(layout, verification):
         verification,
         rows=layout.row_dims,
         columns=layout.column_dims,
-        colour_relative_to="persistence",
+        baseline="persistence",
         select=dict(forecast_source=["drifting-persistence"]),
     ).to_html()
     assert page.count('<i class="b') == layout.stats.n_boxes
@@ -160,13 +160,13 @@ def test_unknown_metric_refuses_to_guess(verification, tmp_path):
     with pytest.raises(KeyError, match="unknown metric"):
         build_layout(
             ds,
-            colour_relative_to="persistence",
+            baseline="persistence",
             select=dict(forecast_source=["drifting-persistence"]),
         )
 
     lay = build_layout(
         ds,
-        colour_relative_to="persistence",
+        baseline="persistence",
         select=dict(forecast_source=["drifting-persistence"]),
         metric_polarity={"wibble": "lower_is_better"},
     )

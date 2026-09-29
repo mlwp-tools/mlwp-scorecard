@@ -27,7 +27,7 @@ def test_renders_both_formats(netcdf, tmp_path):
     rc = main(
         [
             str(netcdf),
-            "--colour-relative-to",
+            "--baseline",
             "persistence",
             "--select",
             "forecast_source=drifting-persistence",
@@ -51,7 +51,7 @@ def test_too_few_cases_for_blocks_is_refused_naming_the_flag(netcdf, tmp_path):
     with xr.open_dataset(netcdf) as ds:
         ds.isel(init_time=slice(0, 30)).to_netcdf(short)
     out = tmp_path / "c.html"
-    argv = [str(short), "--colour-relative-to", "persistence", "--html-path", str(out)]
+    argv = [str(short), "--baseline", "persistence", "--html-path", str(out)]
 
     logged = []
     sink = logger.add(lambda m: logged.append(m.record["message"]), level="ERROR")
@@ -89,7 +89,7 @@ def test_several_forecast_sources_give_a_block_of_rows_each(
     four_sources, tmp_path, select
 ):
     out = tmp_path / "c.html"
-    argv = [str(four_sources), "--colour-relative-to", "base", "--html-path", str(out)]
+    argv = [str(four_sources), "--baseline", "base", "--html-path", str(out)]
     argv += ["--cases", "pairwise", "--n-resamples", "50", "--bootstrap", "iid"]
     assert main(argv + select) == 0
     assert out.read_text().count('<i class="b') == 3 * 2 * 4  # sources x vars x leads
@@ -97,7 +97,7 @@ def test_several_forecast_sources_give_a_block_of_rows_each(
 
 def _boxes(netcdf, tmp_path, *select, rows="truth_source,variable,level"):
     out = tmp_path / "c.html"
-    argv = [str(netcdf), "--colour-relative-to", "persistence", "--html-path", str(out)]
+    argv = [str(netcdf), "--baseline", "persistence", "--html-path", str(out)]
     argv += ["--rows", rows, "--columns", "spatial_region,metric"]
     for s in select:
         argv += ["--select", s]
@@ -151,7 +151,7 @@ def test_select_parsing():
 )
 def test_a_malformed_select_exits_nonzero(netcdf, tmp_path, select):
     out = tmp_path / "c.html"
-    argv = [str(netcdf), "--colour-relative-to", "persistence", "--html-path", str(out)]
+    argv = [str(netcdf), "--baseline", "persistence", "--html-path", str(out)]
     for s in select:
         argv += ["--select", s]
     assert main(argv) == 1
@@ -164,7 +164,7 @@ def test_open_opens_every_file_written(netcdf, tmp_path, monkeypatch):
     opened = []
     monkeypatch.setattr(cli, "_open", opened.append)
     html, png = tmp_path / "c.html", tmp_path / "c.png"
-    argv = [str(netcdf), "--colour-relative-to", "persistence", "--open"]
+    argv = [str(netcdf), "--baseline", "persistence", "--open"]
     argv += ["--n-resamples", "50"]
     assert main(argv + ["--html-path", str(html), "--image-path", str(png)]) == 0
     assert opened == [html, png]
@@ -177,7 +177,7 @@ def test_neither_a_baseline_nor_values_is_a_clear_error(netcdf, tmp_path):
     assert not out.exists()
 
 
-@pytest.mark.parametrize("baseline", [["--colour-relative-to", "persistence"], []])
+@pytest.mark.parametrize("baseline", [["--baseline", "persistence"], []])
 def test_show_values_renders_with_and_without_a_baseline(netcdf, tmp_path, baseline):
     out_html, out_png = tmp_path / "c.html", tmp_path / "c.png"
     argv = [str(netcdf), "--show-values", "--n-resamples", "50"]
@@ -188,7 +188,7 @@ def test_show_values_renders_with_and_without_a_baseline(netcdf, tmp_path, basel
 
 def test_selecting_a_dimension_the_dataset_lacks_exits_nonzero(netcdf, tmp_path):
     out = tmp_path / "c.html"
-    argv = [str(netcdf), "--colour-relative-to", "persistence", "--html-path", str(out)]
+    argv = [str(netcdf), "--baseline", "persistence", "--html-path", str(out)]
     assert main(argv + ["--select", "nonsuch=1"]) == 1
     assert not out.exists()
 
@@ -198,7 +198,7 @@ def test_explicit_axes_are_honoured(netcdf, tmp_path):
     rc = main(
         [
             str(netcdf),
-            "--colour-relative-to",
+            "--baseline",
             "persistence",
             "--select",
             "forecast_source=drifting-persistence",
@@ -225,7 +225,7 @@ def test_an_output_suffix_that_contradicts_its_flag_exits_nonzero(
     rc = main(
         [
             str(netcdf),
-            "--colour-relative-to",
+            "--baseline",
             "persistence",
             "--select",
             "forecast_source=drifting-persistence",
@@ -241,7 +241,7 @@ def test_no_output_at_all_exits_nonzero(netcdf):
     rc = main(
         [
             str(netcdf),
-            "--colour-relative-to",
+            "--baseline",
             "persistence",
             "--select",
             "forecast_source=drifting-persistence",
@@ -270,7 +270,7 @@ def test_reads_zarr_as_well_as_netcdf(zarr_store, tmp_path):
     rc = main(
         [
             str(zarr_store),
-            "--colour-relative-to",
+            "--baseline",
             "persistence",
             "--select",
             "forecast_source=drifting-persistence",
@@ -291,7 +291,7 @@ def test_unknown_input_format_exits_nonzero(tmp_path):
     rc = main(
         [
             str(bad),
-            "--colour-relative-to",
+            "--baseline",
             "persistence",
             "--select",
             "forecast_source=drifting-persistence",

@@ -1,6 +1,6 @@
 """Printed values, the baseline's grey row, and the card with no baseline.
 
-`colour_relative_to=` decides the colouring and nothing else; `show_values=True`
+`baseline=` decides the colouring and nothing else; `show_values=True`
 prints each source's own score in its boxes. With a baseline the colours must be
 exactly what they are without values, plus a grey row of the baseline's own
 scores; with none, every box is a number on grey and nothing is significant.
@@ -61,8 +61,8 @@ def test_format_value(value, text):
 # with a baseline: colours unchanged, plus a grey row of the baseline
 # --------------------------------------------------------------------------- #
 def test_showing_values_leaves_the_colours_exactly_as_they_were():
-    plain = _card(colour_relative_to="base")
-    shown = _card(colour_relative_to="base", show_values=True)
+    plain = _card(baseline="base")
+    shown = _card(baseline="base", show_values=True)
     for _, _, cell in plain.iter_cells():
         other = shown.cells[(cell.row_key, cell.col_key)]
         assert not other.is_baseline
@@ -77,7 +77,7 @@ def test_showing_values_leaves_the_colours_exactly_as_they_were():
 
 def test_the_baseline_is_a_grey_row_of_its_own_scores_first():
     ds = _dataset()
-    lay = _card(ds, colour_relative_to="base", show_values=True)
+    lay = _card(ds, baseline="base", show_values=True)
     assert lay.rows[0].key[0] == "base"
     base = lay.sel(forecast_source="base", variable="2t", metric="rmse")
     assert base.is_baseline
@@ -92,7 +92,7 @@ def test_the_baseline_is_a_grey_row_of_its_own_scores_first():
 def test_one_forecast_source_still_gets_a_baseline_row():
     lay = build_layout(
         _dataset(),
-        colour_relative_to="base",
+        baseline="base",
         show_values=True,
         select=dict(forecast_source=["a"]),
         **{k: v for k, v in KW.items() if k != "columns"},
@@ -106,7 +106,7 @@ def test_values_need_forecast_source_on_an_axis():
     with pytest.raises(ValueError, match="show_values=True"):
         build_layout(
             _dataset(),
-            colour_relative_to="base",
+            baseline="base",
             show_values=True,
             select=dict(forecast_source=["a"]),
             rows=["variable"],
@@ -117,8 +117,8 @@ def test_values_need_forecast_source_on_an_axis():
 
 def test_under_pairwise_cases_the_baseline_row_uses_all_its_own_cases():
     ds = _with_gaps()  # `a` scores one case in three
-    common = _card(ds, colour_relative_to="base", show_values=True, cases="common")
-    pairwise = _card(ds, colour_relative_to="base", show_values=True, cases="pairwise")
+    common = _card(ds, baseline="base", show_values=True, cases="common")
+    pairwise = _card(ds, baseline="base", show_values=True, cases="pairwise")
 
     def n(lay):
         cell = lay.sel(forecast_source="base", variable="2t", metric="rmse")
@@ -170,11 +170,11 @@ def test_neither_a_baseline_nor_values_is_refused():
 @pytest.mark.parametrize("baseline", ["base", None])
 def test_both_backends_render_the_numbers(tmp_path, baseline):
     score_card = ScoreCard(
-        _dataset(), colour_relative_to=baseline, show_values=True, rows=ROWS, **KW
+        _dataset(), baseline=baseline, show_values=True, rows=ROWS, **KW
     )
     page = score_card.to_html()
     png = save_figure(score_card.to_figure(), tmp_path / "c.png")
-    lay = _card(colour_relative_to=baseline, show_values=True)
+    lay = _card(baseline=baseline, show_values=True)
     first = lay.sel(forecast_source="a", variable="2t", metric="rmse").steps[0].text
     assert re.search(rf'<i class="b [^"]*" title="[^"]*">{re.escape(first)}</i>', page)
     assert png.stat().st_size > 2000
@@ -185,7 +185,7 @@ def test_both_backends_render_the_numbers(tmp_path, baseline):
 
 
 def test_a_card_with_values_is_byte_reproducible():
-    kw = dict(colour_relative_to="base", show_values=True, rows=ROWS, **KW)
+    kw = dict(baseline="base", show_values=True, rows=ROWS, **KW)
     assert ScoreCard(_dataset(), **kw).to_html() == (
         ScoreCard(_dataset(), **kw).to_html()
     )

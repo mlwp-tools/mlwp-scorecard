@@ -1011,7 +1011,7 @@ half-pixel edges.
 
 ```python
 score_card = ScoreCard(data, *,
-                 colour_relative_to=None, show_values=False, select=None, cases="common",
+                 baseline=None, show_values=False, select=None, cases="common",
                  rows=None, columns=None, cell="lead_time",
                  metric_polarity=None, title="", subtitle="",
                  bootstrap="moving-block", block_length=None, n_resamples=2000,
@@ -1039,7 +1039,7 @@ that keep output selectable and byte-reproducible, and
 `select=dict(forecast_source=["GraphCast", ...], truth_source="analysis", ...)`: one
 rule for every coordinate, described under *API changes of 2026-09-27*, item 7.
 
-CLI `mlwp.make_scorecard DATASET [--colour-relative-to NAME] [--show-values] [--select DIM=V1,V2 ...]
+CLI `mlwp.make_scorecard DATASET [--baseline NAME] [--show-values] [--select DIM=V1,V2 ...]
 [--html-path PATH] [--image-path PATH ...]`, argparse + `@logger.catch`; exit 1 when
 `report.has_fails()`, an output path is refused, or a selection is malformed.
 
@@ -1166,7 +1166,10 @@ The argument names changed during implementation. Item 1 was first built as
 `select=`, because both were only selections along a coordinate, leaving
 `relative_to=` as the one source argument; item 5 renamed it
 **`colour_relative_to=`**, because the baseline decides only the colouring once values
-can be shown without one. Item 4's outputs are
+can be shown without one. It is now **`baseline=`** (§8): what the argument is, not
+one way it is drawn, so it survives a second channel such as shape, and it no more
+suggests relative printed values than `colour_relative_to=` did. The items below
+keep the names they were written with. Item 4's outputs are
 **`html_path=` / `image_path=`**. The dimension names stay fixed (the `*_DIM`
 constants); making them configurable was considered and rejected, for the reason
 AGENTS.md gives. Selecting through arbitrary keyword arguments
@@ -1373,7 +1376,15 @@ Supersedes the Python half of item 4; the CLI keeps `--html-path` / `--image-pat
   holds only the palettes. The engine no longer takes a scheme at all, and
   `Layout.scheme_name` (written, never read) went. The palette is a drawing
   choice: `to_html(colour_scheme=...)` / `to_figure(colour_scheme=...)`, and
-  `--colour-scheme` on the command line, spelled like `colour_relative_to`.
+  `--colour-scheme` on the command line, spelled like `ColourScheme`.
+- **`colour_relative_to=` became `baseline=`** (`--baseline`). The name should
+  say what the argument is -- the source every forecast source is compared
+  with -- not one channel the comparison is drawn in, so that a later shape or
+  marker encoding of the difference does not make it wrong. `relative_to=` was
+  considered and set aside: it had been renamed away once already, because
+  with `show_values=True` the printed numbers are each source's own. `baseline`
+  is also the word the code (`baseline_source`, the baseline row) and the docs
+  already use.
   `LEVELS` in `layout/model.py` is the level range; the scaling and every
   palette are built to it, and tests check both, because a mismatch would not
   fail -- it would quietly reuse the top colour.
@@ -1382,19 +1393,20 @@ Supersedes the Python half of item 4; the CLI keeps `--html-path` / `--image-pat
 
 ```python
 # two sources, analysis and observations on one card
-score_card = ScoreCard(ds, colour_relative_to="IFS-HRES", select=dict(forecast_source=["GraphCast"]),
-                 rows=["truth_source", "variable", "level"], columns=["spatial_region", "metric"])
+score_card = ScoreCard(ds, baseline="IFS-HRES", select=dict(forecast_source=["GraphCast"]),
+                       rows=["truth_source", "variable", "level"],
+                       columns=["spatial_region", "metric"])
 score_card.to_figure().savefig("graphcast_vs_hres.png")
 Path("graphcast_vs_hres.html").write_text(score_card.to_html())
 
 # several sources against one baseline, Europe only, analysis only
-ScoreCard(ds, colour_relative_to="IFS-HRES",
+ScoreCard(ds, baseline="IFS-HRES",
           select=dict(forecast_source=["GraphCast", "AIFS", "Aurora"],
                       truth_source="analysis", spatial_region="europe", metric="rmse"),
           rows=["forecast_source"], columns=["variable", "level", "metric"])
 
 # every source but the baseline, both truths: two blocks of rows
-ScoreCard(ds, colour_relative_to="IFS-HRES",
+ScoreCard(ds, baseline="IFS-HRES",
           select=dict(spatial_region="europe", metric="rmse"),
           rows=["truth_source", "forecast_source"],
           columns=["variable", "level", "metric"])

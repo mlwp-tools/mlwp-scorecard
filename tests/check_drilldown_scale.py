@@ -30,7 +30,7 @@ def main() -> None:
     OUT.mkdir(exist_ok=True)
     ds = _big_dataset()
     layout = build_layout(
-        ds, colour_relative_to="ctl", select=dict(forecast_source=["exp"]), **AXES
+        ds, baseline="ctl", select=dict(forecast_source=["exp"]), **AXES
     )
     s = layout.stats
     print(

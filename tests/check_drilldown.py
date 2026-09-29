@@ -28,7 +28,7 @@ def main() -> None:
     OUT.mkdir(exist_ok=True)
     ds = make_verification_dataset(n_case=80, n_boot=200, drift=0.25)
     kwargs = dict(
-        colour_relative_to="persistence",
+        baseline="persistence",
         select=dict(forecast_source=["drifting-persistence"]),
         rows=["truth_source", "variable", "level"],
         columns=["spatial_region", "metric"],

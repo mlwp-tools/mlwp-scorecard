@@ -28,7 +28,7 @@ HARNESS = Path(__file__).parent / "drilldown_harness.mjs"
 def page(verification) -> str:
     return ScoreCard(
         verification,
-        colour_relative_to="persistence",
+        baseline="persistence",
         select=dict(forecast_source=["drifting-persistence"]),
         title="t",
     ).to_html()
@@ -94,7 +94,7 @@ def test_detail_can_be_switched_off(verification):
     """On a full-size card this is the largest thing in the file."""
     score_card = ScoreCard(
         verification,
-        colour_relative_to="persistence",
+        baseline="persistence",
         select=dict(forecast_source=["drifting-persistence"]),
     )
     with_, without = score_card.to_html(), score_card.to_html(detail=False)
@@ -131,7 +131,7 @@ def test_drilldown_actually_draws(verification, tmp_path):
     out = tmp_path / "card.html"
     score_card = ScoreCard(
         verification,
-        colour_relative_to="persistence",
+        baseline="persistence",
         select=dict(forecast_source=["drifting-persistence"]),
         title="t",
     )

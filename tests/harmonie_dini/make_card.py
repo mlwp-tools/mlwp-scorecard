@@ -35,7 +35,7 @@ def render(ds: xr.Dataset, name: str, baseline: str, forecast: str, scheme: str)
         cell="lead_time",
     )
     kwargs = dict(
-        colour_relative_to=baseline,
+        baseline=baseline,
         select=dict(forecast_source=[forecast]),
         **axes,
         # a handful of initialisations: far too few for blocks

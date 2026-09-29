@@ -10,7 +10,7 @@ Examples
 >>> from pathlib import Path
 >>> from mlwp_scorecards import ScoreCard
 >>> ds = xr.open_dataset("verification_summary.nc")        # doctest: +SKIP
->>> score_card = ScoreCard(ds, colour_relative_to="IFS-HRES",   # doctest: +SKIP
+>>> score_card = ScoreCard(ds, baseline="IFS-HRES",   # doctest: +SKIP
 ...                        select=dict(forecast_source=["GraphCast"]))
 >>> score_card.to_figure().savefig("card.png", dpi=200)        # doctest: +SKIP
 >>> Path("card.html").write_text(score_card.to_html())         # doctest: +SKIP

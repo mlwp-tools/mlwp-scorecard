@@ -54,7 +54,7 @@ def _dataset(n_case=60, n_lead=4, seed=0):
 
 #: The hand-built data here is too short for the default blocks, so the
 #: resample is chosen explicitly.
-KW = dict(colour_relative_to="base", n_resamples=300, seed=0, bootstrap="iid")
+KW = dict(baseline="base", n_resamples=300, seed=0, bootstrap="iid")
 
 
 def _card(ds, sources, **kw):
@@ -142,15 +142,15 @@ def test_a_repeated_forecast_source_is_refused():
 def test_an_unknown_source_is_refused_naming_the_argument():
     with pytest.raises(KeyError, match="'nonsuch' is not in forecast_source"):
         _card(_dataset(), ["a", "nonsuch"])
-    with pytest.raises(KeyError, match="colour_relative_to='nonsuch'"):
-        _card(_dataset(), ["a"], colour_relative_to="nonsuch")
+    with pytest.raises(KeyError, match="baseline='nonsuch'"):
+        _card(_dataset(), ["a"], baseline="nonsuch")
 
 
 def test_no_baseline_and_no_values_leaves_nothing_to_show():
     """Neutral boxes with nothing in them would be an empty card: say so, and list
     the sources that could be the baseline."""
     with pytest.raises(ValueError, match="nothing to show") as excinfo:
-        _card(_dataset(), ["a"], colour_relative_to=None)
+        _card(_dataset(), ["a"], baseline=None)
     assert "one of: base, a, b, c" in str(excinfo.value), "should list the options"
 
 
@@ -176,7 +176,7 @@ def test_an_ellipsis_may_sit_anywhere():
 
 def test_an_ellipsis_never_includes_the_baseline():
     ds = _dataset()
-    assert _sources(_card(ds, [...], colour_relative_to="b")) == ["base", "a", "c"]
+    assert _sources(_card(ds, [...], baseline="b")) == ["base", "a", "c"]
 
 
 def test_two_ellipses_are_refused():

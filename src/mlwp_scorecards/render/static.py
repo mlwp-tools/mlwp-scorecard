@@ -12,8 +12,9 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ..colours import ColourScheme
 from ..layout import Layout
+from ..polarity import FAMILY_WORDS
+from .colours import ColourScheme
 
 if TYPE_CHECKING:
     from matplotlib.figure import Figure
@@ -280,8 +281,7 @@ def _draw(layout: Layout, scheme: ColourScheme, geometry: Geometry | None) -> Fi
         return len(text) * pt * 0.56 + 8
 
     legend_w = 8.0 + sum(
-        _text_w(f.negative_word, g.font_pt)
-        + _text_w(f.positive_word, g.font_pt)
+        sum(_text_w(w, g.font_pt) for w in FAMILY_WORDS[f.key])
         + (len(f.negative) // max(1, len(f.negative) // 6) + 2) * 9 * 2
         + 26
         for f in families
@@ -454,13 +454,13 @@ def _draw(layout: Layout, scheme: ColourScheme, geometry: Geometry | None) -> Fi
         ax.text(
             lx,
             ly,
-            f"{fam.negative_word}",
+            f"{FAMILY_WORDS[fam.key][0]}",
             fontsize=g.font_pt - 0.5,
             ha="left",
             va="center",
             color="#3b424b",
         )
-        lx += len(fam.negative_word) * (g.font_pt - 0.5) * 0.58 + 5
+        lx += len(FAMILY_WORDS[fam.key][0]) * (g.font_pt - 0.5) * 0.58 + 5
         step = max(1, len(fam.negative) // 6)
         for swatch in list(fam.negative.swatches[::step])[::-1]:
             ax.add_patch(
@@ -504,13 +504,13 @@ def _draw(layout: Layout, scheme: ColourScheme, geometry: Geometry | None) -> Fi
         ax.text(
             lx,
             ly,
-            fam.positive_word,
+            FAMILY_WORDS[fam.key][1],
             fontsize=g.font_pt - 0.5,
             ha="left",
             va="center",
             color="#3b424b",
         )
-        lx += len(fam.positive_word) * (g.font_pt - 0.5) * 0.58 + 22
+        lx += len(FAMILY_WORDS[fam.key][1]) * (g.font_pt - 0.5) * 0.58 + 22
 
     # The border is the significance channel, so say so: without this the frames
     # are decoration as far as the reader can tell.

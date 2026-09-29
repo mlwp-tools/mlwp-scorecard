@@ -37,7 +37,6 @@ def render(ds: xr.Dataset, name: str, baseline: str, forecast: str, scheme: str)
     kwargs = dict(
         colour_relative_to=baseline,
         select=dict(forecast_source=[forecast]),
-        scheme=scheme,
         **axes,
         # a handful of initialisations: far too few for blocks
         bootstrap="iid",
@@ -51,8 +50,8 @@ def render(ds: xr.Dataset, name: str, baseline: str, forecast: str, scheme: str)
     )
     score_card = ScoreCard(ds, **kwargs)
     html = OUT / f"{name}.html"
-    html.write_text(score_card.to_html(), encoding="utf-8")
-    fig = score_card.to_figure()
+    html.write_text(score_card.to_html(colour_scheme=scheme), encoding="utf-8")
+    fig = score_card.to_figure(colour_scheme=scheme)
     written = [html] + [save_figure(fig, OUT / f"{name}.{s}") for s in ("png", "pdf")]
     layout = score_card._layout
 
@@ -79,14 +78,14 @@ def main() -> None:
         choices=[*PAIRS, "all"],
         help="which comparison to render",
     )
-    ap.add_argument("--scheme", default="cvd", choices=("cvd", "ecmwf"))
+    ap.add_argument("--colour-scheme", default="cvd", choices=("cvd", "ecmwf"))
     args = ap.parse_args()
 
     ds = xr.open_zarr(OUT / "verification.zarr")
     names = list(PAIRS) if args.pair == "all" else [args.pair]
     for name in names:
         baseline, forecast = PAIRS[name]
-        render(ds, name, baseline, forecast, args.scheme)
+        render(ds, name, baseline, forecast, args.colour_scheme)
 
     print("\ncaveats carried in the dataset attributes:")
     for k, v in sorted(ds.attrs.items()):

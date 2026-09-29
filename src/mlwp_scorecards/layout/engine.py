@@ -17,8 +17,8 @@ import numpy as np
 import xarray as xr
 
 from ..aggregate import Aggregated
-from ..colours import ColourScheme, FixedScaling, Polarity, family_of, polarity_of
 from ..ingest import FORECAST_DIM, METRIC_DIM, VARIABLE_DIM
+from ..polarity import Polarity, family_of, polarity_of, word
 from .model import (
     NEUTRAL,
     Cell,
@@ -30,6 +30,7 @@ from .model import (
     Step,
     format_value,
 )
+from .scaling import FixedScaling
 
 __all__ = ["create_layout"]
 
@@ -342,7 +343,6 @@ def create_layout(
     row_dims: Sequence[str],
     column_dims: Sequence[str],
     cell_dim: str,
-    scheme: ColourScheme,
     scaling: FixedScaling,
     metric_polarity: Mapping[str, str] | None = None,
     agg: Aggregated,
@@ -370,14 +370,11 @@ def create_layout(
         The dimensions nested on the columns, outermost first.
     cell_dim : str
         The dimension laid out inside each cell.
-    scheme : ColourScheme
-        The palette whose words go into the tooltips, and whose name the layout
-        records.
     scaling : FixedScaling
         Maps each relative difference to a ramp level.
     metric_polarity : mapping of str to str, optional
         Polarities for metrics absent from the built-in table, or overriding it;
-        see :func:`~mlwp_scorecards.colours.polarity_of`.
+        see :func:`~mlwp_scorecards.polarity.polarity_of`.
     agg : Aggregated
         The collapse over forecast cases, from
         :func:`~mlwp_scorecards.aggregate.aggregate`. Subsetting and the choice
@@ -498,7 +495,6 @@ def create_layout(
         row_dims=row_dims,
         column_dims=column_dims,
         cell_dim=cell_dim,
-        scheme=scheme,
         scaling=scaling,
         metric_polarity=metric_polarity,
         title=title,
@@ -528,7 +524,6 @@ def _place(
     row_dims: Sequence[str],
     column_dims: Sequence[str],
     cell_dim: str,
-    scheme: ColourScheme,
     scaling: FixedScaling,
     metric_polarity: Mapping[str, str] | None,
     title: str,
@@ -569,8 +564,6 @@ def _place(
         The dimensions nested on the columns, outermost first.
     cell_dim : str
         The dimension laid out inside each cell.
-    scheme : ColourScheme
-        The palette whose words go into the tooltips.
     scaling : FixedScaling
         Maps each relative difference to a ramp level.
     metric_polarity : mapping of str to str or None
@@ -881,10 +874,10 @@ def _place(
                     n_sig += 1
                 d_lo, d_hi = _at(chart_lo), _at(chart_hi)
                 nn = _n()
-                word = scheme.word(fam, lvl)
+                direction = word(fam, lvl)
                 pct = abs(float(r_)) * 100
                 score = f" {text}{u}," if text else ""
-                tip = f"{lead_labels[k]}{score} {pct:.3g}% {word}"
+                tip = f"{lead_labels[k]}{score} {pct:.3g}% {direction}"
                 if sig_at is not None:
                     tip += f", significant at {_pct(sig_at)}"
                 if nn is not None:
@@ -1065,7 +1058,6 @@ def _place(
         block_length=agg.block_length,
         n_resamples=agg.n_resamples,
         seed=agg.seed,
-        scheme_name=scheme.name,
         notes=tuple(notes),
         show_values=show_values,
     )

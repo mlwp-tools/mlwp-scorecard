@@ -1,119 +1,27 @@
-"""Colour ramps, scaling, and the metric semantics that drive them.
+"""Palettes: the actual colours for a box's family and signed level.
 
-Two independent facts about a cell get two independent visual channels: the
-**fill** encodes magnitude, the **border** encodes significance. Nothing here
-infers meaning from a metric's name by pattern matching; :data:`METRIC_POLARITY`
-is an explicit lookup table and unknown metrics raise rather than defaulting.
+The layout says what a box *means* -- its family (``"error"``, ``"activity"``)
+and a signed level, derived from the metric's polarity -- and this module says
+what that looks like. Two independent facts about a cell get two independent
+visual channels: the **fill** encodes magnitude, the **border** encodes
+significance.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import StrEnum
 from typing import Mapping
 
+from ..layout import LEVELS
+
 __all__ = [
-    "Polarity",
     "Swatch",
     "Ramp",
     "Family",
     "ColourScheme",
-    "FixedScaling",
     "SCHEMES",
-    "METRIC_POLARITY",
-    "polarity_of",
+    "contrast_ratio",
 ]
-
-
-class Polarity(StrEnum):
-    """Which direction of a difference counts as an improvement."""
-
-    LOWER_IS_BETTER = "lower_is_better"
-    HIGHER_IS_BETTER = "higher_is_better"
-    ACTIVITY = "activity"
-    NEUTRAL = "neutral"
-
-
-#: Known metrics. Anything absent must be declared by the caller.
-METRIC_POLARITY: dict[str, Polarity] = {
-    "rmse": Polarity.LOWER_IS_BETTER,
-    "rmsef": Polarity.LOWER_IS_BETTER,
-    "mae": Polarity.LOWER_IS_BETTER,
-    "mse": Polarity.LOWER_IS_BETTER,
-    "bias": Polarity.NEUTRAL,
-    "crps": Polarity.LOWER_IS_BETTER,
-    "crpss": Polarity.HIGHER_IS_BETTER,
-    "acc": Polarity.HIGHER_IS_BETTER,
-    "csi": Polarity.HIGHER_IS_BETTER,
-    "ets": Polarity.HIGHER_IS_BETTER,
-    "spread": Polarity.ACTIVITY,
-    "stdev": Polarity.ACTIVITY,
-    "activity": Polarity.ACTIVITY,
-}
-
-_FAMILY_OF = {
-    Polarity.LOWER_IS_BETTER: "error",
-    Polarity.HIGHER_IS_BETTER: "error",
-    Polarity.NEUTRAL: "error",
-    Polarity.ACTIVITY: "activity",
-}
-
-
-def polarity_of(
-    metric: str, overrides: Mapping[str, str | Polarity] | None = None
-) -> Polarity:
-    """Resolve a metric's polarity.
-
-    Parameters
-    ----------
-    metric : str
-        Bare metric name — the half before the last dot of a
-        ``{metric}.{variable}`` data-variable name.
-    overrides : mapping, optional
-        Caller-supplied polarities, taking precedence over :data:`METRIC_POLARITY`.
-
-    Returns
-    -------
-    Polarity
-        The metric's polarity.
-
-    Raises
-    ------
-    KeyError
-        If the metric is unknown and not overridden. Guessing here would produce a
-        confidently backwards scorecard, so it is refused.
-    """
-    if overrides and metric in overrides:
-        return Polarity(overrides[metric])
-    if metric in METRIC_POLARITY:
-        return METRIC_POLARITY[metric]
-    raise KeyError(
-        f"unknown metric {metric!r}: cannot tell whether higher or lower is better. "
-        f"Pass metric_polarity={{{metric!r}: 'lower_is_better'}} (or 'higher_is_better', "
-        f"'activity', 'neutral')."
-    )
-
-
-def family_of(polarity: Polarity) -> str:
-    """Return the colour family for a polarity.
-
-    Parameters
-    ----------
-    polarity : Polarity
-        The metric's polarity.
-
-    Returns
-    -------
-    str
-        The key of a :class:`Family` in :attr:`ColourScheme.families`:
-        ``"activity"`` for activity metrics, ``"error"`` for everything else.
-    """
-    return _FAMILY_OF[polarity]
-
-
-# --------------------------------------------------------------------------- #
-# swatches and ramps
-# --------------------------------------------------------------------------- #
 
 
 def _hex_to_rgb(h: str) -> tuple[float, float, float]:
@@ -280,7 +188,7 @@ class Ramp:
         return self.swatches[min(max(i, 0), len(self.swatches) - 1)]
 
 
-def _build_ramp(light: str, dark: str, n: int = 14) -> Ramp:
+def _build_ramp(light: str, dark: str, n: int = LEVELS) -> Ramp:
     """Interpolate ``n`` swatches from ``light`` to ``dark``.
 
     Fill carries direction and magnitude; the border carries significance.
@@ -303,7 +211,7 @@ def _build_ramp(light: str, dark: str, n: int = 14) -> Ramp:
     dark : str
         The strongest fill, as hex.
     n : int, optional
-        The number of swatches.
+        The number of swatches: one per level, by default.
 
     Returns
     -------
@@ -324,25 +232,23 @@ def _build_ramp(light: str, dark: str, n: int = 14) -> Ramp:
 class Family:
     """A pair of ramps for the two directions of one kind of metric.
 
+    The words for the two directions are not a matter of palette, and live in
+    :data:`mlwp_scorecards.polarity.FAMILY_WORDS`.
+
     Attributes
     ----------
     key : str
-        The family's name, as returned by :func:`family_of`.
+        The family's name, as returned by
+        :func:`~mlwp_scorecards.polarity.family_of`.
     positive : Ramp
         The ramp for positive levels: better, or more active.
     negative : Ramp
         The ramp for negative levels: worse, or less active.
-    positive_word : str
-        The word for the positive direction, for tooltips and legends.
-    negative_word : str
-        The word for the negative direction, for tooltips and legends.
     """
 
     key: str
     positive: Ramp
     negative: Ramp
-    positive_word: str
-    negative_word: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -390,26 +296,6 @@ class ColourScheme:
         ramp = fam.positive if level > 0 else fam.negative
         return ramp[abs(level) - 1]
 
-    def word(self, family: str, level: int) -> str:
-        """Return the word describing this direction, for tooltips and legends.
-
-        Parameters
-        ----------
-        family : str
-            The colour family's key.
-        level : int
-            The signed ramp level; only its sign matters.
-
-        Returns
-        -------
-        str
-            The family's positive or negative word, or ``"no change"`` at zero.
-        """
-        fam = self.families[family]
-        if level == 0:
-            return "no change"
-        return fam.positive_word if level > 0 else fam.negative_word
-
     @property
     def depth(self) -> int:
         """Number of ramp steps per direction.
@@ -431,15 +317,11 @@ CVD = ColourScheme(
             "error",
             positive=_build_ramp("#eaf2f8", "#0b3d6b"),
             negative=_build_ramp("#fdeae7", "#7a1710"),
-            positive_word="better",
-            negative_word="worse",
         ),
         "activity": Family(
             "activity",
             positive=_build_ramp("#f3ece1", "#5c3607"),
             negative=_build_ramp("#e4f2f0", "#01443e"),
-            positive_word="more active",
-            negative_word="less active",
         ),
     },
 )
@@ -452,106 +334,13 @@ ECMWF = ColourScheme(
             "error",
             positive=_build_ramp("#a6e3fd", "#0043cf"),
             negative=_build_ramp("#fbd5bf", "#c04c26"),
-            positive_word="better",
-            negative_word="worse",
         ),
         "activity": Family(
             "activity",
             positive=_build_ramp("#dec8e2", "#900090"),
             negative=_build_ramp("#cbe9c5", "#00801b"),
-            positive_word="more active",
-            negative_word="less active",
         ),
     },
 )
 
 SCHEMES: dict[str, ColourScheme] = {"cvd": CVD, "ecmwf": ECMWF}
-
-
-@dataclass(frozen=True, slots=True)
-class FixedScaling:
-    """Absolute breakpoints on the magnitude of a relative difference.
-
-    Absolute rather than quantile-based on purpose: quantile scaling makes two
-    scorecards from different experiments non-comparable, which defeats the point.
-
-    Attributes
-    ----------
-    breaks : tuple of float, optional
-        Ascending thresholds on ``abs(relative)``; reaching the ``i``-th (from 1)
-        gives level ``i``, and below the first gives level zero.
-    """
-
-    breaks: tuple[float, ...] = (
-        0.005,
-        0.01,
-        0.02,
-        0.03,
-        0.05,
-        0.075,
-        0.10,
-        0.15,
-        0.20,
-        0.30,
-        0.40,
-        0.55,
-        0.75,
-        1.00,
-    )
-
-    def level(self, relative: float | None) -> int:
-        """Map a signed relative difference to a signed ramp level.
-
-        Parameters
-        ----------
-        relative : float or None
-            The signed relative difference, positive meaning better (or more
-            active). None or NaN means no difference.
-
-        Returns
-        -------
-        int
-            The number of breaks reached, carrying the sign of ``relative``.
-        """
-        import math
-
-        if relative is None or (isinstance(relative, float) and math.isnan(relative)):
-            return 0
-        mag = abs(relative)
-        idx = 0
-        for b in self.breaks:
-            if mag >= b:
-                idx += 1
-            else:
-                break
-        if idx == 0:
-            return 0
-        return idx if relative > 0 else -idx
-
-    @property
-    def depth(self) -> int:
-        """Number of ramp levels per direction.
-
-        Returns
-        -------
-        int
-            The number of breaks.
-        """
-        return len(self.breaks)
-
-    def saturated(self, relative: float | None) -> bool:
-        """Return whether the value is at or beyond the top break, i.e. off the scale.
-
-        Parameters
-        ----------
-        relative : float or None
-            The signed relative difference; None is never saturated.
-
-        Returns
-        -------
-        bool
-            True when ``abs(relative)`` reaches the last break.
-        """
-        if relative is None:
-            return False
-        return abs(relative) >= self.breaks[-1]

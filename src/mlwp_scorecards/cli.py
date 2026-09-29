@@ -72,7 +72,7 @@ def _output_paths(
     return paths
 
 
-def _write(score_card: ScoreCard, path: Path, *, dpi: int) -> Path:
+def _write(score_card: ScoreCard, path: Path, *, colour_scheme: str, dpi: int) -> Path:
     """Write one output, its format by suffix.
 
     The suffix has already been checked by :func:`_output_paths`.
@@ -83,6 +83,8 @@ def _write(score_card: ScoreCard, path: Path, *, dpi: int) -> Path:
         The card to write.
     path : Path
         Where to write it.
+    colour_scheme : str
+        The palette to draw in.
     dpi : int
         Resolution of a raster image.
 
@@ -92,11 +94,13 @@ def _write(score_card: ScoreCard, path: Path, *, dpi: int) -> Path:
         The file written.
     """
     if path.suffix.lower() in _HTML_SUFFIXES:
-        path.write_text(score_card.to_html(), encoding="utf-8")
+        path.write_text(
+            score_card.to_html(colour_scheme=colour_scheme), encoding="utf-8"
+        )
         return path
     from .render.static import save_figure
 
-    return save_figure(score_card.to_figure(), path, dpi=dpi)
+    return save_figure(score_card.to_figure(colour_scheme=colour_scheme), path, dpi=dpi)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -183,7 +187,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="polarity for an unknown metric, e.g. my_score=higher_is_better",
     )
     p.add_argument(
-        "--scheme",
+        "--colour-scheme",
         default="cvd",
         choices=("cvd", "ecmwf"),
         help="colour scheme (default: cvd, colour-vision-safe)",
@@ -413,7 +417,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 else {}
             ),
             metric_polarity=polarity or None,
-            scheme=args.scheme,
             title=args.title,
             subtitle=args.subtitle,
         )
@@ -429,7 +432,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     written = []
     for out in outputs:
-        written.append(_write(score_card, out, dpi=args.dpi))
+        written.append(
+            _write(score_card, out, colour_scheme=args.colour_scheme, dpi=args.dpi)
+        )
         logger.info(f"wrote {written[-1]}")
     if args.open:
         for path in written:

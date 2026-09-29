@@ -19,8 +19,9 @@ import json
 
 from jinja2 import Template
 
-from ..colours import ColourScheme
 from ..layout import Layout
+from ..polarity import FAMILY_WORDS
+from .colours import ColourScheme
 from .payload import payload_for
 
 __all__ = ["render_html"]
@@ -782,8 +783,8 @@ def render_html(
                 "label": "error metrics" if key == "error" else "activity metrics",
                 "pos": list(fam.positive.swatches[::step]),
                 "neg": list(fam.negative.swatches[::step])[::-1],
-                "positive_word": fam.positive_word,
-                "negative_word": fam.negative_word,
+                "negative_word": FAMILY_WORDS[key][0],
+                "positive_word": FAMILY_WORDS[key][1],
             }
         )
 

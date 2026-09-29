@@ -46,7 +46,10 @@ Guidance for agents and contributors working in this repository.
   `src/mlwp_scorecards/aggregate.py`
 - Layout types (the renderer contract): `src/mlwp_scorecards/layout/model.py`
 - Layout engine (`create_layout`): `src/mlwp_scorecards/layout/engine.py`
-- Colour, scaling and metric polarity: `src/mlwp_scorecards/colours.py`
+- Metric polarity (which direction is better) and its words:
+  `src/mlwp_scorecards/polarity.py`
+- Difference → signed level: `src/mlwp_scorecards/layout/scaling.py`
+- Palettes (level → colour): `src/mlwp_scorecards/render/colours.py`
 - Renderers: `src/mlwp_scorecards/render/html.py`, `render/static.py`
 - Synthetic test data: `tests/synthetic.py`
 - Notes on other scorecard tools: `docs/prior-work/README.md` (overview and comparison; links to each note)
@@ -54,8 +57,9 @@ Guidance for agents and contributors working in this repository.
 ## Development expectations
 
 - **`Layout` is the sole renderer contract.** Modules under `render/` may import
-  `mlwp_scorecards.layout` (the types), `colours` and each other only — never
-  `layout.engine`, never `xarray`, never the input dataset. `layout/__init__.py`
+  `mlwp_scorecards.layout` (the types), `polarity` (the direction words) and each
+  other only — never `layout.engine`, never `xarray`, never the input dataset. The
+  layout carries no colours; the palette is chosen when drawing. `layout/__init__.py`
   therefore re-exports the model and must never import the engine (a test checks).
   If a renderer needs something absent from `Layout`, extend `layout/model.py`
   rather than adding a backend-specific code path.
@@ -69,7 +73,7 @@ Guidance for agents and contributors working in this repository.
   non-default, and two of them silently did not work because the same names were
   also hardcoded elsewhere. `rows`, `columns` and `cell` are different in kind —
   they choose where a coordinate goes, not what it is called.
-- **Never guess a metric's polarity.** `colours.METRIC_POLARITY` is an explicit
+- **Never guess a metric's polarity.** `polarity.METRIC_POLARITY` is an explicit
   table and `polarity_of` raises for anything absent, because guessing produces a
   confidently backwards card. The reference implementation's
   `metric.substr(0,3)=="sda"` is the bug this rule exists to prevent.

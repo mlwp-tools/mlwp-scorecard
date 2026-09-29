@@ -13,7 +13,7 @@ import pytest
 
 from mlwp_scorecards import ScoreCard
 from mlwp_scorecards.api import build_layout
-from mlwp_scorecards.colours import Polarity, polarity_of
+from mlwp_scorecards.polarity import Polarity, polarity_of
 from mlwp_scorecards.render.static import save_figure
 
 

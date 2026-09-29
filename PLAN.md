@@ -768,13 +768,15 @@ mlwp-scorecards/
 │   ├── cli.py             mlwp.make_scorecard entry point
 │   ├── ingest.py          CF Dataset -> per-case scores + units; schema constants
 │   ├── aggregate.py       collapse over cases: means, bootstrap, paired differences
+│   ├── polarity.py        Polarity, METRIC_POLARITY, polarity_of, family_of, words
 │   ├── layout/
 │   │   ├── __init__.py    re-exports the model types, never the engine
-│   │   ├── model.py       HeaderCell, Line, Step, Cell, LayoutStats, Layout
+│   │   ├── model.py       HeaderCell, Line, Step, Cell, LayoutStats, Layout, LEVELS
+│   │   ├── scaling.py     FixedScaling: relative difference -> signed level
 │   │   └── engine.py      create_layout(units, agg=..., ...) -> Layout
-│   ├── colours.py         Swatch, Ramp, Family, ColourScheme, Scaling, SCHEMES
 │   └── render/
 │       ├── __init__.py    lazy backend import
+│       ├── colours.py     Swatch, Ramp, Family, ColourScheme, SCHEMES
 │       ├── payload.py     compact drill-down JSON + gzip/base64
 │       ├── html.py        self-contained interactive page + drill-down
 │       └── static.py      matplotlib backend
@@ -1011,12 +1013,11 @@ half-pixel edges.
 score_card = ScoreCard(data, *,
                  colour_relative_to=None, show_values=False, select=None, cases="common",
                  rows=None, columns=None, cell="lead_time",
-                 metric_polarity=None,
-                 scheme="cvd", title="", subtitle="",
+                 metric_polarity=None, title="", subtitle="",
                  bootstrap="moving-block", block_length=None, n_resamples=2000,
                  confidence_levels=(0.68, 0.95, 0.997), seed=0)
-score_card.to_figure() -> matplotlib.figure.Figure    # not registered with pyplot
-score_card.to_html(*, detail=True) -> str             # the self-contained page
+score_card.to_figure(*, colour_scheme="cvd") -> matplotlib.figure.Figure
+score_card.to_html(*, colour_scheme="cvd", detail=True) -> str
 ```
 
 There is no configuration object: everything is a plain argument (see AGENTS.md).
@@ -1364,6 +1365,18 @@ Supersedes the Python half of item 4; the CLI keeps `--html-path` / `--image-pat
   called once, and nothing reuses its configuration. `layout/__init__` re-exports
   the model and never the engine, so renderers importing `mlwp_scorecards.layout`
   get the types alone.
+- **`colours.py` was three things, now in three places.** Polarity is a fact
+  about the metric, not about colour; the colour is derived from it. So
+  `polarity.py` holds the polarity table and the family words ("better" /
+  "worse" -- identical in every palette, so never palette data).
+  `layout/scaling.py` maps a difference to a signed level. `render/colours.py`
+  holds only the palettes. The engine no longer takes a scheme at all, and
+  `Layout.scheme_name` (written, never read) went. The palette is a drawing
+  choice: `to_html(colour_scheme=...)` / `to_figure(colour_scheme=...)`, and
+  `--colour-scheme` on the command line, spelled like `colour_relative_to`.
+  `LEVELS` in `layout/model.py` is the level range; the scaling and every
+  palette are built to it, and tests check both, because a mismatch would not
+  fail -- it would quietly reuse the top colour.
 
 ### Examples
 

@@ -33,24 +33,35 @@ src/mlwp_scorecards/
 │                      init_time) plus units; the schema's *_DIM names
 ├── aggregate.py   (2) collapse over forecast cases: means, bootstrap intervals, and
 │                      the paired difference from the baseline (what decides significance)
-├── colours.py         colour schemes, difference → ramp scaling, metric polarity;
-│                      shared by the engine and the renderers
+├── polarity.py        what a metric means: which direction is better (an explicit
+│                      table; unknown metrics raise), its family, the words for it
 ├── layout/            the card's layout
 │   ├── __init__.py    re-exports the model types — never the engine (see below)
 │   ├── engine.py  (3) create_layout(): stateless; difference against the baseline,
-│   │                  then place rows, columns, cells, colours, significance,
-│   │                  tooltips, notes (aggregated numbers → Layout)
-│   └── model.py       Layout, Cell, Step, Line, …: the whole card as plain values,
-│                      no xarray — the sole renderer contract
+│   │                  then place rows, columns, cells, each box's family and level,
+│   │                  significance, tooltips, notes (aggregated numbers → Layout)
+│   ├── scaling.py     a relative difference → a signed level, within ±LEVELS
+│   └── model.py       Layout, Cell, Step, Line, …, LEVELS: the whole card as plain
+│                      values, no xarray and no colours — the sole renderer contract
 └── render/        (4) draw a Layout; compute nothing
+    ├── colours.py     palettes (colour schemes): a box's family and level → colours
     ├── html.py        render_html() → self-contained page (str)
     ├── payload.py     the page's packed drill-down data
     └── static.py      render_figure() → matplotlib Figure; save_figure()
 ```
 
+**Colour is derived, and chosen last.** A metric's polarity says which direction
+is better. From it and the paired difference, the engine gives each box a family
+(`"error"` or `"activity"`) and a signed level. The palette, which the caller
+picks when drawing (`to_html(colour_scheme=...)`), turns those into colours. So
+the layout carries no colours, and one card can be drawn in any palette. The
+number of levels, `LEVELS`, is part of the contract: the scaling has one break
+per level and every palette one ramp step per level, and tests check both.
+
 **The dependency rule.** `layout.model` is the only thing the renderers see. They
-import `mlwp_scorecards.layout`, whose `__init__` re-exports the model types, and
-never `layout.engine`, `xarray`, or the input dataset. Python runs a package's
+import `mlwp_scorecards.layout`, whose `__init__` re-exports the model types,
+`polarity` for the direction words, and each other. They never import
+`layout.engine`, `xarray`, or the input dataset. Python runs a package's
 `__init__` before any of its submodules, so `layout/__init__.py` must never import
 the engine. `tests/test_layout.py` checks that on the source. If a renderer needs
 something the `Layout` does not carry, extend `layout/model.py` rather than

@@ -17,6 +17,16 @@ Design and rationale are documented in [`PLAN.md`](PLAN.md).
 
 ### Changed
 
+- **The palette is chosen when drawing, not when building:**
+  `score_card.to_html(colour_scheme="ecmwf")` and
+  `to_figure(colour_scheme=...)`, and `--colour-scheme` on the command line,
+  replace `ScoreCard(scheme=...)` and `--scheme`. The layout carries no colours,
+  so one card draws in any palette.
+- `colours.py` is split by what each part is: `mlwp_scorecards.polarity`
+  (metric polarity, families and their words), `mlwp_scorecards.layout.scaling`
+  (difference → level), and `mlwp_scorecards.render.colours` (the palettes;
+  `SCHEMES` is still exported from the package). `Layout.scheme_name` is gone,
+  and `layout.LEVELS` fixes the level range the scaling and palettes share.
 - Internal modules reorganised into a `layout` package. `mlwp_scorecards.model`
   becomes `mlwp_scorecards.layout.model`, with the types also importable from
   `mlwp_scorecards.layout`. The layout engine is

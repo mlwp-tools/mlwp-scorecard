@@ -22,6 +22,12 @@ Key = tuple[Any, ...]
 #: neutral grey.
 NEUTRAL = "neutral"
 
+#: Levels per direction: :attr:`Step.level` runs from ``-LEVELS`` to ``LEVELS``.
+#: Part of the contract -- the scaling has one break per level, and every
+#: palette one ramp step per level -- so the colours a renderer picks are the
+#: ones the engine meant.
+LEVELS = 14
+
 
 def format_value(x: float) -> str:
     """Format a score as printed in a box.
@@ -161,7 +167,8 @@ class Step:
     n : int or None
         The number of forecast cases the comparison rests on.
     level : int
-        The signed ramp level that picks the fill; 0 for a neutral box.
+        The signed ramp level that picks the fill, within ``±LEVELS``; positive
+        means better (or more active), 0 a neutral box.
     family : str
         The colour family, or :data:`NEUTRAL` when compared with nothing.
     significant_at : float or None
@@ -383,8 +390,6 @@ class Layout:
         The number of bootstrap resamples; 0 when none were drawn.
     seed : int, optional
         The bootstrap's random seed.
-    scheme_name : str, optional
-        The name of the colour scheme to draw with.
     notes : tuple of str, optional
         Caveats to print on the card.
     show_values : bool, optional
@@ -417,7 +422,6 @@ class Layout:
     block_length: int = 1
     n_resamples: int = 0
     seed: int = 0
-    scheme_name: str = "cvd"
     notes: tuple[str, ...] = field(default_factory=tuple)
     #: Whether each box prints its source's own score (:attr:`Step.text`).
     show_values: bool = False

@@ -1,16 +1,19 @@
-"""Colour semantics, contrast, and the refusal to guess polarity."""
+"""Palettes: contrast, legibility, and one ramp step per layout level."""
 
 from __future__ import annotations
 
 import pytest
 
-from mlwp_scorecards.colours import (
-    SCHEMES,
-    FixedScaling,
-    Polarity,
-    contrast_ratio,
-    polarity_of,
-)
+from mlwp_scorecards.layout import LEVELS
+from mlwp_scorecards.render.colours import SCHEMES, contrast_ratio
+
+
+@pytest.mark.parametrize("name", sorted(SCHEMES))
+def test_every_ramp_has_one_step_per_layout_level(name):
+    """A ramp shorter than the level range would not fail: `Ramp` clamps, and
+    the top levels would quietly share a colour."""
+    for family in SCHEMES[name].families.values():
+        assert len(family.positive) == len(family.negative) == LEVELS
 
 
 @pytest.mark.parametrize("name", sorted(SCHEMES))
@@ -50,7 +53,7 @@ def test_significant_is_distinguishable_from_not_at_every_ramp_step(name):
 @pytest.mark.parametrize("name", sorted(SCHEMES))
 def test_borders_are_darker_than_their_fill(name):
     """A frame should read as a frame, not as a lighter inset."""
-    from mlwp_scorecards.colours import _relative_luminance
+    from mlwp_scorecards.render.colours import _relative_luminance
 
     scheme = SCHEMES[name]
     for family in scheme.families:
@@ -63,33 +66,6 @@ def test_borders_are_darker_than_their_fill(name):
             )
 
 
-def test_scaling_is_symmetric_and_monotone():
-    s = FixedScaling()
-    assert s.level(0.0) == 0
-    for v in (0.006, 0.03, 0.2, 0.9):
-        assert s.level(v) == -s.level(-v)
-    levels = [s.level(v) for v in (0.006, 0.03, 0.2, 0.9)]
-    assert levels == sorted(levels)
-
-
-def test_scaling_saturates_rather_than_wrapping():
-    s = FixedScaling()
-    assert s.level(5.0) == s.level(1.0) == s.depth
-    assert s.saturated(5.0) and not s.saturated(0.1)
-
-
-def test_polarity_lookup_and_refusal():
-    assert polarity_of("rmse") is Polarity.LOWER_IS_BETTER
-    assert polarity_of("acc") is Polarity.HIGHER_IS_BETTER
-    assert polarity_of("spread") is Polarity.ACTIVITY
-    with pytest.raises(KeyError, match="unknown metric"):
-        polarity_of("not_a_metric")
-    assert (
-        polarity_of("not_a_metric", {"not_a_metric": "higher_is_better"})
-        is Polarity.HIGHER_IS_BETTER
-    )
-
-
 def test_diverging_ramp_collapses_in_greyscale():
     """Documents *why* colour alone cannot carry the judgement in print.
 
@@ -98,7 +74,7 @@ def test_diverging_ramp_collapses_in_greyscale():
     channel is the only remedy.
     """
     scheme = SCHEMES["cvd"]
-    from mlwp_scorecards.colours import _relative_luminance
+    from mlwp_scorecards.render.colours import _relative_luminance
 
     for family in scheme.families:
         for level in range(1, scheme.depth + 1):

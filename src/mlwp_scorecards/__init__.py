@@ -19,7 +19,7 @@ Examples
 from importlib.metadata import version
 
 from .api import DEFAULT_COLUMNS, DEFAULT_ROWS, ScoreCard
-from .colours import SCHEMES
+from .render.colours import SCHEMES
 
 __all__ = [
     "__version__",

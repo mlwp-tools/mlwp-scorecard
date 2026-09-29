@@ -48,6 +48,18 @@ def test_to_html_is_the_page(score_card):
     assert page == score_card.to_html()
 
 
+def test_the_palette_is_chosen_when_drawing_not_when_building(score_card):
+    """The layout carries no colours, so one card draws in any palette."""
+    from mlwp_scorecards.render.colours import ECMWF
+
+    cvd, ecmwf = score_card.to_html(), score_card.to_html(colour_scheme="ecmwf")
+    assert cvd != ecmwf
+    assert ECMWF.families["error"].positive[-1].fill in ecmwf
+    assert score_card.to_html(colour_scheme=ECMWF) == ecmwf
+    with pytest.raises(KeyError, match="unknown colour scheme 'nonsuch'"):
+        score_card.to_figure(colour_scheme="nonsuch")
+
+
 def test_repr_names_the_sources(score_card):
     r = repr(score_card)
     assert "drifting-persistence" in r and "persistence" in r

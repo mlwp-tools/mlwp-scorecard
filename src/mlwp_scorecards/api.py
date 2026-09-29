@@ -14,7 +14,6 @@ import numpy as np
 import xarray as xr
 
 from .aggregate import aggregate, expand_selection, resolve_sources
-from .colours import SCHEMES, ColourScheme, FixedScaling
 from .ingest import (
     CASE_DIM,
     FORECAST_DIM,
@@ -24,6 +23,8 @@ from .ingest import (
     split_name,
 )
 from .layout import Layout, engine
+from .layout.scaling import FixedScaling
+from .render.colours import SCHEMES, ColourScheme
 
 if TYPE_CHECKING:
     from matplotlib.figure import Figure
@@ -255,7 +256,6 @@ def build_layout(  # numpydoc ignore=PR01
     columns: Sequence[str] | None = None,
     cell: str = "lead_time",
     metric_polarity: Mapping[str, str] | None = None,
-    scheme: str | ColourScheme = "cvd",
     title: str = "",
     subtitle: str = "",
     bootstrap: str = "moving-block",
@@ -303,7 +303,6 @@ def build_layout(  # numpydoc ignore=PR01
     placed = set(rows or ()) | set(columns or ()) | {cell}
     data, sources = _apply_selection(data, select, colour_relative_to, placed)
 
-    sch = SCHEMES[scheme] if isinstance(scheme, str) else scheme
     # With values shown every source is a row of its own -- the baseline too -- so
     # forecast_source is laid out even when there is only one forecast source.
     row_dims, col_dims = _infer_axes(
@@ -329,7 +328,6 @@ def build_layout(  # numpydoc ignore=PR01
         row_dims=row_dims,
         column_dims=col_dims,
         cell_dim=cell,
-        scheme=sch,
         scaling=FixedScaling(),
         metric_polarity=metric_polarity,
         title=title,
@@ -392,8 +390,6 @@ class ScoreCard:
     metric_polarity : mapping, optional
         Polarity for metrics not in the built-in table, e.g.
         ``{"my_score": "higher_is_better"}``.
-    scheme : str or ColourScheme, optional
-        ``"cvd"`` (default, colour-vision-safe) or ``"ecmwf"``.
     title, subtitle : str, optional
         Printed above the card.
     bootstrap : {"moving-block", "iid"}, optional
@@ -442,7 +438,6 @@ class ScoreCard:
         columns: Sequence[str] | None = None,
         cell: str = "lead_time",
         metric_polarity: Mapping[str, str] | None = None,
-        scheme: str | ColourScheme = "cvd",
         title: str = "",
         subtitle: str = "",
         bootstrap: str = "moving-block",
@@ -461,7 +456,6 @@ class ScoreCard:
             columns=columns,
             cell=cell,
             metric_polarity=metric_polarity,
-            scheme=scheme,
             title=title,
             subtitle=subtitle,
             bootstrap=bootstrap,
@@ -470,7 +464,6 @@ class ScoreCard:
             confidence_levels=confidence_levels,
             seed=seed,
         )
-        self._scheme = SCHEMES[scheme] if isinstance(scheme, str) else scheme
 
     def __repr__(self) -> str:
         """Name the sources and the card's size.
@@ -491,13 +484,18 @@ class ScoreCard:
             f"{s.n_rows} rows x {s.n_cols} columns, {s.n_boxes} boxes>"
         )
 
-    def to_figure(self) -> Figure:
+    def to_figure(self, *, colour_scheme: str | ColourScheme = "cvd") -> Figure:
         """Draw the card as a matplotlib figure.
 
         The figure is not registered with ``pyplot`` and the backend is left as
         it was. Save it with ``fig.savefig(path)``, which uses the caller's
         matplotlib settings: set ``pdf.fonttype=42`` and ``svg.fonttype="none"``
         to keep PDF and SVG text selectable.
+
+        Parameters
+        ----------
+        colour_scheme : str or ColourScheme, optional
+            The palette: ``"cvd"`` (default, colour-vision-safe) or ``"ecmwf"``.
 
         Returns
         -------
@@ -506,13 +504,17 @@ class ScoreCard:
         """
         from .render.static import render_figure
 
-        return render_figure(self._layout, scheme=self._scheme)
+        return render_figure(self._layout, scheme=_colour_scheme(colour_scheme))
 
-    def to_html(self, *, detail: bool = True) -> str:
+    def to_html(
+        self, *, colour_scheme: str | ColourScheme = "cvd", detail: bool = True
+    ) -> str:
         """Render the card as a self-contained interactive HTML page.
 
         Parameters
         ----------
+        colour_scheme : str or ColourScheme, optional
+            The palette: ``"cvd"`` (default, colour-vision-safe) or ``"ecmwf"``.
         detail : bool, optional
             Embed the click-through drill-down data. On a full-size card this is
             the largest thing in the page; pass False for a table-only page.
@@ -524,4 +526,34 @@ class ScoreCard:
         """
         from .render.html import render_html
 
-        return render_html(self._layout, scheme=self._scheme, detail=detail)
+        return render_html(
+            self._layout, scheme=_colour_scheme(colour_scheme), detail=detail
+        )
+
+
+def _colour_scheme(colour_scheme: str | ColourScheme) -> ColourScheme:
+    """Look a palette up by name, or pass one through.
+
+    Parameters
+    ----------
+    colour_scheme : str or ColourScheme
+        A key of :data:`~mlwp_scorecards.render.colours.SCHEMES`, or a palette.
+
+    Returns
+    -------
+    ColourScheme
+        The palette.
+
+    Raises
+    ------
+    KeyError
+        If the name is not a known palette.
+    """
+    if not isinstance(colour_scheme, str):
+        return colour_scheme
+    if colour_scheme not in SCHEMES:
+        raise KeyError(
+            f"unknown colour scheme {colour_scheme!r}; known: "
+            f"{', '.join(sorted(SCHEMES))}"
+        )
+    return SCHEMES[colour_scheme]

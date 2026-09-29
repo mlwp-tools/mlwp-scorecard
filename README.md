@@ -57,6 +57,21 @@ builds, and it saves with your matplotlib settings. For PDF and SVG text that
 stays selectable, set `pdf.fonttype=42` and `svg.fonttype="none"` (the command
 line does this for you).
 
+### Colour schemes
+
+The palette is chosen when the card is drawn, not when it is built, so one card
+can be drawn in either:
+
+```python
+score_card.to_html()                        # "cvd", the default: colour-vision-safe
+score_card.to_figure(colour_scheme="ecmwf") # the ECMWF reference palette
+```
+
+On the command line, pass `--colour-scheme ecmwf`. `mlwp_scorecards.SCHEMES`
+lists the palettes by name.
+
+### Rows and columns
+
 Rows and columns are inferred from the dataset, or named explicitly:
 
 ```python
@@ -358,9 +373,12 @@ Other notes on the shape:
 
 ## Documentation
 
-[`PLAN.md`](PLAN.md) is the design document: what the dataset conceptually contains,
-how `n` and the confidence intervals are produced upstream, the layout vocabulary,
-and the rendering approach.
+- [`DEVELOPING.md`](DEVELOPING.md): the developer notes. How the modules fit
+  together (the pipeline and an annotated tree of the package), setting up the
+  environment, running the tests and the pre-commit hooks.
+- [`PLAN.md`](PLAN.md): the design document. What the dataset conceptually
+  contains, how `n` and the confidence intervals are produced, the layout
+  vocabulary, the rendering approach, and the reasoning behind the API.
 
 ## Related
 

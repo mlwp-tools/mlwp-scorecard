@@ -61,7 +61,7 @@ td.c.empty {{ background: {missing}; cursor: default; }}
 td.c:hover {{ outline: 2px solid #7d8894; outline-offset: -2px; }}
 td.c:focus-visible {{ outline: 2px solid #06c; outline-offset: -2px; }}
 td.c > i {{ display: inline-block; width: var(--bw); height: var(--bh);
-  margin-right: var(--bg); vertical-align: top; border: 1px solid #fff;
+  margin-right: var(--bg); vertical-align: top; border: 1px solid {plain_edge};
   background: var(--f, transparent); }}
 td.c > i.sig {{ border-color: var(--e); }}
 {ramp}
@@ -461,7 +461,7 @@ _PAGE = Template(
      <span class="ramp"><i style="background:{{ sig_fill }};border-color:{{ sig_edge }}"></i></span>
      — its {{ confidence_pct }} interval on the difference excludes zero. An unframed
      box
-     <span class="ramp"><i style="background:{{ sig_fill }};border-color:#ffffff"></i></span>
+     <span class="ramp"><i style="background:{{ sig_fill }};border-color:{{ plain_edge }}"></i></span>
      is not. {{ n_significant }} of {{ n_boxes }} boxes are framed.
      {%- if graded %} The frame is one bit; hover a box for the strongest level it
      reaches, up to {{ widest_pct }}.{% endif %}</p>
@@ -808,6 +808,7 @@ def render_html(
         subtitle=layout.subtitle,
         css=_CSS.format(
             missing=scheme.missing,
+            plain_edge=scheme.insignificant_edge,
             ramp=_ramp_css(scheme, values=layout.show_values),
         )
         + (_VALUES_CSS if layout.show_values else ""),
@@ -834,6 +835,7 @@ def render_html(
         graded=len(layout.confidence_levels) > 1,
         sig_fill=scheme.swatch("error", 8).fill,
         sig_edge=scheme.swatch("error", 8).edge,
+        plain_edge=scheme.insignificant_edge,
         has_detail=bool(payload_b64),
         payload_b64=payload_b64,
         colours_json=json.dumps(DETAIL_COLOURS),

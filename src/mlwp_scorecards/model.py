@@ -78,10 +78,6 @@ class HeaderCell:
         The index of the first line (row or leaf column) it covers.
     span : int
         The number of consecutive lines it covers.
-    tooltip : str or None, optional
-        Hover text for the label, if any.
-    tint : str or None, optional
-        A background colour for the label, if any.
     is_na : bool, optional
         Whether the dimension does not apply to this branch, as for the level
         of a surface variable.
@@ -93,8 +89,6 @@ class HeaderCell:
     depth: int
     start: int
     span: int
-    tooltip: str | None = None
-    tint: str | None = None
     is_na: bool = False
 
     @property
@@ -171,8 +165,8 @@ class Step:
     family : str
         The colour family, or :data:`NEUTRAL` when compared with nothing.
     significant_at : float or None
-        The highest confidence level whose paired interval excludes zero, or
-        None when none does.
+        The highest confidence level whose paired interval, and every narrower
+        one, excludes zero; None when even the narrowest includes it.
     tooltip : str
         Hover text describing the box.
     text : str, optional
@@ -196,8 +190,9 @@ class Step:
     n: int | None
     level: int
     family: str
-    #: The **tightest** confidence level whose paired interval excludes zero, or
-    #: None when even the widest one does not. Graded rather than boolean because
+    #: The **highest** confidence level whose paired interval -- and every
+    #: narrower one -- excludes zero, or None when even the narrowest interval
+    #: includes it. Graded rather than boolean because
     #: "significant at 99.7%" and "significant at 68%" are different claims, and a
     #: card that shows only the second is over-claiming.
     significant_at: float | None

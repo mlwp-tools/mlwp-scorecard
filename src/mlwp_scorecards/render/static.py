@@ -69,8 +69,6 @@ class Geometry:
         Padding either side of a cell's run of boxes.
     row_h : float
         Height of one table row.
-    label_w : float
-        Width of a row-label column.
     head_h : float
         Height of one column-header level.
     font_pt : float
@@ -84,7 +82,6 @@ class Geometry:
     box_gap: float = 1.0
     cell_pad: float = 3.0
     row_h: float = 15.0
-    label_w: float = 62.0
     head_h: float = 17.0
     font_pt: float = 7.0
     title_pt: float = 12.0
@@ -422,7 +419,9 @@ def _draw(layout: Layout, scheme: ColourScheme, geometry: Geometry | None) -> Fi
                 else:
                     sw = scheme.swatch(st.family, st.level)
                     fills.append(sw.fill)
-                    edges.append(sw.edge if st.significant else "#ffffff")
+                    edges.append(
+                        sw.edge if st.significant else scheme.insignificant_edge
+                    )
                     if st.text:
                         labels.append(
                             (x + g.box_w / 2, by + g.box_h / 2, st.text, sw.fg)
@@ -517,7 +516,10 @@ def _draw(layout: Layout, scheme: ColourScheme, geometry: Geometry | None) -> Fi
     # are decoration as far as the reader can tell.
     if layout.stats.n_significant:
         example = scheme.swatch("error", 8)
-        for label, edge in (("significant", example.edge), ("not", "#ffffff")):
+        for label, edge in (
+            ("significant", example.edge),
+            ("not", scheme.insignificant_edge),
+        ):
             ax.add_patch(
                 Rectangle(
                     (lx, ly - sw_h / 2),

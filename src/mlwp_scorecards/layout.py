@@ -311,15 +311,11 @@ def _resolve_axis(
     return leaves, headers
 
 
-def _headers_for(
-    leaf: Key, headers: list[list[HeaderCell]], index: int
-) -> tuple[HeaderCell, ...]:
+def _headers_for(headers: list[list[HeaderCell]], index: int) -> tuple[HeaderCell, ...]:
     """Return the header block covering one line at each depth.
 
     Parameters
     ----------
-    leaf : Key
-        The line's key (unused; the position decides).
     headers : list of list of HeaderCell
         The axis's header blocks, one list per depth.
     index : int
@@ -662,11 +658,11 @@ def _lay_out(
     )
 
     rows = tuple(
-        Line(i, k, _headers_for(k, row_headers, i), _slug(k))
+        Line(i, k, _headers_for(row_headers, i), _slug(k))
         for i, k in enumerate(row_keys)
     )
     columns = tuple(
-        Line(i, k, _headers_for(k, col_headers, i), _slug(k))
+        Line(i, k, _headers_for(col_headers, i), _slug(k))
         for i, k in enumerate(col_keys)
     )
 

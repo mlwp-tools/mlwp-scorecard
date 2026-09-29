@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from mlwp_scorecards.layout import LEVELS
-from mlwp_scorecards.layout.scaling import FixedScaling
+from mlwp_scorecard.layout import LEVELS
+from mlwp_scorecard.layout.scaling import FixedScaling
 
 
 def test_scaling_is_symmetric_and_monotone():

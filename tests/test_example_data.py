@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from mlwp_scorecards import ScoreCard
+from mlwp_scorecard import ScoreCard
 
 SCORES = Path(__file__).resolve().parents[1] / "tmp/wb2/wb2_graphcast_vs_hres_2020.nc"
 

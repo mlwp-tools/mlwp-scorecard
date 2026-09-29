@@ -18,8 +18,8 @@ from pathlib import Path
 
 import pytest
 
-from mlwp_scorecards import ScoreCard
-from mlwp_scorecards.render.payload import build_payload, pack
+from mlwp_scorecard import ScoreCard
+from mlwp_scorecard.render.payload import build_payload, pack
 
 HARNESS = Path(__file__).parent / "drilldown_harness.mjs"
 

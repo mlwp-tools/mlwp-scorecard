@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from mlwp_scorecards.layout import LEVELS
-from mlwp_scorecards.render.colours import SCHEMES, contrast_ratio
+from mlwp_scorecard.layout import LEVELS
+from mlwp_scorecard.render.colours import SCHEMES, contrast_ratio
 
 
 @pytest.mark.parametrize("name", sorted(SCHEMES))
@@ -53,7 +53,7 @@ def test_significant_is_distinguishable_from_not_at_every_ramp_step(name):
 @pytest.mark.parametrize("name", sorted(SCHEMES))
 def test_borders_are_darker_than_their_fill(name):
     """A frame should read as a frame, not as a lighter inset."""
-    from mlwp_scorecards.render.colours import _relative_luminance
+    from mlwp_scorecard.render.colours import _relative_luminance
 
     scheme = SCHEMES[name]
     for family in scheme.families:
@@ -74,7 +74,7 @@ def test_diverging_ramp_collapses_in_greyscale():
     channel is the only remedy.
     """
     scheme = SCHEMES["cvd"]
-    from mlwp_scorecards.render.colours import _relative_luminance
+    from mlwp_scorecard.render.colours import _relative_luminance
 
     for family in scheme.families:
         for level in range(1, scheme.depth + 1):

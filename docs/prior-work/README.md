@@ -66,7 +66,7 @@ The size/confidence split is the clearest way to tell them apart:
 | What gets resampled | stations or dates | forecast cases | — |
 | Better or worse | closeness to a perfect-score table, so bias is handled | red/blue for errors; purple/green for spread and activity | flipped only for scores where higher is better; spread is marked directionless |
 
-## Where mlwp-scorecards sits
+## Where mlwp-scorecard sits
 
 Closest to ECMWF: two sources, a common truth, a paired case set, and size and
 confidence on separate channels. It improves on ECMWF with a block bootstrap, the

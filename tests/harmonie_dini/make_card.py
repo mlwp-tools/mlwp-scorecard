@@ -16,8 +16,8 @@ import numpy as np
 import xarray as xr
 from common import OUT
 
-from mlwp_scorecards import ScoreCard
-from mlwp_scorecards.render.static import save_figure
+from mlwp_scorecard import ScoreCard
+from mlwp_scorecard.render.static import save_figure
 
 PAIRS = {
     "harmonie-vs-aifs": ("aifs", "harmonie-arome"),

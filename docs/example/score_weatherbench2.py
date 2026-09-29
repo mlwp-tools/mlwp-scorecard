@@ -8,7 +8,7 @@ lead time and region, and writes the result to
 
     uv run --extra netcdf python docs/example/score_weatherbench2.py
 
-Why this is a separate script: ``mlwp-scorecards`` draws scorecards from
+Why this is a separate script: ``mlwp-scorecard`` draws scorecards from
 scores it is given -- one score per forecast case -- and never computes them
 itself; normally that is done beforehand, with a tool such as mxalign. This
 script is that step for the example, and ``make_card.py`` then draws the card

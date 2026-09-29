@@ -85,7 +85,7 @@ def build_payload(layout: Layout, *, precision: int = 4) -> dict:
     -------
     dict
         ``lead`` (hours), ``labels``, and ``cells``: one entry per populated cell,
-        in the same order as :meth:`~mlwp_scorecards.layout.model.Layout.iter_cells`.
+        in the same order as :meth:`~mlwp_scorecard.layout.model.Layout.iter_cells`.
     """
     cells = []
     for _, _, cell in layout.iter_cells():

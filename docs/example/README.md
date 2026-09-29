@@ -15,7 +15,7 @@ uv run --extra netcdf --extra static python docs/example/make_card.py
 Only the image and the page are committed. The scores are about 0.7 MB of noisy
 floats that barely compress, and are remade from public data by the first script.
 
-Why two scripts: `mlwp-scorecards` draws scorecards from scores it is given -- one
+Why two scripts: `mlwp-scorecard` draws scorecards from scores it is given -- one
 score per forecast case -- and never computes them itself. Normally that is done
 beforehand with a verification tool such as
 [mxalign](https://github.com/mlwp-tools/mxalign), on the full-resolution fields.

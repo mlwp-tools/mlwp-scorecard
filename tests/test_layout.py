@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from mlwp_scorecards.api import build_layout
+from mlwp_scorecard.api import build_layout
 
 
 def test_rows_follow_dataset_coordinate_order(verification, layout):
@@ -136,14 +136,14 @@ def test_lead_times_are_labelled_the_same_at_every_time_resolution(unit):
 
 
 def test_the_layout_package_exposes_the_types_without_the_engine():
-    """Renderers import `mlwp_scorecards.layout`, and Python runs its `__init__`
+    """Renderers import `mlwp_scorecard.layout`, and Python runs its `__init__`
     before any submodule: importing the engine there would hand every renderer
     xarray and the aggregation code. Checked on the source, because at runtime
     the top-level package imports the engine anyway (through `api`)."""
     import ast
     from pathlib import Path
 
-    import mlwp_scorecards.layout as pkg
+    import mlwp_scorecard.layout as pkg
 
     tree = ast.parse(Path(pkg.__file__).read_text())
     imported = [

@@ -231,7 +231,7 @@ def prepare(
     score : xr.DataArray
         One score per forecast case: ``(metric, variable, ..., lead_time,
         init_time)``. The collapse over cases has not happened yet -- that is
-        :mod:`~mlwp_scorecards.aggregate`'s job, and the reason this package can
+        :mod:`~mlwp_scorecard.aggregate`'s job, and the reason this package can
         pair the two sources at all.
     units : dict of (str, str) to str or None
         Units keyed by ``(metric, variable)``. Metric-dependent by construction:

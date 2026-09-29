@@ -29,7 +29,7 @@ _RC = {
     "pdf.fonttype": 42,  # embed TrueType so PDF text stays selectable
     "ps.fonttype": 42,
     "svg.fonttype": "none",  # keep SVG text as text, not glyph paths
-    "svg.hashsalt": "mlwp-scorecards",
+    "svg.hashsalt": "mlwp-scorecard",
     "font.family": "DejaVu Sans",
     "figure.autolayout": False,
     "path.simplify": False,
@@ -48,7 +48,7 @@ def _require_matplotlib() -> None:
         import matplotlib  # noqa: F401
     except ModuleNotFoundError as exc:  # pragma: no cover
         raise ImportError(
-            "the static backend needs matplotlib: install mlwp-scorecards[static]"
+            "the static backend needs matplotlib: install mlwp-scorecard[static]"
         ) from exc
 
 

@@ -16,9 +16,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from test_scale import _big_dataset  # noqa: E402
 
-from mlwp_scorecards.api import build_layout  # noqa: E402
-from mlwp_scorecards.render.colours import SCHEMES  # noqa: E402
-from mlwp_scorecards.render.html import render_html  # noqa: E402
+from mlwp_scorecard.api import build_layout  # noqa: E402
+from mlwp_scorecard.render.colours import SCHEMES  # noqa: E402
+from mlwp_scorecard.render.html import render_html  # noqa: E402
 
 OUT = Path(__file__).resolve().parents[1] / "tmp"
 AXES = dict(

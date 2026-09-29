@@ -142,9 +142,9 @@ Checked across all 15,165 populated (cell, lead time) entries:
   would happen with twice-daily initialisations. The count also varies by variable,
   region, metric and truth source, from data availability.
 
-## Compared with mlwp-scorecards
+## Compared with mlwp-scorecard
 
-| | ECMWF card | mlwp-scorecards |
+| | ECMWF card | mlwp-scorecard |
 |---|---|---|
 | Scoring | Done upstream by the generating system | Done upstream, by mxalign |
 | Collapse over cases | Done by the generating system, not shown | Done here, from per-case scores |

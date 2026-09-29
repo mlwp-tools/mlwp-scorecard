@@ -12,7 +12,7 @@ import textwrap
 
 
 def test_html_is_byte_identical_across_renders(verification):
-    from mlwp_scorecards import ScoreCard
+    from mlwp_scorecard import ScoreCard
 
     kw = dict(
         baseline="persistence",
@@ -25,8 +25,8 @@ def test_html_is_byte_identical_across_renders(verification):
 
 
 def test_svg_is_byte_identical_across_renders(verification, tmp_path):
-    from mlwp_scorecards import ScoreCard
-    from mlwp_scorecards.render.static import save_figure
+    from mlwp_scorecard import ScoreCard
+    from mlwp_scorecard.render.static import save_figure
 
     kw = dict(
         baseline="persistence",
@@ -47,7 +47,7 @@ def test_html_is_identical_in_a_fresh_process(tmp_path):
         sys.path.insert(0, {str(tmp_path.parent.parent)!r})
         sys.path.insert(0, {str((__import__("pathlib").Path(__file__).parent))!r})
         from synthetic import make_verification_dataset
-        from mlwp_scorecards import ScoreCard
+        from mlwp_scorecard import ScoreCard
         ds = make_verification_dataset(n_case=80, drift=0.25, seed=3)
         score_card = ScoreCard(ds, baseline="persistence",
                                select=dict(forecast_source=["drifting-persistence"]),
@@ -68,7 +68,7 @@ def test_html_is_identical_in_a_fresh_process(tmp_path):
 
 
 def test_layout_resolution_is_stable(verification):
-    from mlwp_scorecards.api import build_layout
+    from mlwp_scorecard.api import build_layout
 
     kw = dict(
         baseline="persistence",

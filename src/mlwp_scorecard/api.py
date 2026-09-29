@@ -70,7 +70,7 @@ def _select_names(data: xr.Dataset, dim: str, value: Any) -> xr.Dataset:
     Both are halves of the ``{metric}.{variable}`` names rather than dimensions of
     the input. Both are always on an axis, so a single value keeps them at length
     one. Order follows the selection, because
-    :func:`~mlwp_scorecards.ingest.prepare` orders each by first appearance among
+    :func:`~mlwp_scorecard.ingest.prepare` orders each by first appearance among
     the data variables.
 
     Parameters
@@ -182,7 +182,7 @@ def _infer_axes(
     added here rather than read off the dataset. The excluded names are the ones
     the rendering consumes rather than lays out, and are the same set ``prepare``
     exempts from its unassigned-dimension check; both are built from the
-    constants in :mod:`~mlwp_scorecards.ingest` so the two cannot drift apart.
+    constants in :mod:`~mlwp_scorecard.ingest` so the two cannot drift apart.
 
     ``forecast_source`` is consumed by differencing when there is one forecast
     source, and laid out when there are several, or when ``lay_out_sources`` asks
@@ -265,9 +265,9 @@ def build_layout(  # numpydoc ignore=PR01
     """Turn a verification dataset into a ready-to-render :class:`Layout`.
 
     The whole pipeline behind :class:`ScoreCard` -- selection,
-    :func:`~mlwp_scorecards.ingest.prepare`,
-    :func:`~mlwp_scorecards.aggregate.aggregate`, then
-    :func:`~mlwp_scorecards.layout.engine.create_layout` -- and internal: the
+    :func:`~mlwp_scorecard.ingest.prepare`,
+    :func:`~mlwp_scorecard.aggregate.aggregate`, then
+    :func:`~mlwp_scorecard.layout.engine.create_layout` -- and internal: the
     ``Layout`` is the renderer contract, not something a caller needs. The parameters are
     documented on :class:`ScoreCard`, and are not repeated here -- hence the
     ``numpydoc ignore`` on the signature.
@@ -537,7 +537,7 @@ def _colour_scheme(colour_scheme: str | ColourScheme) -> ColourScheme:
     Parameters
     ----------
     colour_scheme : str or ColourScheme
-        A key of :data:`~mlwp_scorecards.render.colours.SCHEMES`, or a palette.
+        A key of :data:`~mlwp_scorecard.render.colours.SCHEMES`, or a palette.
 
     Returns
     -------

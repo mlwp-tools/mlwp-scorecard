@@ -1167,7 +1167,7 @@ wheels = [
 ]
 
 [[package]]
-name = "mlwp-scorecards"
+name = "mlwp-scorecard"
 source = { editable = "." }
 dependencies = [
     { name = "jinja2" },

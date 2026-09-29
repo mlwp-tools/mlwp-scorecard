@@ -12,9 +12,9 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from mlwp_scorecards import ScoreCard
-from mlwp_scorecards.api import build_layout
-from mlwp_scorecards.render.static import save_figure
+from mlwp_scorecard import ScoreCard
+from mlwp_scorecard.api import build_layout
+from mlwp_scorecard.render.static import save_figure
 
 
 def _big_dataset(

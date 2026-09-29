@@ -356,14 +356,14 @@ def create_layout(
     on rows, columns and cells -- order, header spans, each box's colour,
     significance, tooltip and printed value -- with the card's notes and counts.
     The result is the whole card as plain values: a renderer only draws it.
-    Where :func:`~mlwp_scorecards.api.build_layout` goes from a dataset to a
+    Where :func:`~mlwp_scorecard.api.build_layout` goes from a dataset to a
     ``Layout``, this goes from the aggregated numbers.
 
     Parameters
     ----------
     units : mapping of (str, str) to str or None
         Units keyed by ``(metric, variable)``, from
-        :func:`~mlwp_scorecards.ingest.prepare`.
+        :func:`~mlwp_scorecard.ingest.prepare`.
     row_dims : sequence of str
         The dimensions nested on the rows, outermost first.
     column_dims : sequence of str
@@ -374,10 +374,10 @@ def create_layout(
         Maps each relative difference to a ramp level.
     metric_polarity : mapping of str to str, optional
         Polarities for metrics absent from the built-in table, or overriding it;
-        see :func:`~mlwp_scorecards.polarity.polarity_of`.
+        see :func:`~mlwp_scorecard.polarity.polarity_of`.
     agg : Aggregated
         The collapse over forecast cases, from
-        :func:`~mlwp_scorecards.aggregate.aggregate`. Subsetting and the choice
+        :func:`~mlwp_scorecard.aggregate.aggregate`. Subsetting and the choice
         of sources happen there, because both must precede the resample. With no
         baseline in it, nothing is compared and every box is neutral.
     title : str, optional

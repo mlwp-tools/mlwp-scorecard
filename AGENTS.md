@@ -4,7 +4,7 @@ Guidance for agents and contributors working in this repository.
 
 ## Project intent
 
-- `mlwp-scorecards` renders weather forecasting scorecards from **pre-computed
+- `mlwp-scorecard` renders weather forecasting scorecards from **pre-computed
   verification statistics**.
 - It performs **no scoring**. Metrics are computed upstream (typically by
   `mxalign`), where the fields are, and the collapse over *space* happens there.
@@ -40,17 +40,17 @@ Guidance for agents and contributors working in this repository.
 - Design document: `PLAN.md` — read this first; it defines the input schema and the
   layout vocabulary.
 - How the modules fit together: `DEVELOPING.md`, *Code structure*.
-- Public API: `src/mlwp_scorecards/api.py`, `cli.py`
-- Input handling: `src/mlwp_scorecards/ingest.py`
+- Public API: `src/mlwp_scorecard/api.py`, `cli.py`
+- Input handling: `src/mlwp_scorecard/ingest.py`
 - Collapse over forecast cases (means, bootstrap, paired differences):
-  `src/mlwp_scorecards/aggregate.py`
-- Layout types (the renderer contract): `src/mlwp_scorecards/layout/model.py`
-- Layout engine (`create_layout`): `src/mlwp_scorecards/layout/engine.py`
+  `src/mlwp_scorecard/aggregate.py`
+- Layout types (the renderer contract): `src/mlwp_scorecard/layout/model.py`
+- Layout engine (`create_layout`): `src/mlwp_scorecard/layout/engine.py`
 - Metric polarity (which direction is better) and its words:
-  `src/mlwp_scorecards/polarity.py`
-- Difference → signed level: `src/mlwp_scorecards/layout/scaling.py`
-- Palettes (level → colour): `src/mlwp_scorecards/render/colours.py`
-- Renderers: `src/mlwp_scorecards/render/html.py`, `render/static.py`
+  `src/mlwp_scorecard/polarity.py`
+- Difference → signed level: `src/mlwp_scorecard/layout/scaling.py`
+- Palettes (level → colour): `src/mlwp_scorecard/render/colours.py`
+- Renderers: `src/mlwp_scorecard/render/html.py`, `render/static.py`
 - Synthetic test data: `tests/synthetic.py`
 - The README's example card (WeatherBench 2 scores, and the scripts that make
   and draw them): `docs/example/`
@@ -59,7 +59,7 @@ Guidance for agents and contributors working in this repository.
 ## Development expectations
 
 - **`Layout` is the sole renderer contract.** Modules under `render/` may import
-  `mlwp_scorecards.layout` (the types), `polarity` (the direction words) and each
+  `mlwp_scorecard.layout` (the types), `polarity` (the direction words) and each
   other only — never `layout.engine`, never `xarray`, never the input dataset. The
   layout carries no colours; the palette is chosen when drawing. `layout/__init__.py`
   therefore re-exports the model and must never import the engine (a test checks).

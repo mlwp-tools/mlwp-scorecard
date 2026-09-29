@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Initial development of `mlwp-scorecards`, a package for rendering weather
+Initial development of `mlwp-scorecard`, a package for rendering weather
 forecasting scorecards from pre-computed verification statistics. A scorecard
 compares one or more forecast sources with a baseline source, all scored against
 a common truth source, and colours the paired difference between their scores
@@ -17,6 +17,10 @@ Design and rationale are documented in [`PLAN.md`](PLAN.md).
 
 ### Changed
 
+- **The package is `mlwp-scorecard`** (import `mlwp_scorecard`), not
+  `mlwp-scorecards`: it is a tool that makes scorecards, not a collection of
+  them. The repository is `mlwp-tools/mlwp-scorecard`; the command stays
+  `mlwp.make_scorecard`. Nothing had been released under the old name.
 - **`colour_relative_to=` is now `baseline=`** (`--colour-relative-to` is
   `--baseline`). It names what the argument is -- the source everything is
   compared with -- rather than one way the comparison is drawn, so it stays
@@ -29,15 +33,15 @@ Design and rationale are documented in [`PLAN.md`](PLAN.md).
   `to_figure(colour_scheme=...)`, and `--colour-scheme` on the command line,
   replace `ScoreCard(scheme=...)` and `--scheme`. The layout carries no colours,
   so one card draws in any palette.
-- `colours.py` is split by what each part is: `mlwp_scorecards.polarity`
-  (metric polarity, families and their words), `mlwp_scorecards.layout.scaling`
-  (difference → level), and `mlwp_scorecards.render.colours` (the palettes;
+- `colours.py` is split by what each part is: `mlwp_scorecard.polarity`
+  (metric polarity, families and their words), `mlwp_scorecard.layout.scaling`
+  (difference → level), and `mlwp_scorecard.render.colours` (the palettes;
   `SCHEMES` is still exported from the package). `Layout.scheme_name` is gone,
   and `layout.LEVELS` fixes the level range the scaling and palettes share.
-- Internal modules reorganised into a `layout` package. `mlwp_scorecards.model`
-  becomes `mlwp_scorecards.layout.model`, with the types also importable from
-  `mlwp_scorecards.layout`. The layout engine is
-  `mlwp_scorecards.layout.engine`, and its entry point `resolve()` is now
+- Internal modules reorganised into a `layout` package. `mlwp_scorecard.model`
+  becomes `mlwp_scorecard.layout.model`, with the types also importable from
+  `mlwp_scorecard.layout`. The layout engine is
+  `mlwp_scorecard.layout.engine`, and its entry point `resolve()` is now
   `create_layout()`. DEVELOPING.md now describes how the modules fit together.
 - **A card is a `ScoreCard`, and saving it is the caller's.**
   `ScoreCard(ds, ...)` takes the arguments `build_layout` took and does all the

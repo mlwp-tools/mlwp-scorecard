@@ -6,7 +6,7 @@ import warnings
 
 import pytest
 
-from mlwp_scorecards import ScoreCard
+from mlwp_scorecard import ScoreCard
 
 KW = dict(
     baseline="persistence",
@@ -50,7 +50,7 @@ def test_to_html_is_the_page(score_card):
 
 def test_the_palette_is_chosen_when_drawing_not_when_building(score_card):
     """The layout carries no colours, so one card draws in any palette."""
-    from mlwp_scorecards.render.colours import ECMWF
+    from mlwp_scorecard.render.colours import ECMWF
 
     cvd, ecmwf = score_card.to_html(), score_card.to_html(colour_scheme="ecmwf")
     assert cvd != ecmwf

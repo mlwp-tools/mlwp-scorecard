@@ -4,14 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from mlwp_scorecards.polarity import (
-    FAMILY_WORDS,
-    Polarity,
-    family_of,
-    polarity_of,
-    word,
-)
-from mlwp_scorecards.render.colours import SCHEMES
+from mlwp_scorecard.polarity import FAMILY_WORDS, Polarity, family_of, polarity_of, word
+from mlwp_scorecard.render.colours import SCHEMES
 
 
 def test_polarity_lookup_and_refusal():

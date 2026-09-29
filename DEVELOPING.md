@@ -23,7 +23,7 @@ xr.Dataset ──(1) ingest.prepare──▶ per-case scores + units
 ```
 
 ```
-src/mlwp_scorecards/
+src/mlwp_scorecard/
 ├── __init__.py        public exports: ScoreCard, SCHEMES, DEFAULT_ROWS/COLUMNS
 ├── api.py             ScoreCard — the public object; build_layout runs (1)–(3)
 │                      (dataset → Layout; internal, used by the layout tests)
@@ -59,7 +59,7 @@ number of levels, `LEVELS`, is part of the contract: the scaling has one break
 per level and every palette one ramp step per level, and tests check both.
 
 **The dependency rule.** `layout.model` is the only thing the renderers see. They
-import `mlwp_scorecards.layout`, whose `__init__` re-exports the model types,
+import `mlwp_scorecard.layout`, whose `__init__` re-exports the model types,
 `polarity` for the direction words, and each other. They never import
 `layout.engine`, `xarray`, or the input dataset. Python runs a package's
 `__init__` before any of its submodules, so `layout/__init__.py` must never import

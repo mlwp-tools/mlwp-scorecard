@@ -33,7 +33,7 @@ def summary():
 
 
 def card(summary, baseline: str, forecast: str, levels=CONFIDENCE_LEVELS):
-    from mlwp_scorecards.api import build_layout
+    from mlwp_scorecard.api import build_layout
 
     return build_layout(
         summary,
@@ -315,8 +315,8 @@ def test_case_counts_are_the_number_of_initialisations(summary):
 
 
 def test_renders_both_formats(summary, tmp_path):
-    from mlwp_scorecards import ScoreCard
-    from mlwp_scorecards.render.static import save_figure
+    from mlwp_scorecard import ScoreCard
+    from mlwp_scorecard.render.static import save_figure
 
     score_card = ScoreCard(
         summary,

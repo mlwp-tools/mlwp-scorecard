@@ -32,7 +32,7 @@ def verification() -> "xr.Dataset":  # noqa: F821
 @pytest.fixture(scope="session")
 def layout(verification):
     """The resolved layout for :func:`verification`."""
-    from mlwp_scorecards.api import build_layout
+    from mlwp_scorecard.api import build_layout
 
     return build_layout(
         verification,

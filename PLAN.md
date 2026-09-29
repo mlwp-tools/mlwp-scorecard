@@ -1,8 +1,8 @@
-# mlwp-scorecards — a Python package for weather forecasting scorecards
+# mlwp-scorecard — a Python package for weather forecasting scorecards
 
 ## Context
 
-`/Users/B280936/git-repos/mlwp/mlwp-scorecards/` holds one file: `scorecards-47r1ENS.html`,
+`/Users/B280936/git-repos/mlwp/mlwp-scorecard/` holds one file: `scorecards-47r1ENS.html`,
 a 7.4 MB ECMWF-generated scorecard page kept as a design reference. There is no package, no
 git repo, no source.
 
@@ -693,7 +693,7 @@ explicit category ordering.
 
 ```python
 import xarray as xr
-from mlwp_scorecards import Dimension, MetricSpec, Polarity, make_scorecard
+from mlwp_scorecard import Dimension, MetricSpec, Polarity, make_scorecard
 
 ds = xr.open_dataset("verification_summary.nc")
 
@@ -758,11 +758,11 @@ Semantics live in one place; the HTML backend can still emit ~120 short CSS rule
 ## Files to create
 
 ```
-mlwp-scorecards/
+mlwp-scorecard/
 ├── pyproject.toml  .python-version  .flake8  .pre-commit-config.yaml  .gitignore
 ├── README.md  CHANGELOG.md  AGENTS.md
 ├── .github/workflows/{ci,pre-commit}.yml
-├── src/mlwp_scorecards/
+├── src/mlwp_scorecard/
 │   ├── __init__.py        version + public re-exports
 │   ├── api.py             ScoreCard (build_layout internal)
 │   ├── cli.py             mlwp.make_scorecard entry point
@@ -1065,13 +1065,13 @@ test    = ["pytest>=8", "pytest-mpl>=0.17", "syrupy>=4", "hypothesis>=6.100",
            "matplotlib~=3.10.0", "netcdf4>=1.6"]
 
 [project.scripts]
-"mlwp.make_scorecard" = "mlwp_scorecards.cli:main"
+"mlwp.make_scorecard" = "mlwp_scorecard.cli:main"
 ```
 
 `xarray` is core (it brings `pandas` and `numpy`, so the frame path is free). File-format
 backends are extras, matching `mlwp-data-loaders`' split. `matplotlib` is an extra so an
 HTML-only install stays light; `render/__init__.py` imports backends lazily and raises
-`ImportError("install mlwp-scorecards[static]")`. No `plotly`, no `lxml`/`beautifulsoup4`
+`ImportError("install mlwp-scorecard[static]")`. No `plotly`, no `lxml`/`beautifulsoup4`
 (stdlib `html.parser` suffices for tests), no `mlwp-data-specs`.
 
 ---
@@ -1366,7 +1366,7 @@ Supersedes the Python half of item 4; the CLI keeps `--html-path` / `--image-pat
   point went from `resolve()` to `create_layout()`, a stateless function named
   for what it returns. It was not made an engine object: that would be built and
   called once, and nothing reuses its configuration. `layout/__init__` re-exports
-  the model and never the engine, so renderers importing `mlwp_scorecards.layout`
+  the model and never the engine, so renderers importing `mlwp_scorecard.layout`
   get the types alone.
 - **`colours.py` was three things, now in three places.** Polarity is a fact
   about the metric, not about colour; the colour is derived from it. So

@@ -11,7 +11,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from mlwp_scorecards.api import build_layout
+from mlwp_scorecard.api import build_layout
 
 ROWS = ["truth_source", "variable", "level"]
 COLUMNS = ["spatial_region", "metric"]

@@ -15,10 +15,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from mlwp_scorecards import ScoreCard
-from mlwp_scorecards.api import build_layout
-from mlwp_scorecards.layout import NEUTRAL, format_value
-from mlwp_scorecards.render.static import save_figure
+from mlwp_scorecard import ScoreCard
+from mlwp_scorecard.api import build_layout
+from mlwp_scorecard.layout import NEUTRAL, format_value
+from mlwp_scorecard.render.static import save_figure
 
 sys.path.insert(0, str(Path(__file__).parent))
 from test_sources import _dataset, _with_gaps  # noqa: E402

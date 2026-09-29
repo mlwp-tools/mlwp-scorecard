@@ -13,8 +13,8 @@ from pathlib import Path
 
 import xarray as xr
 
-from mlwp_scorecards import ScoreCard
-from mlwp_scorecards.render.static import save_figure
+from mlwp_scorecard import ScoreCard
+from mlwp_scorecard.render.static import save_figure
 
 HERE = Path(__file__).resolve().parent
 SCORES = HERE.parents[1] / "tmp" / "wb2" / "wb2_graphcast_vs_hres_2020.nc"

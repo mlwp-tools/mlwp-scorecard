@@ -1,4 +1,4 @@
-# mlwp-scorecards
+# mlwp-scorecard
 
 Weather forecasting scorecards for machine-learning weather prediction.
 
@@ -7,7 +7,7 @@ Weather forecasting scorecards for machine-learning weather prediction.
 *GraphCast compared with IFS HRES, both verified against ERA5, over 2020
 (WeatherBench 2 data on its 5.625° grid, so the Europe region is only a few grid
 points). Blue is better than HRES, red worse; a dark frame marks a significant
-difference. [Open the interactive version](https://raw.githack.com/mlwp-tools/mlwp-scorecards/main/docs/images/scorecard.html)
+difference. [Open the interactive version](https://raw.githack.com/mlwp-tools/mlwp-scorecard/main/docs/images/scorecard.html)
 (hover for values, click any cell for its charts; the file is
 [`docs/images/scorecard.html`](docs/images/scorecard.html)). Both are made by
 [`docs/example/`](docs/example/).*
@@ -32,8 +32,8 @@ to happen before the averaging, and cannot be recovered afterwards.
 ## Install
 
 ```bash
-uv add mlwp-scorecards            # HTML output
-uv add "mlwp-scorecards[static]"  # + matplotlib PNG/SVG/PDF
+uv add mlwp-scorecard            # HTML output
+uv add "mlwp-scorecard[static]"  # + matplotlib PNG/SVG/PDF
 ```
 
 ## Use
@@ -42,7 +42,7 @@ uv add "mlwp-scorecards[static]"  # + matplotlib PNG/SVG/PDF
 from pathlib import Path
 
 import xarray as xr
-from mlwp_scorecards import ScoreCard
+from mlwp_scorecard import ScoreCard
 
 ds = xr.open_dataset("verification_summary.nc")
 
@@ -77,7 +77,7 @@ score_card.to_html()                        # "cvd", the default: colour-vision-
 score_card.to_figure(colour_scheme="ecmwf") # the ECMWF reference palette
 ```
 
-On the command line, pass `--colour-scheme ecmwf`. `mlwp_scorecards.SCHEMES`
+On the command line, pass `--colour-scheme ecmwf`. `mlwp_scorecard.SCHEMES`
 lists the palettes by name.
 
 ### Rows and columns

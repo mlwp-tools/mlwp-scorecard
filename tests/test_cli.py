@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from mlwp_scorecards.cli import main
+from mlwp_scorecard.cli import main
 
 
 @pytest.fixture(scope="module")
@@ -117,7 +117,7 @@ def test_select_parsing():
     import numpy as np
     import xarray as xr
 
-    from mlwp_scorecards.cli import _parse_select
+    from mlwp_scorecard.cli import _parse_select
 
     ds = xr.Dataset(
         coords=dict(
@@ -159,7 +159,7 @@ def test_a_malformed_select_exits_nonzero(netcdf, tmp_path, select):
 
 
 def test_open_opens_every_file_written(netcdf, tmp_path, monkeypatch):
-    import mlwp_scorecards.cli as cli
+    import mlwp_scorecard.cli as cli
 
     opened = []
     monkeypatch.setattr(cli, "_open", opened.append)

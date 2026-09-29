@@ -8,7 +8,7 @@ Examples
 --------
 >>> import xarray as xr
 >>> from pathlib import Path
->>> from mlwp_scorecards import ScoreCard
+>>> from mlwp_scorecard import ScoreCard
 >>> ds = xr.open_dataset("verification_summary.nc")        # doctest: +SKIP
 >>> score_card = ScoreCard(ds, baseline="IFS-HRES",   # doctest: +SKIP
 ...                        select=dict(forecast_source=["GraphCast"]))
@@ -28,4 +28,4 @@ __all__ = [
     "DEFAULT_ROWS",
     "DEFAULT_COLUMNS",
 ]
-__version__ = version("mlwp-scorecards")
+__version__ = version("mlwp-scorecard")

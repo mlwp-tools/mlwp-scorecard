@@ -533,7 +533,7 @@ def aggregate(
     Parameters
     ----------
     score : xr.DataArray
-        One score per forecast case, from :func:`~mlwp_scorecards.ingest.prepare`.
+        One score per forecast case, from :func:`~mlwp_scorecard.ingest.prepare`.
     forecast_source : str or sequence of str
         Members of ``forecast_source`` to compare with the baseline; ``...`` is
         expanded as in :func:`resolve_sources`.

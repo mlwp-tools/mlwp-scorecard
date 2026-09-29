@@ -115,9 +115,9 @@ plot_scorecard(bootstrap_data, fcst_model, ref_model, scores,
 - The magnitude of the difference is not shown. The card shows only which model
   wins and how confidently.
 
-## Compared with mlwp-scorecards
+## Compared with mlwp-scorecard
 
-| | harp | mlwp-scorecards |
+| | harp | mlwp-scorecard |
 |---|---|---|
 | Scoring | Computes scores from raw point pairs | None; scores arrive per case from upstream (mxalign) |
 | Resampling unit | Rows, or pools (station, date, custom blocks) | Blocks of consecutive forecast cases (`block_length`, derived from the initialisation cadence). Space is already collapsed upstream, so pooling by station isn't possible |

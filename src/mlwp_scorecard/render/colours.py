@@ -233,13 +233,13 @@ class Family:
     """A pair of ramps for the two directions of one kind of metric.
 
     The words for the two directions are not a matter of palette, and live in
-    :data:`mlwp_scorecards.polarity.FAMILY_WORDS`.
+    :data:`mlwp_scorecard.polarity.FAMILY_WORDS`.
 
     Attributes
     ----------
     key : str
         The family's name, as returned by
-        :func:`~mlwp_scorecards.polarity.family_of`.
+        :func:`~mlwp_scorecard.polarity.family_of`.
     positive : Ramp
         The ramp for positive levels: better, or more active.
     negative : Ramp

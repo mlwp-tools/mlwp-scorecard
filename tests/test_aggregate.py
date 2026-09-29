@@ -12,13 +12,13 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from mlwp_scorecards.aggregate import (
+from mlwp_scorecard.aggregate import (
     _weights,
     aggregate,
     bootstrap_mean,
     resample_indices,
 )
-from mlwp_scorecards.ingest import prepare
+from mlwp_scorecard.ingest import prepare
 
 
 def _per_case(n_case=60, n_lead=4, seed=0, rho=0.9, drift=0.15):

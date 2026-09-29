@@ -11,8 +11,8 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from mlwp_scorecards.api import build_layout
-from mlwp_scorecards.ingest import split_name
+from mlwp_scorecard.api import build_layout
+from mlwp_scorecard.ingest import split_name
 
 #: 40 daily cases: the fewest the default 10-day blocks accept.
 N_CASE = 40

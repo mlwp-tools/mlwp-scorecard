@@ -8,7 +8,7 @@ significance border has to contrast with.
 
 from __future__ import annotations
 
-from mlwp_scorecards.render.colours import SCHEMES, _relative_luminance, contrast_ratio
+from mlwp_scorecard.render.colours import SCHEMES, _relative_luminance, contrast_ratio
 
 
 def main() -> None:

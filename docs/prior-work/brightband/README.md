@@ -181,9 +181,9 @@ Items 1 and 2 could be confirmed with the time-series view (chunk
 `page-0b3fffd74aa12316.js`). Its API is likely to return one value per
 initialisation time, which would give the actual case count per model.
 
-## Compared with mlwp-scorecards
+## Compared with mlwp-scorecard
 
-| | Brightband OWB | mlwp-scorecards |
+| | Brightband OWB | mlwp-scorecard |
 |---|---|---|
 | Comparison | N models against one baseline, one table | Two sources, one difference per cell |
 | Truth | Each model's own analysis (IFS for some, ERA5 for precip) | One common truth source per row |
